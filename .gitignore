@@ -1,0 +1,20 @@
+.build/
+DerivedData*/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+
+# Local signing material, credentials and downloaded models
+.env
+.env.*
+*.p12
+*.pfx
+*.p8
+*.key
+*.mobileprovision
+*.safetensors
+*.gguf
+*.mlmodelc/
+
+# Superseded UI preview retained locally
+docs/previews/ios-dictate.png

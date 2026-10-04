@@ -1,0 +1,58 @@
+{
+  "allowModelDownloads" : true,
+  "device" : {
+    "activeProcessorCount" : 6,
+    "appBuild" : "1",
+    "appVersion" : "0.1.0",
+    "buildConfiguration" : "DEBUG \/ Swift -O",
+    "hardwareIdentifier" : "iPhone18,2",
+    "operatingSystem" : "Version 27.2 (Build 24B5089g)",
+    "physicalMemoryBytes" : 12263424000,
+    "processorCount" : 6,
+    "simulator" : false
+  },
+  "fixture" : {
+    "attribution" : "LibriSpeech ASR corpus, Vassil Panayotov with assistance from Daniel Povey; LibriVox reader 1272. SLR12, dev-clean\/1272\/128104\/1272-128104-0000.",
+    "audioFilename" : "librispeech-1272-128104-0000.wav",
+    "audioSeconds" : 5.855,
+    "id" : "librispeech-dev-clean-1272-128104-0000",
+    "license" : "CC-BY-4.0",
+    "modifications" : "Converted the Hugging Face validation-row FLAC to mono 16 kHz signed 16-bit PCM WAV using macOS afconvert; reference unchanged.",
+    "reference" : "MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL",
+    "sampleRate" : 16000,
+    "schemaVersion" : 1,
+    "sha256" : "c85401f70630847182fc5852d28ced0910629f5207ae38aa6a1464fd3daa3bfa",
+    "source" : "https:\/\/huggingface.co\/datasets\/hf-internal-testing\/librispeech_asr_dummy\/tree\/5be91486e11a2d616f4ec5db8d3fd248585ac07a"
+  },
+  "limitations" : [
+    "Single short read-speech clip; WER does not establish dictation accuracy. Repetitions are timing runs, not independent accuracy samples.",
+    "Cold model load uses a new runtime; process, OS file and Core ML compilation caches are not reset.",
+    "Physical footprint samples include the app and probe; 50 ms sampling may miss transient peaks. Kernel peak is process lifetime.",
+    "CPU time covers the app process. GPU\/ANE utilization and energy are not measured; requested Core ML compute units do not prove actual partitioning.",
+    "Installed storage covers regular files in this model installation directory, excluding shared runtime assets and system compilation caches. Allocated bytes are filesystem allocation, not physical NAND usage.",
+    "Results depend on app build optimization, temperature, device activity and run order."
+  ],
+  "models" : [
+    {
+      "installedStorageBeforeLoad" : {
+        "allocatedFileBytes" : 290193408,
+        "logicalFileBytes" : 283462425,
+        "regularFileCount" : 19
+      },
+      "modelID" : "phonon2-g4",
+      "modelName" : "Phonon-2 · compact",
+      "publishedDownloadBytes" : 283462385,
+      "repository" : "FluidInference\/phonon-2-coreml",
+      "revision" : "a812a0dfef205660787ef6234317ab79acf4d5d6",
+      "status" : "loading",
+      "warmTranscriptions" : [
+
+      ]
+    }
+  ],
+  "requestedWarmRunsPerModel" : 3,
+  "runtime" : "FluidAudio 0.17.5 \/ Core ML",
+  "schemaVersion" : 1,
+  "sharedKeyboardCheck" : "PASS: App Group read\/write, atomic status round-trip, backup exclusion",
+  "startedAt" : "2026-10-04T22:54:54Z"
+}

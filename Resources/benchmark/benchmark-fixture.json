@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "librispeech-dev-clean-1272-128104-0000",
+  "audioFilename": "librispeech-1272-128104-0000.wav",
+  "sha256": "c85401f70630847182fc5852d28ced0910629f5207ae38aa6a1464fd3daa3bfa",
+  "reference": "MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL",
+  "sampleRate": 16000,
+  "audioSeconds": 5.855,
+  "license": "CC-BY-4.0",
+  "source": "https://huggingface.co/datasets/hf-internal-testing/librispeech_asr_dummy/tree/5be91486e11a2d616f4ec5db8d3fd248585ac07a",
+  "sourceAudioSHA256": "4e25e22555cd16e90edb0a3b49fdcf1fe652b2a1250ab643634db33895c75b41",
+  "attribution": "LibriSpeech ASR corpus, Vassil Panayotov with assistance from Daniel Povey; LibriVox reader 1272. SLR12, dev-clean/1272/128104/1272-128104-0000.",
+  "modifications": "Converted the Hugging Face validation-row FLAC to mono 16 kHz signed 16-bit PCM WAV using macOS afconvert; reference unchanged."
+}

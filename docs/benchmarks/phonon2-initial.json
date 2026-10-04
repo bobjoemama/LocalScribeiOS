@@ -1,0 +1,240 @@
+{
+  "allowModelDownloads" : true,
+  "completedAt" : "2026-10-04T22:54:04Z",
+  "device" : {
+    "activeProcessorCount" : 6,
+    "appBuild" : "1",
+    "appVersion" : "0.1.0",
+    "buildConfiguration" : "DEBUG \/ Swift -O",
+    "hardwareIdentifier" : "iPhone18,2",
+    "operatingSystem" : "Version 27.2 (Build 24B5089g)",
+    "physicalMemoryBytes" : 12263424000,
+    "processorCount" : 6,
+    "simulator" : false
+  },
+  "fixture" : {
+    "attribution" : "LibriSpeech ASR corpus, Vassil Panayotov with assistance from Daniel Povey; LibriVox reader 1272. SLR12, dev-clean\/1272\/128104\/1272-128104-0000.",
+    "audioFilename" : "librispeech-1272-128104-0000.wav",
+    "audioSeconds" : 5.855,
+    "id" : "librispeech-dev-clean-1272-128104-0000",
+    "license" : "CC-BY-4.0",
+    "modifications" : "Converted the Hugging Face validation-row FLAC to mono 16 kHz signed 16-bit PCM WAV using macOS afconvert; reference unchanged.",
+    "reference" : "MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL",
+    "sampleRate" : 16000,
+    "schemaVersion" : 1,
+    "sha256" : "c85401f70630847182fc5852d28ced0910629f5207ae38aa6a1464fd3daa3bfa",
+    "source" : "https:\/\/huggingface.co\/datasets\/hf-internal-testing\/librispeech_asr_dummy\/tree\/5be91486e11a2d616f4ec5db8d3fd248585ac07a"
+  },
+  "limitations" : [
+    "Single short read-speech clip; WER does not establish dictation accuracy. Repetitions are timing runs, not independent accuracy samples.",
+    "Cold model load uses a new runtime; process, OS file and Core ML compilation caches are not reset.",
+    "Physical footprint samples include the app and probe; 50 ms sampling may miss transient peaks. Kernel peak is process lifetime.",
+    "CPU time covers the app process. GPU\/ANE utilization and energy are not measured; requested Core ML compute units do not prove actual partitioning.",
+    "Installed storage covers regular files in this model installation directory, excluding shared runtime assets and system compilation caches. Allocated bytes are filesystem allocation, not physical NAND usage.",
+    "Results depend on app build optimization, temperature, device activity and run order."
+  ],
+  "models" : [
+    {
+      "coldModelLoad" : {
+        "date" : "2026-10-04T22:54:02Z",
+        "id" : "4A551F58-E621-4C9F-9050-52163ADF3FF8",
+        "model" : "parakeetPhonon",
+        "requestedBackend" : "Core ML CPU + Neural Engine; GPU disabled",
+        "resources" : {
+          "elapsedSeconds" : 64.617153792,
+          "finalPhysicalFootprintBytes" : 1089177992,
+          "finalProcessLifetimePeakPhysicalFootprintBytes" : 1089177992,
+          "finalThermalState" : "fair",
+          "initialPhysicalFootprintBytes" : 383813664,
+          "initialProcessLifetimePeakPhysicalFootprintBytes" : 383813664,
+          "initialThermalState" : "nominal",
+          "memorySampleCount" : 1205,
+          "memorySamplingIntervalSeconds" : 0.05,
+          "processCPUSeconds" : 1.742806999999999,
+          "sampledPeakPhysicalFootprintBytes" : 1089177992
+        },
+        "stage" : "modelLoad",
+        "successful" : true
+      },
+      "firstTranscription" : {
+        "averageActiveCPUCores" : 1.0265738828229722,
+        "index" : 0,
+        "performance" : {
+          "date" : "2026-10-04T22:54:03Z",
+          "id" : "D4B3B025-AB6A-4BCF-AB70-4174AB05C008",
+          "model" : "parakeetPhonon",
+          "requestedBackend" : "Core ML CPU + Neural Engine; GPU disabled",
+          "resources" : {
+            "audioSeconds" : 5.855,
+            "elapsedSeconds" : 0.077402125,
+            "finalPhysicalFootprintBytes" : 411027368,
+            "finalProcessLifetimePeakPhysicalFootprintBytes" : 1089243528,
+            "finalThermalState" : "fair",
+            "initialPhysicalFootprintBytes" : 1089177992,
+            "initialProcessLifetimePeakPhysicalFootprintBytes" : 1089177992,
+            "initialThermalState" : "fair",
+            "memorySampleCount" : 3,
+            "memorySamplingIntervalSeconds" : 0.05,
+            "processCPUSeconds" : 0.07945899999999906,
+            "sampledPeakPhysicalFootprintBytes" : 1089177992
+          },
+          "stage" : "transcription",
+          "successful" : true
+        },
+        "realTimeFactor" : 0.013219833475661826,
+        "transcript" : "mister Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+        "wordErrorRate" : 0,
+        "wordErrors" : {
+          "deletions" : 0,
+          "hypothesisWordCount" : 17,
+          "insertions" : 0,
+          "referenceWordCount" : 17,
+          "substitutions" : 0
+        }
+      },
+      "installedStorageAfterRuns" : {
+        "allocatedFileBytes" : 374476800,
+        "logicalFileBytes" : 357726107,
+        "regularFileCount" : 22
+      },
+      "installedStorageBeforeLoad" : {
+        "allocatedFileBytes" : 374476800,
+        "logicalFileBytes" : 357726107,
+        "regularFileCount" : 22
+      },
+      "modelID" : "phonon2",
+      "modelName" : "Phonon-2",
+      "publishedDownloadBytes" : 357573278,
+      "repository" : "FluidInference\/phonon-2-coreml",
+      "revision" : "a812a0dfef205660787ef6234317ab79acf4d5d6",
+      "status" : "completed",
+      "unloadAndSettle" : {
+        "elapsedSeconds" : 1.003718834,
+        "finalPhysicalFootprintBytes" : 42502008,
+        "finalProcessLifetimePeakPhysicalFootprintBytes" : 1089243528,
+        "finalThermalState" : "fair",
+        "initialPhysicalFootprintBytes" : 411223976,
+        "initialProcessLifetimePeakPhysicalFootprintBytes" : 1089243528,
+        "initialThermalState" : "fair",
+        "memorySampleCount" : 20,
+        "memorySamplingIntervalSeconds" : 0.05,
+        "processCPUSeconds" : 0.005577000000000609,
+        "sampledPeakPhysicalFootprintBytes" : 411223976
+      },
+      "warmTranscriptions" : [
+        {
+          "averageActiveCPUCores" : 0.8676968437812735,
+          "index" : 1,
+          "performance" : {
+            "date" : "2026-10-04T22:54:03Z",
+            "id" : "B08463A9-8746-4484-863D-6793473AD89E",
+            "model" : "parakeetPhonon",
+            "requestedBackend" : "Core ML CPU + Neural Engine; GPU disabled",
+            "resources" : {
+              "audioSeconds" : 5.855,
+              "elapsedSeconds" : 0.067895833,
+              "finalPhysicalFootprintBytes" : 411092904,
+              "finalProcessLifetimePeakPhysicalFootprintBytes" : 1089243528,
+              "finalThermalState" : "fair",
+              "initialPhysicalFootprintBytes" : 411060136,
+              "initialProcessLifetimePeakPhysicalFootprintBytes" : 1089243528,
+              "initialThermalState" : "fair",
+              "memorySampleCount" : 3,
+              "memorySamplingIntervalSeconds" : 0.05,
+              "processCPUSeconds" : 0.05891300000000044,
+              "sampledPeakPhysicalFootprintBytes" : 411092904
+            },
+            "stage" : "transcription",
+            "successful" : true
+          },
+          "realTimeFactor" : 0.011596214005123825,
+          "transcript" : "mister Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+          "wordErrorRate" : 0,
+          "wordErrors" : {
+            "deletions" : 0,
+            "hypothesisWordCount" : 17,
+            "insertions" : 0,
+            "referenceWordCount" : 17,
+            "substitutions" : 0
+          }
+        },
+        {
+          "averageActiveCPUCores" : 0.978439594708221,
+          "index" : 2,
+          "performance" : {
+            "date" : "2026-10-04T22:54:03Z",
+            "id" : "D30B9B88-9121-43E1-832D-B0734FDB832D",
+            "model" : "parakeetPhonon",
+            "requestedBackend" : "Core ML CPU + Neural Engine; GPU disabled",
+            "resources" : {
+              "audioSeconds" : 5.855,
+              "elapsedSeconds" : 0.075487542,
+              "finalPhysicalFootprintBytes" : 411191208,
+              "finalProcessLifetimePeakPhysicalFootprintBytes" : 1089243528,
+              "finalThermalState" : "fair",
+              "initialPhysicalFootprintBytes" : 411092904,
+              "initialProcessLifetimePeakPhysicalFootprintBytes" : 1089243528,
+              "initialThermalState" : "fair",
+              "memorySampleCount" : 3,
+              "memorySamplingIntervalSeconds" : 0.05,
+              "processCPUSeconds" : 0.07385999999999981,
+              "sampledPeakPhysicalFootprintBytes" : 411191208
+            },
+            "stage" : "transcription",
+            "successful" : true
+          },
+          "realTimeFactor" : 0.012892833817250213,
+          "transcript" : "mister Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+          "wordErrorRate" : 0,
+          "wordErrors" : {
+            "deletions" : 0,
+            "hypothesisWordCount" : 17,
+            "insertions" : 0,
+            "referenceWordCount" : 17,
+            "substitutions" : 0
+          }
+        },
+        {
+          "averageActiveCPUCores" : 1.006972666128655,
+          "index" : 3,
+          "performance" : {
+            "date" : "2026-10-04T22:54:03Z",
+            "id" : "C3E430BE-AC3D-4DA0-A35E-CAE24D22A63F",
+            "model" : "parakeetPhonon",
+            "requestedBackend" : "Core ML CPU + Neural Engine; GPU disabled",
+            "resources" : {
+              "audioSeconds" : 5.855,
+              "elapsedSeconds" : 0.070853959,
+              "finalPhysicalFootprintBytes" : 411191208,
+              "finalProcessLifetimePeakPhysicalFootprintBytes" : 1089243528,
+              "finalThermalState" : "fair",
+              "initialPhysicalFootprintBytes" : 411191208,
+              "initialProcessLifetimePeakPhysicalFootprintBytes" : 1089243528,
+              "initialThermalState" : "fair",
+              "memorySampleCount" : 3,
+              "memorySamplingIntervalSeconds" : 0.05,
+              "processCPUSeconds" : 0.07134800000000041,
+              "sampledPeakPhysicalFootprintBytes" : 411191208
+            },
+            "stage" : "transcription",
+            "successful" : true
+          },
+          "realTimeFactor" : 0.012101444748078564,
+          "transcript" : "mister Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+          "wordErrorRate" : 0,
+          "wordErrors" : {
+            "deletions" : 0,
+            "hypothesisWordCount" : 17,
+            "insertions" : 0,
+            "referenceWordCount" : 17,
+            "substitutions" : 0
+          }
+        }
+      ]
+    }
+  ],
+  "requestedWarmRunsPerModel" : 3,
+  "runtime" : "FluidAudio 0.17.5 \/ Core ML",
+  "schemaVersion" : 1,
+  "startedAt" : "2026-10-04T22:52:08Z"
+}
