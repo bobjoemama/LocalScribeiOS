@@ -1,7 +1,7 @@
 import Foundation
 
 public enum SpeechModel: String, Codable, CaseIterable, Identifiable, Sendable {
-    case parakeetPhonon, parakeetPhononG4, parakeetPhononG1, parakeetUltra, parakeetRedux
+    case parakeetPhonon, parakeetPhononG4, parakeetPhononG1, parakeetUltra, parakeetRedux, parakeetRealtimeEOU
     public var id: String { rawValue }
     public var name: String {
         switch self {
@@ -10,6 +10,7 @@ public enum SpeechModel: String, Codable, CaseIterable, Identifiable, Sendable {
         case .parakeetPhononG4: "Phonon-2 · compact"
         case .parakeetPhononG1: "Phonon-2 · smallest"
         case .parakeetRedux: "Parakeet Redux"
+        case .parakeetRealtimeEOU: "Parakeet Realtime"
         }
     }
     public var downloadSize: String {
@@ -19,9 +20,10 @@ public enum SpeechModel: String, Codable, CaseIterable, Identifiable, Sendable {
         case .parakeetPhononG4: "About 284 MB"
         case .parakeetPhononG1: "About 213 MB"
         case .parakeetRedux: "About 220 MB"
+        case .parakeetRealtimeEOU: "About 224 MB"
         }
     }
-    public var languages: String { [.parakeetPhonon, .parakeetPhononG4, .parakeetPhononG1].contains(self) ? "English" : "25 European languages" }
+    public var languages: String { [.parakeetPhonon, .parakeetPhononG4, .parakeetPhononG1, .parakeetRealtimeEOU].contains(self) ? "English" : "25 European languages" }
     public var detail: String {
         switch self {
         case .parakeetUltra: "A larger local engine to compare for recognition quality. CPU and Neural Engine execution requested."
@@ -29,6 +31,7 @@ public enum SpeechModel: String, Codable, CaseIterable, Identifiable, Sendable {
         case .parakeetPhononG4: "The same learned weights in a smaller encoder graph. Measure the storage and speed tradeoff."
         case .parakeetPhononG1: "The smallest exact-weight Phonon-2 graph. May prepare and transcribe more slowly."
         case .parakeetRedux: "A compact download with multilingual speech recognition."
+        case .parakeetRealtimeEOU: "Streaming with cached audio state and frequent text updates. English text has no automatic punctuation."
         }
     }
 }
@@ -50,6 +53,48 @@ public protocol LocalTranscriptionEngine: AnyObject, Sendable {
 
 public extension LocalTranscriptionEngine {
     func unload() async {}
+}
+
+/// Reports a runtime capability for its actual configuration of this model.
+/// Hardware eligibility does not grant iOS background execution time or audio
+/// session permission. Engines without this capability are foreground-only.
+public protocol BackgroundInferenceReportingEngine: LocalTranscriptionEngine {
+    func supportsBackgroundInference(for model: SpeechModel) async -> Bool
+}
+
+public enum ModelPreparationStage: String, Codable, Sendable {
+    case checkingInstallation, verifyingFiles, loadingCoreML, initializingRecognizer, ready
+}
+
+public protocol ModelPreparationReportingEngine: LocalTranscriptionEngine {
+    func preparationStage() async -> ModelPreparationStage?
+}
+
+/// A complete current snapshot. Replacing this snapshot avoids duplicating words
+/// when the recognizer revises the boundary between confirmed and provisional text.
+public struct SpeechTranscriptUpdate: Equatable, Sendable {
+    public let confirmedText: String
+    public let volatileText: String
+    public init(confirmedText: String, volatileText: String) {
+        self.confirmedText = confirmedText
+        self.volatileText = volatileText
+    }
+    public var text: String {
+        [confirmedText, volatileText].filter { !$0.isEmpty }.joined(separator: " ")
+    }
+}
+
+public protocol StreamingLocalTranscriptionEngine: LocalTranscriptionEngine {
+    /// Begin one utterance using the already-prepared model; never download.
+    func beginStreaming(onUpdate: @escaping @Sendable (SpeechTranscriptUpdate) -> Void) async throws
+    /// Supply ordered mono 16 kHz PCM in batches of at most 32,000 samples.
+    /// Await each call before sending another. Completion acknowledges processing,
+    /// or bounded retention until enough context is available; audio is never dropped.
+    func appendStreaming(samples: [Float]) async throws
+    /// Flush all admitted audio and return the complete deduplicated utterance.
+    func finishStreaming() async throws -> String
+    /// Cancel the utterance and settle inference before reusing its loaded model.
+    func cancelStreaming() async
 }
 
 public struct TranscriptEntry: Codable, Identifiable, Equatable, Sendable {

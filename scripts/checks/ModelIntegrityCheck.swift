@@ -26,9 +26,11 @@ import Foundation
         try tampered.write(to: root.appendingPathComponent("weight.bin"))
         try mustReject(entry())
         let manifest = try JSONDecoder().decode(ModelIntegrityManifest.self, from: Data(contentsOf: URL(fileURLWithPath: "Resources/model-integrity.json")))
-        precondition(manifest.models.count == 5)
+        let expectedFileCounts = ["phonon2": 18, "phonon2-g4": 18, "phonon2-g1": 18,
+                                  "ultra": 18, "redux": 18, "parakeet-eou-320ms": 16]
+        precondition(Set(manifest.models.map(\.id)) == Set(expectedFileCounts.keys))
         for model in manifest.models {
-            precondition(model.revision.count == 40 && model.files.count == 18)
+            precondition(model.revision.count == 40 && model.files.count == expectedFileCounts[model.id])
             precondition(model.files.reduce(Int64(0)) { $0 + $1.size } == model.totalBytes)
             precondition(Set(model.files.map(\.path)).count == model.files.count)
         }

@@ -31,6 +31,8 @@
 	<string>$(SWIFT_OPTIMIZATION_LEVEL)</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>LocalScribe uses your microphone only when you record or explicitly enable a keyboard session. Speech stays on your device.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

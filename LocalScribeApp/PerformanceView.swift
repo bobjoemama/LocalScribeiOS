@@ -107,7 +107,7 @@ private struct MeasurementDetailsView: View {
                 Text("Use Instruments on a physical device to measure hardware utilization, power, and system memory pressure. The requested compute configuration does not prove which operations ran on the Neural Engine.")
             }
             Section("Model memory") {
-                Text("Models stay loaded for 60 seconds between foreground dictations, then unload. An inactive background app releases its model. A keyboard microphone session keeps the model available until the session ends or iOS requests memory.")
+                Text("The selected model stays ready while this app is open. It is released when you change models, iOS requests memory, or the app goes into the background without a keyboard microphone session.")
             }
         }.navigationTitle("Measurement details").navigationBarTitleDisplayMode(.inline)
     }

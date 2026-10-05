@@ -1,4 +1,5 @@
 import SwiftUI
+import AppIntents
 import UIKit
 import LocalScribeCore
 
@@ -51,6 +52,13 @@ struct LocalScribeRootView: View {
             if phase == .active { controller.setForeground(true) }
             if phase == .background { controller.setForeground(false) }
         }
+        .onAppear { if controller.actionButtonRecording { tab = 0 } }
+        .onChange(of: controller.actionButtonRecording) { _, recording in
+            if recording { tab = 0 }
+        }
+        .onOpenURL { url in
+            if url.scheme == "localscribe", url.host == "dictation" { tab = 0 }
+        }
     }
 }
 
@@ -61,84 +69,218 @@ private struct DictateView: View {
     @FocusState private var editing: Bool
     private var ready: Bool { controller.installedModels.contains(controller.selectedModel) }
     private var recording: Bool { controller.phase == .recording }
-    private var status: String {
-        switch controller.phase {
-        case .idle: ready ? "Ready" : "No model installed"
-        case .preparing: "Preparing…"
-        case .recording: "Recording"
-        case .transcribing: "Transcribing…"
-        }
+    private var active: Bool { recording || controller.phase == .transcribing }
+    private var textToCopy: String { active ? controller.partialText : controller.transcript }
+    private var canSelectModel: Bool {
+        controller.phase == .idle && controller.downloadingModel == nil && !controller.keyboardSessionActive
     }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    LabeledContent("Status", value: status)
-                    LabeledContent("Model", value: controller.selectedModel.name)
-                    if recording {
-                        LabeledContent("Duration", value: duration(controller.elapsed))
-                        ProgressView(value: Double(controller.level))
-                            .accessibilityLabel("Microphone level")
-                            .accessibilityValue("\(Int(controller.level * 100)) percent")
+            VStack(spacing: 0) {
+                if active { livePreview }
+                VStack(alignment: .leading, spacing: 4) {
+                    modelMenu
+                    if controller.phase == .idle, let modelStatus = controller.modelStatus {
+                        modelLoadingStatus(modelStatus).padding(.bottom, 4)
                     }
-                    if controller.isBusy {
-                        HStack(spacing: 12) {
-                            ProgressView()
-                            Text(status).foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Button {
-                            editing = false
-                            controller.saveTranscriptEdits()
-                            if !ready { openModels() }
-                            else { Task { if recording { await controller.stopRecording() } else { await controller.startRecording() } } }
-                        } label: {
-                            Label(recording ? "Stop" : ready ? "Record" : "Choose model", systemImage: recording ? "stop.fill" : ready ? "mic.fill" : "arrow.down.circle")
-                                .frame(maxWidth: .infinity).padding(.vertical, 6)
-                        }
-                        .buttonStyle(.borderedProminent).controlSize(.large)
-                        .disabled(controller.downloadingModel != nil)
-                        .accessibilityLabel(recording ? "Stop recording and transcribe" : ready ? "Record" : "Choose model")
-                    }
-                } footer: {
-                    Text("Transcription starts after you stop. Record up to 2 minutes. Audio stays on this iPhone and is not saved.")
-                }
-                if !controller.transcript.isEmpty {
-                    Section("Transcript") {
-                        TextEditor(text: $controller.transcript)
-                            .font(.body).frame(minHeight: 220).focused($editing)
-                            .accessibilityLabel("Editable transcript")
-                        ViewThatFits(in: .horizontal) {
-                            HStack(spacing: 24) { transcriptActions }
-                            VStack(alignment: .leading, spacing: 16) { transcriptActions }
-                        }.buttonStyle(.borderless)
-                    }
-                }
-                if let expiry = controller.keyboardSessionExpiresAt {
-                    Section("Keyboard microphone") {
-                        LabeledContent("Time remaining") { Text(expiry, style: .timer).monospacedDigit() }
-                        Button("End session") { Task { await controller.finishKeyboardSession() } }
-                            .disabled(controller.isBusy)
-                    }
-                }
+                }.padding(.horizontal, 20).padding(.vertical, 8)
+                Divider()
+                transcriptWorkspace
             }
-            .navigationTitle("Dictate")
+            .background(Color(uiColor: .systemBackground))
+            .safeAreaInset(edge: .bottom, spacing: 0) { recordingControls }
+            .navigationTitle("Dictate").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if editing { ToolbarItem(placement: .keyboard) { Button("Done") { editing = false; controller.saveTranscriptEdits() } } }
+                if editing {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { editing = false; controller.saveTranscriptEdits() }
+                    }
+                }
             }
             .onChange(of: editing) { _, focused in if !focused { controller.saveTranscriptEdits() } }
+            .onChange(of: controller.transcript) { _, _ in copied = false }
+            .onChange(of: controller.partialText) { _, _ in copied = false }
+        }
+    }
+
+    private var modelMenu: some View {
+        Menu {
+            Picker("Model", selection: $controller.selectedModel) {
+                ForEach(SpeechModel.allCases) { model in
+                    Text(controller.installedModels.contains(model) ? model.name : model.name + " (not downloaded)")
+                        .tag(model).disabled(!controller.installedModels.contains(model))
+                }
+            }.pickerStyle(.inline)
+            Divider()
+            Button("Manage models", action: openModels)
+        } label: {
+            HStack(spacing: 8) {
+                Text(controller.selectedModel.name).font(.subheadline)
+                Image(systemName: "chevron.up.chevron.down").font(.caption)
+                Spacer(minLength: 0)
+            }.frame(minHeight: 44)
+        }
+        .disabled(!canSelectModel)
+        .accessibilityLabel("Speech model")
+        .accessibilityValue(controller.selectedModel.name)
+    }
+
+    @ViewBuilder private var transcriptWorkspace: some View {
+        if active {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if !controller.partialText.isEmpty {
+                            Text(controller.partialText).font(.body).textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading).padding(20)
+                                .accessibilityLabel("Live transcript")
+                                .accessibilityValue(controller.partialText)
+                        } else {
+                            Text(recording ? "Listening…" : "Finishing transcription…")
+                                .font(.body).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading).padding(20)
+                        }
+                        Color.clear.frame(height: 1).id("live-transcript-end")
+                    }
+                }
+                .onChange(of: controller.partialText) { _, _ in
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("live-transcript-end", anchor: .bottom)
+                    }
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if !controller.transcript.isEmpty {
+            TextEditor(text: $controller.transcript).font(.body).focused($editing)
+                .scrollContentBackground(.hidden).padding(.horizontal, 16).padding(.top, 12)
+                .accessibilityLabel("Editable transcript")
+        } else {
+            ScrollView {
+                Text(ready ? "Tap Record to begin." : "Choose a downloaded model to begin.")
+                    .foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(20)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// The in-app preview sits immediately below the top bar. Outside this app,
+    /// the same bounded text is presented by the system's expanded Live Activity.
+    private var livePreview: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(recording ? "Recording" : "Transcribing", systemImage: recording ? "mic.fill" : "waveform")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(recording ? Color.red : Color.secondary)
+                Spacer()
+                Text(duration(controller.elapsed)).font(.caption.monospacedDigit())
+            }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(controller.partialText.isEmpty ? (recording ? "Listening…" : "Finishing transcription…") : DictationTranscriptTail.make(from: controller.partialText))
+                            .font(.body)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Color.clear.frame(height: 1).id("preview-end")
+                    }
+                }
+                .frame(maxHeight: 120)
+                .onChange(of: controller.partialText) { _, _ in
+                    proxy.scrollTo("preview-end", anchor: .bottom)
+                }
+            }
+        }
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Live dictation preview")
+    }
+
+    private var recordingControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if recording {
+                HStack(spacing: 16) {
+                    Text("Recording \(duration(controller.elapsed))").font(.footnote).monospacedDigit()
+                    ProgressView(value: Double(controller.level))
+                        .accessibilityLabel("Microphone level")
+                        .accessibilityValue("\(Int(controller.level * 100)) percent")
+                }
+            }
+            if controller.phase != .idle, let modelStatus = controller.modelStatus {
+                modelLoadingStatus(modelStatus)
+            } else if controller.phase == .preparing {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Preparing microphone…").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { primaryAction; transcriptActions }
+                VStack(alignment: .leading, spacing: 12) {
+                    primaryAction
+                    HStack(spacing: 20) { transcriptActions }
+                }
+            }
+            if let expiry = controller.keyboardSessionExpiresAt {
+                HStack {
+                    Text(controller.phase == .idle ? "Keyboard idle timeout" : "Keyboard microphone enabled")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if controller.phase == .idle {
+                        Text(expiry, style: .timer).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("End") { Task { await controller.finishKeyboardSession() } }
+                        .font(.caption).disabled(controller.isBusy)
+                }
+            }
+            Text("Audio stays on this iPhone and is not saved.").font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 16)
+        .background(.bar).overlay(alignment: .top) { Divider() }
+    }
+
+    private func modelLoadingStatus(_ status: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(status).font(.footnote).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var primaryAction: some View {
+        if controller.phase == .preparing {
+            Button("Cancel") { Task { await controller.cancelPreparation() } }
+                .buttonStyle(.bordered).controlSize(.large)
+        } else if controller.phase == .transcribing {
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("Finishing…").foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Button {
+                editing = false
+                controller.saveTranscriptEdits()
+                if !ready { openModels() }
+                else { Task { if recording { await controller.stopRecording() } else { await controller.startRecording() } } }
+            } label: {
+                Label(recording ? "Stop" : ready ? "Record" : "Choose model", systemImage: recording ? "stop.fill" : ready ? "mic.fill" : "arrow.down.circle")
+                    .frame(maxWidth: .infinity).padding(.vertical, 4)
+            }
+            .buttonStyle(.borderedProminent).controlSize(.large)
+            .disabled(controller.downloadingModel != nil)
+            .accessibilityLabel(recording ? "Stop recording and finish transcription" : ready ? "Record" : "Choose model")
         }
     }
 
     @ViewBuilder private var transcriptActions: some View {
         Button {
-            controller.saveTranscriptEdits()
-            UIPasteboard.general.string = controller.transcript
+            if !active { controller.saveTranscriptEdits() }
+            UIPasteboard.general.string = textToCopy
             copied = true
             Task { try? await Task.sleep(for: .seconds(2)); copied = false }
         } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
-        ShareLink(item: controller.transcript) { Label("Share", systemImage: "square.and.arrow.up") }
+            .buttonStyle(.bordered).controlSize(.large).disabled(textToCopy.isEmpty)
+        ShareLink(item: textToCopy) { Label("Share", systemImage: "square.and.arrow.up") }
+            .buttonStyle(.bordered).controlSize(.large).disabled(textToCopy.isEmpty)
     }
 }
 
@@ -321,9 +463,12 @@ private struct SettingsView: View {
                 }
                 Section {
                     if let expiry = controller.keyboardSessionExpiresAt {
-                        LabeledContent("Time remaining") { Text(expiry, style: .timer).monospacedDigit() }
+                        LabeledContent("Idle timeout") {
+                            if controller.phase == .idle { Text(expiry, style: .timer).monospacedDigit() }
+                            else { Text("5 minutes") }
+                        }
                     }
-                    Button(controller.keyboardSessionActive ? "End session" : "Enable for 5 minutes") {
+                    Button(controller.keyboardSessionActive ? "End session" : "Enable microphone") {
                         Task {
                             if controller.keyboardSessionActive { await controller.finishKeyboardSession() }
                             else { await controller.enableKeyboardSession() }
@@ -333,7 +478,10 @@ private struct SettingsView: View {
                 } header: {
                     Text("Keyboard microphone")
                 } footer: {
-                    Text("The microphone stays on during the session. Audio between dictations is discarded. At expiry, recording stops and captured speech finishes processing.")
+                    Text("The microphone stays on until you end the session or stop dictating for 5 minutes. Audio between dictations is discarded. Realtime recognizes speech in the background; Neural Engine models wait until LocalScribe is open.")
+                }
+                Section {
+                    NavigationLink("Action Button & shortcuts") { ActionButtonSetupView() }
                 }
                 Section {
                     Picker("Appearance", selection: $appearance) {
@@ -353,13 +501,42 @@ private struct SettingsView: View {
     }
 }
 
+private struct ActionButtonSetupView: View {
+    var body: some View {
+        Form {
+            Section {
+                Text("1. Open iPhone Settings → Action Button → Shortcut → Choose a Shortcut.")
+                Text("2. Choose LocalScribe → Dictate and Copy.")
+                Text("3. Hold once to open LocalScribe and record. Release and speak, then hold again to stop and copy.")
+                ShortcutsLink().shortcutsLinkStyle(.automatic)
+            } header: {
+                Text("Action Button")
+            } footer: {
+                Text("Releasing the button does not stop recording. LocalScribe opens when you start or stop; paste the finished text in any app.")
+            }
+            Section {
+                Text("The Dynamic Island shows a recording timer while the microphone is active.")
+                Text("Touch and hold the Dynamic Island to see the live preview and Stop button. Stopping opens LocalScribe to finish and copy. Transcript text is never shown on the Lock Screen.")
+            } header: {
+                Text("Live Activity")
+            } footer: {
+                Text("Action Button recording requires Live Activities. Enable them in iPhone Settings → Apps → LocalScribe. You can still record directly in Dictate when they are off.")
+            }
+            Section("Local transcription") {
+                Text("Realtime runs on the CPU and continues recognition during background recording while iOS permits audio capture. Models that use the Neural Engine pause recognition until you return to LocalScribe.")
+                Text("There is no fixed recording limit. If recognition cannot keep up and the audio queue fills, recording stops and reports the missing audio. Open LocalScribe to finish and copy.")
+            }
+        }.navigationTitle("Action Button").navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 private struct KeyboardSetupView: View {
     var body: some View {
         Form {
             Section("Setup") {
                 Text("1. Open iPhone Settings → General → Keyboard → Keyboards → Add New Keyboard, then choose LocalScribe.")
                 Text("2. Allow Full Access for communication with the LocalScribe app. The keyboard does not use a network transcription service.")
-                Text("3. Open LocalScribe and enable a 5-minute microphone session in Settings.")
+                Text("3. Open LocalScribe and enable the keyboard microphone in Settings. The session ends after 5 minutes without dictation.")
                 Text("4. Switch to another app and select the LocalScribe keyboard to record and insert text.")
             }
             Section("Microphone access") {

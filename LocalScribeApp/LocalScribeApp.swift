@@ -14,7 +14,7 @@ struct LocalScribeApplication: App {
                     VStack(spacing: 16) {
                         ProgressView()
                         Text(status).font(.headline)
-                        Text("Local device benchmark · microphone is off").font(.caption)
+                        Text(context.developerRunDescription).font(.caption)
                     }
                     .padding(28).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
                 }
@@ -28,19 +28,46 @@ struct LocalScribeApplication: App {
 private final class AppContext: ObservableObject {
     let controller: AppController
     let keyboardCoordinator: KeyboardSessionCoordinator
+    let actionBridge: DictationActionBridge
     @Published private(set) var benchmarkStatus: String?
+    @Published private(set) var developerRunDescription = "Local device benchmark · microphone is off"
     private var benchmarkTask: Task<Void, Never>?
     init() {
-        do {
-            controller = AppController(engine: try LocalModelEngine())
-        } catch {
-            controller = AppController(engine: FailedModelEngine(message: error.localizedDescription))
-            controller.errorMessage = error.localizedDescription
-        }
+        let arguments = ProcessInfo.processInfo.arguments
+        let engine: any LocalTranscriptionEngine
+        var startupError: String?
+        do { engine = try LocalModelEngine() }
+        catch { engine = FailedModelEngine(message: error.localizedDescription); startupError = error.localizedDescription }
+        #if DEBUG
+        let developerRun = arguments.contains("--verify-dictation") || arguments.contains("--benchmark-models")
+        #else
+        let developerRun = false
+        #endif
+        controller = AppController(engine: engine, verificationMode: developerRun)
+        if let startupError { controller.errorMessage = startupError }
         keyboardCoordinator = KeyboardSessionCoordinator(controller: controller)
+        actionBridge = DictationActionBridge(controller: controller)
         #if DEBUG
         do {
-            if let runner = try BenchmarkRunner(arguments: ProcessInfo.processInfo.arguments) {
+            if let verification = try RecordingVerificationRunner(arguments: arguments) {
+                benchmarkStatus = "Preparing dictation verification"
+                developerRunDescription = arguments.contains("--verify-long-microphone") ? "Five-second Stop check and 125-second microphone check, discarded; public speech fixture recognition" : "Five seconds of microphone capture, discarded; public speech fixture recognition"
+                benchmarkTask = Task { [weak self] in
+                    let originalIdleTimerSetting = UIApplication.shared.isIdleTimerDisabled
+                    UIApplication.shared.isIdleTimerDisabled = true
+                    defer { UIApplication.shared.isIdleTimerDisabled = originalIdleTimerSetting }
+                    do {
+                        let output = try await verification.run(engine: engine) { [weak self] status in
+                            Task { @MainActor in self?.benchmarkStatus = status }
+                        }
+                        self?.benchmarkStatus = "Verification saved locally: \(output.lastPathComponent)"
+                        self?.developerRunDescription = "Relaunch LocalScribe normally to dictate"
+                    } catch {
+                        self?.benchmarkStatus = "Verification failed: \(error.localizedDescription)"
+                        self?.developerRunDescription = "Relaunch LocalScribe normally to dictate"
+                    }
+                }
+            } else if let runner = try BenchmarkRunner(arguments: arguments) {
                 benchmarkStatus = "Preparing benchmark"
                 benchmarkTask = Task { [weak self] in
                     let originalIdleTimerSetting = UIApplication.shared.isIdleTimerDisabled
@@ -54,7 +81,7 @@ private final class AppContext: ObservableObject {
                         }
                         self?.controller.errorMessage = "Benchmark saved locally: \(output.lastPathComponent)"
                     } catch { self?.controller.errorMessage = "Benchmark failed: \(error.localizedDescription)" }
-                    self?.benchmarkStatus = nil
+                    self?.benchmarkStatus = "Benchmark finished. Relaunch LocalScribe normally to dictate."
                     await self?.controller.refreshInstalledModels()
                 }
             }

@@ -568,6 +568,119 @@
         }
       ],
       "totalBytes": 212694539
+    },
+    {
+      "id": "parakeet-eou-320ms",
+      "repository": "FluidInference/parakeet-realtime-eou-120m-coreml",
+      "revision": "40a23f4c0b333aa17ad8c0f2ea47ec2347f2f355",
+      "license": "NVIDIA-Open-Model-License",
+      "totalBytes": 224238270,
+      "files": [
+        {
+          "path": "decoder.mlmodelc/analytics/coremldata.bin",
+          "size": 243,
+          "gitBlobSHA1": "c6f51dedd2638184c5a2d71512339ceea086abc0",
+          "remotePath": "320ms/decoder.mlmodelc/analytics/coremldata.bin",
+          "sha256": "3996975a8cbc1949159c55605b3132b39b2484f51acbd55d796d93c70de02b49"
+        },
+        {
+          "path": "decoder.mlmodelc/coremldata.bin",
+          "size": 497,
+          "gitBlobSHA1": "71936e61ffe7697e4af55bae8870d95c1fbb66c5",
+          "remotePath": "320ms/decoder.mlmodelc/coremldata.bin",
+          "sha256": "c3ccbff963d8cf07e2be2bd56ea3384a89ea49628922c6bd95ff62e2ae57dc34"
+        },
+        {
+          "path": "decoder.mlmodelc/metadata.json",
+          "size": 3283,
+          "gitBlobSHA1": "3581673bcb062f7e0e1e0efa9f59edc5f218d50e",
+          "remotePath": "320ms/decoder.mlmodelc/metadata.json"
+        },
+        {
+          "path": "decoder.mlmodelc/model.mil",
+          "size": 7409,
+          "gitBlobSHA1": "5ead417fbdc13f8bf0c05a26039b2828503d4eca",
+          "remotePath": "320ms/decoder.mlmodelc/model.mil"
+        },
+        {
+          "path": "decoder.mlmodelc/weights/weight.bin",
+          "size": 7873600,
+          "gitBlobSHA1": "cde1618cbed235b421984a302289e3bdd7e3df02",
+          "remotePath": "320ms/decoder.mlmodelc/weights/weight.bin",
+          "sha256": "0b4cacecdcd9df79ab1e56de67230baf5a8664d2afe0bb8f3408eefa972cb2f4"
+        },
+        {
+          "path": "joint_decision.mlmodelc/analytics/coremldata.bin",
+          "size": 243,
+          "gitBlobSHA1": "ff9929e12bae25c509655bda0ebda6b9fe13fade",
+          "remotePath": "320ms/joint_decision.mlmodelc/analytics/coremldata.bin",
+          "sha256": "5bca32ad130dcad6605cc00044c752aa5b45ef57d14c17f2d1a2fa49d6cf55b5"
+        },
+        {
+          "path": "joint_decision.mlmodelc/coremldata.bin",
+          "size": 493,
+          "gitBlobSHA1": "1aa5afe7c02e93f9baba2757cad5c21f563157bf",
+          "remotePath": "320ms/joint_decision.mlmodelc/coremldata.bin",
+          "sha256": "22d4abc4625b935ee035b5f8ce7cb28d1041b9b01c12173e287bf4b5f5d99625"
+        },
+        {
+          "path": "joint_decision.mlmodelc/metadata.json",
+          "size": 3181,
+          "gitBlobSHA1": "a0a319857f429f5ec4b106397cd52ec354ef2e96",
+          "remotePath": "320ms/joint_decision.mlmodelc/metadata.json"
+        },
+        {
+          "path": "joint_decision.mlmodelc/model.mil",
+          "size": 9608,
+          "gitBlobSHA1": "172a7579866c84407b32b5f746b7f1ae132599d8",
+          "remotePath": "320ms/joint_decision.mlmodelc/model.mil"
+        },
+        {
+          "path": "joint_decision.mlmodelc/weights/weight.bin",
+          "size": 2794182,
+          "gitBlobSHA1": "ec3d2c1dea18b332fa1a3cd8d31981bae4e3f649",
+          "remotePath": "320ms/joint_decision.mlmodelc/weights/weight.bin",
+          "sha256": "7039b2010a269153f5a96edf28637f921a86ef8822f248f2d6712f7a6bce84b4"
+        },
+        {
+          "path": "streaming_encoder.mlmodelc/analytics/coremldata.bin",
+          "size": 243,
+          "gitBlobSHA1": "eec5bd02b4d1075885ea77fb1d5526138526e198",
+          "remotePath": "320ms/streaming_encoder.mlmodelc/analytics/coremldata.bin",
+          "sha256": "ae0a559f8d53c43fe13c5c142b15ca237b97812febde71a36475b7b9612baec5"
+        },
+        {
+          "path": "streaming_encoder.mlmodelc/coremldata.bin",
+          "size": 670,
+          "gitBlobSHA1": "4bd36c23d7283099ead6c7857659a4e1a4f70dc5",
+          "remotePath": "320ms/streaming_encoder.mlmodelc/coremldata.bin",
+          "sha256": "b57dfe32ed2acb0081f97d7a9e410117005823e3d2d995e21feb9e60775443c3"
+        },
+        {
+          "path": "streaming_encoder.mlmodelc/metadata.json",
+          "size": 5327,
+          "gitBlobSHA1": "4830f432c8a7079ceced0f4dbb661a775224824d",
+          "remotePath": "320ms/streaming_encoder.mlmodelc/metadata.json"
+        },
+        {
+          "path": "streaming_encoder.mlmodelc/model.mil",
+          "size": 655998,
+          "gitBlobSHA1": "7902d6696813c64c694517418f9a9bdd2ee40119",
+          "remotePath": "320ms/streaming_encoder.mlmodelc/model.mil"
+        },
+        {
+          "path": "streaming_encoder.mlmodelc/weights/weight.bin",
+          "size": 212865856,
+          "gitBlobSHA1": "15654dd70b3be49baf2409d7d99786b2bbfd35da",
+          "remotePath": "320ms/streaming_encoder.mlmodelc/weights/weight.bin",
+          "sha256": "ff553fcb4f4560cfce1e558e16bb9d856e4b4f6a4c08f800d5c126fce4196822"
+        },
+        {
+          "path": "vocab.json",
+          "size": 17437,
+          "gitBlobSHA1": "462081190dbb331a0dde13e99d5cfa99b302f0a7"
+        }
+      ]
     }
   ]
 }

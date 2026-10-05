@@ -25,7 +25,7 @@ struct BenchmarkRunner: Sendable {
         let identifiers = arguments[modelFlag + 1].split(separator: ",", omittingEmptySubsequences: false).map(String.init)
         guard !identifiers.isEmpty, identifiers.count <= SpeechModel.allCases.count,
               Set(identifiers).count == identifiers.count else {
-            throw BenchmarkError.invalidArguments("Use one to five distinct model IDs")
+            throw BenchmarkError.invalidArguments("Use one to six distinct model IDs")
         }
         models = try identifiers.map { id in
             switch id {
@@ -34,6 +34,7 @@ struct BenchmarkRunner: Sendable {
             case "phonon2-g1": .parakeetPhononG1
             case "ultra": .parakeetUltra
             case "redux": .parakeetRedux
+            case "eou320", "parakeet-eou-320ms": .parakeetRealtimeEOU
             default: throw BenchmarkError.invalidArguments("Unknown benchmark model: \(id)")
             }
         }
@@ -308,6 +309,7 @@ struct BenchmarkRunner: Sendable {
         case .parakeetPhononG1: "phonon2-g1"
         case .parakeetUltra: "ultra"
         case .parakeetRedux: "redux"
+        case .parakeetRealtimeEOU: "parakeet-eou-320ms"
         }
     }
 

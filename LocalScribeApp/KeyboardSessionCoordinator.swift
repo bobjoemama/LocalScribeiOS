@@ -38,6 +38,15 @@ final class KeyboardSessionCoordinator {
             return
         }
         guard expiration != expiresAt else { return }
+        if let expiration, let previous = expiresAt, sessionID != nil,
+           previous > Date() || controller?.phase == .recording {
+            // Activity extends the existing microphone lease. Keep utterance IDs,
+            // receipts and pending results valid instead of creating a new session.
+            expiresAt = expiration
+            expirationRequested = false
+            publish()
+            return
+        }
         if expiration == nil, preserveResult, sessionID != nil, let controller,
            result != nil || (controller.phase == .transcribing && (sawRecording || handlingCommand)) {
             // The microphone has already stopped. Keep only a bounded result-delivery lease.
@@ -103,7 +112,7 @@ final class KeyboardSessionCoordinator {
                 return
             }
         }
-        // Capture a result produced by the app's duration limit as well as a keyboard stop.
+        // Capture a result produced by an app interruption as well as a keyboard stop.
         if utteranceID != nil {
             if sawRecording && controller.phase == .idle && !handlingCommand {
                 sawRecording = false

@@ -1,0 +1,31 @@
+Parakeet Realtime EOU 120M, optional 320 ms streaming profile
+
+Licensed by NVIDIA Corporation under the NVIDIA Open Model License
+
+Original model: NVIDIA parakeet_realtime_eou_120m-v1
+https://huggingface.co/nvidia/parakeet_realtime_eou_120m-v1
+
+Core ML conversion: FluidInference
+https://huggingface.co/FluidInference/parakeet-realtime-eou-120m-coreml
+Pinned revision: 40a23f4c0b333aa17ad8c0f2ea47ec2347f2f355
+Selected artifacts: 320ms/streaming_encoder.mlmodelc, 320ms/decoder.mlmodelc,
+320ms/joint_decision.mlmodelc, and root vocab.json.
+LocalScribe changes: source bundle paths are mapped to a flat app-owned model
+installation directory; no weight modifications are made by this catalog.
+
+Model weights are downloaded separately by the user and are not distributed in
+this source repository. LocalScribe's source license does not replace the model
+license. The model produces English text without punctuation or capitalization.
+
+The unmodified public license text is archived in parakeet-eou-320ms-LICENSE.md.
+Source: https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license.md
+License version: October 24, 2025
+Retrieved: 2026-10-04
+SHA-256: f18df7c4b5433c0216e7c0e07605fa46f00bccab1e84dfe47e46589b4861a6ca
+
+This NOTICE is LocalScribe's attribution and provenance record, not a copy of an
+upstream NOTICE file; no upstream NOTICE or LICENSE file was present in the
+inspected pinned conversion repository. The model card links the NVIDIA terms.
+The public repository metadata reports gated=false and private=false, and the
+small required files were fetched without credentials or a click-through.
+Archiving the public license text does not record acceptance on anyone's behalf.

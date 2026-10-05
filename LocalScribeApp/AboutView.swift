@@ -14,7 +14,7 @@ struct AboutView: View {
                 sourceLink("FluidAudio source", "https://github.com/FluidInference/FluidAudio")
             }
             Section("Speech models") {
-                Text("The speech models use Creative Commons Attribution 4.0. All derive from NVIDIA’s Parakeet TDT 0.6B v3, with Core ML conversions by Fluid Inference.")
+                Text("Phonon-2, Ultra and Redux use Creative Commons Attribution 4.0 and derive from NVIDIA’s Parakeet TDT 0.6B v3. Core ML conversions are by Fluid Inference.")
                     .foregroundStyle(.secondary)
                 sourceLink("Original NVIDIA model", "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3")
                 NavigationLink("Parakeet Ultra") {
@@ -28,6 +28,14 @@ struct AboutView: View {
                 }
                 documentLink("CC BY 4.0 license", resource: "CC-BY-4.0")
                 sourceLink("CC BY 4.0 online", "https://creativecommons.org/licenses/by/4.0/")
+            }
+            Section("Parakeet Realtime") {
+                Text("Licensed by NVIDIA Corporation under the NVIDIA Open Model License")
+                    .foregroundStyle(.secondary)
+                documentLink("Model license", resource: "parakeet-eou-320ms-LICENSE")
+                documentLink("Model attribution", resource: "parakeet-eou-320ms-NOTICE")
+                sourceLink("Original model", "https://huggingface.co/nvidia/parakeet_realtime_eou_120m-v1")
+                sourceLink("Core ML conversion", "https://huggingface.co/FluidInference/parakeet-realtime-eou-120m-coreml")
             }
             Section {
                 documentLink("Third-party notices", resource: "THIRD_PARTY_NOTICES")
@@ -68,7 +76,9 @@ private struct BundledLegalDocument: View {
     private var text: String {
         let bundle = Bundle.main
         guard let url = bundle.url(forResource: resource, withExtension: "txt", subdirectory: "legal")
-                ?? bundle.url(forResource: resource, withExtension: "txt"),
+                ?? bundle.url(forResource: resource, withExtension: "txt")
+                ?? bundle.url(forResource: resource, withExtension: "md", subdirectory: "legal")
+                ?? bundle.url(forResource: resource, withExtension: "md"),
               let content = try? String(contentsOf: url, encoding: .utf8) else {
             return "This document could not be opened. About & credits includes links to the original licenses and model documentation."
         }

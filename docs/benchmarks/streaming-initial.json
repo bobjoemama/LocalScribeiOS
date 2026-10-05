@@ -1,0 +1,231 @@
+{
+  "schemaVersion": 1,
+  "deviceFamily": "iPhone 17 Pro Max",
+  "build": "optimized Debug (-O)",
+  "limitations": [
+    "One public LibriSpeech sentence repeated; not a broad accuracy benchmark.",
+    "Streaming audio supplied faster than real time. Update latency is accelerated submission latency.",
+    "Device thermal state was already serious before tests. No causal thermal attribution.",
+    "OS model caches were not reset; Realtime may have been prewarmed after its download before this measured launch.",
+    "No GPU/Neural Engine utilization, energy or system-wide memory-pressure measurement.",
+    "Pass checks workflow and bounds, not speech quality. Raw WER retains mr/mister spelling differences."
+  ],
+  "runs": [
+    {
+      "label": "Phonon-2 initial 3/2/1-second windows",
+      "model": "parakeetPhonon",
+      "hardwareCapture": {
+        "passed": true,
+        "capturedSamples": 79993,
+        "overflowSamples": 0,
+        "conversionFailures": 0,
+        "captureStoppedBeforePreparationReleased": true
+      },
+      "preparation": {
+        "elapsedSeconds": 69.895516292,
+        "finalPhysicalFootprintBytes": 728352896,
+        "finalProcessLifetimePeakPhysicalFootprintBytes": 728352896,
+        "finalThermalState": "serious",
+        "initialPhysicalFootprintBytes": 21432088,
+        "initialProcessLifetimePeakPhysicalFootprintBytes": 22103832,
+        "initialThermalState": "serious",
+        "memorySampleCount": 1313,
+        "memorySamplingIntervalSeconds": 0.05,
+        "processCPUSeconds": 1.801485,
+        "sampledPeakPhysicalFootprintBytes": 728352896
+      },
+      "streams": {
+        "shortStream": {
+          "audioSeconds": 5.855,
+          "finalTailSamples": 29680,
+          "firstNonemptyUpdateAfterSeconds": 0.0856962083344115,
+          "fixtureID": "librispeech-dev-clean-1272-128104-0000",
+          "maximumCaptureFIFOQueuedSamples": 32000,
+          "maximumSubmittedChunkSamples": 32000,
+          "nonemptyChangedUpdateCount": 2,
+          "nonemptyChangedUpdatesBeforeFinish": 1,
+          "passed": true,
+          "realTimeFactor": 0.029099139026473098,
+          "repetitions": 1,
+          "resources": {
+            "audioSeconds": 5.855,
+            "elapsedSeconds": 0.170375459,
+            "finalPhysicalFootprintBytes": 419170192,
+            "finalProcessLifetimePeakPhysicalFootprintBytes": 732792960,
+            "finalThermalState": "serious",
+            "initialPhysicalFootprintBytes": 563185696,
+            "initialProcessLifetimePeakPhysicalFootprintBytes": 732792960,
+            "initialThermalState": "serious",
+            "memorySampleCount": 5,
+            "memorySamplingIntervalSeconds": 0.05,
+            "processCPUSeconds": 0.1464890000000003,
+            "sampledPeakPhysicalFootprintBytes": 563185696
+          },
+          "submissionConcurrencyMaximum": 1,
+          "suppliedSamples": 93680,
+          "timingContext": "Elapsed/update latency for accelerated public fixture submission; not wall-clock readiness while a person speaks",
+          "timingValid": true,
+          "updateCount": 3,
+          "updatesBeforeFinish": 2,
+          "wordErrorRate": 0,
+          "wordErrors": {
+            "deletions": 0,
+            "hypothesisWordCount": 17,
+            "insertions": 0,
+            "referenceWordCount": 17,
+            "substitutions": 0
+          }
+        },
+        "longStream": {
+          "audioSeconds": 128.81,
+          "finalTailSamples": 12960,
+          "firstNonemptyUpdateAfterSeconds": 0.07244137499947101,
+          "fixtureID": "librispeech-dev-clean-1272-128104-0000",
+          "maximumCaptureFIFOQueuedSamples": 32000,
+          "maximumSubmittedChunkSamples": 32000,
+          "nonemptyChangedUpdateCount": 40,
+          "nonemptyChangedUpdatesBeforeFinish": 39,
+          "passed": true,
+          "realTimeFactor": 0.02577574657247108,
+          "repetitions": 22,
+          "resources": {
+            "audioSeconds": 128.81,
+            "elapsedSeconds": 3.320173916,
+            "finalPhysicalFootprintBytes": 412600208,
+            "finalProcessLifetimePeakPhysicalFootprintBytes": 732792960,
+            "finalThermalState": "serious",
+            "initialPhysicalFootprintBytes": 419186576,
+            "initialProcessLifetimePeakPhysicalFootprintBytes": 732792960,
+            "initialThermalState": "serious",
+            "memorySampleCount": 65,
+            "memorySamplingIntervalSeconds": 0.05,
+            "processCPUSeconds": 3.210395,
+            "sampledPeakPhysicalFootprintBytes": 423184272
+          },
+          "submissionConcurrencyMaximum": 1,
+          "suppliedSamples": 2060960,
+          "timingContext": "Elapsed/update latency for accelerated public fixture submission; not wall-clock readiness while a person speaks",
+          "timingValid": true,
+          "updateCount": 44,
+          "updatesBeforeFinish": 43,
+          "wordErrorRate": 0.12032085561497326,
+          "wordErrors": {
+            "deletions": 25,
+            "hypothesisWordCount": 350,
+            "insertions": 1,
+            "referenceWordCount": 374,
+            "substitutions": 19
+          }
+        }
+      }
+    },
+    {
+      "label": "Parakeet Realtime cached streaming",
+      "model": "parakeetRealtimeEOU",
+      "hardwareCapture": {
+        "passed": true,
+        "capturedSamples": 81358,
+        "overflowSamples": 0,
+        "conversionFailures": 0,
+        "captureStoppedBeforePreparationReleased": true
+      },
+      "preparation": {
+        "elapsedSeconds": 0.222876708,
+        "finalPhysicalFootprintBytes": 259557216,
+        "finalProcessLifetimePeakPhysicalFootprintBytes": 259557216,
+        "finalThermalState": "serious",
+        "initialPhysicalFootprintBytes": 21907248,
+        "initialProcessLifetimePeakPhysicalFootprintBytes": 22677296,
+        "initialThermalState": "serious",
+        "memorySampleCount": 6,
+        "memorySamplingIntervalSeconds": 0.05,
+        "processCPUSeconds": 0.20449099999999998,
+        "sampledPeakPhysicalFootprintBytes": 259557216
+      },
+      "streams": {
+        "shortStream": {
+          "audioSeconds": 5.855,
+          "finalTailSamples": 29680,
+          "firstNonemptyUpdateAfterSeconds": 0.038975166673481,
+          "fixtureID": "librispeech-dev-clean-1272-128104-0000",
+          "maximumCaptureFIFOQueuedSamples": 32000,
+          "maximumSubmittedChunkSamples": 32000,
+          "nonemptyChangedUpdateCount": 13,
+          "nonemptyChangedUpdatesBeforeFinish": 13,
+          "passed": true,
+          "realTimeFactor": 0.031220986336464557,
+          "repetitions": 1,
+          "resources": {
+            "audioSeconds": 5.855,
+            "elapsedSeconds": 0.182798875,
+            "finalPhysicalFootprintBytes": 265963384,
+            "finalProcessLifetimePeakPhysicalFootprintBytes": 265996152,
+            "finalThermalState": "serious",
+            "initialPhysicalFootprintBytes": 259557216,
+            "initialProcessLifetimePeakPhysicalFootprintBytes": 259557216,
+            "initialThermalState": "serious",
+            "memorySampleCount": 5,
+            "memorySamplingIntervalSeconds": 0.05,
+            "processCPUSeconds": 0.087333,
+            "sampledPeakPhysicalFootprintBytes": 265963384
+          },
+          "submissionConcurrencyMaximum": 1,
+          "suppliedSamples": 93680,
+          "timingContext": "Elapsed/update latency for accelerated public fixture submission; not wall-clock readiness while a person speaks",
+          "timingValid": true,
+          "updateCount": 14,
+          "updatesBeforeFinish": 14,
+          "wordErrorRate": 0.058823529411764705,
+          "wordErrors": {
+            "deletions": 0,
+            "hypothesisWordCount": 17,
+            "insertions": 0,
+            "referenceWordCount": 17,
+            "substitutions": 1
+          }
+        },
+        "longStream": {
+          "audioSeconds": 128.81,
+          "finalTailSamples": 12960,
+          "firstNonemptyUpdateAfterSeconds": 0.03464174999680836,
+          "fixtureID": "librispeech-dev-clean-1272-128104-0000",
+          "maximumCaptureFIFOQueuedSamples": 32000,
+          "maximumSubmittedChunkSamples": 32000,
+          "nonemptyChangedUpdateCount": 315,
+          "nonemptyChangedUpdatesBeforeFinish": 315,
+          "passed": true,
+          "realTimeFactor": 0.025562741953264495,
+          "repetitions": 22,
+          "resources": {
+            "audioSeconds": 128.81,
+            "elapsedSeconds": 3.292736791,
+            "finalPhysicalFootprintBytes": 255903608,
+            "finalProcessLifetimePeakPhysicalFootprintBytes": 266487672,
+            "finalThermalState": "serious",
+            "initialPhysicalFootprintBytes": 265996152,
+            "initialProcessLifetimePeakPhysicalFootprintBytes": 265996152,
+            "initialThermalState": "serious",
+            "memorySampleCount": 66,
+            "memorySamplingIntervalSeconds": 0.05,
+            "processCPUSeconds": 1.271716,
+            "sampledPeakPhysicalFootprintBytes": 265996152
+          },
+          "submissionConcurrencyMaximum": 1,
+          "suppliedSamples": 2060960,
+          "timingContext": "Elapsed/update latency for accelerated public fixture submission; not wall-clock readiness while a person speaks",
+          "timingValid": true,
+          "updateCount": 316,
+          "updatesBeforeFinish": 316,
+          "wordErrorRate": 0.06417112299465241,
+          "wordErrors": {
+            "deletions": 1,
+            "hypothesisWordCount": 373,
+            "insertions": 0,
+            "referenceWordCount": 374,
+            "substitutions": 23
+          }
+        }
+      }
+    }
+  ]
+}
