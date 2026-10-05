@@ -2,6 +2,8 @@
 
 Current direction: minimalist Apple-style controls, light/dark appearance, immediate capture, model selection on Dictate and bounded live dictation beyond two minutes. Devesh selected CPU-only Parakeet Realtime for fast live text, retaining Phonon-2 for formatted text. Keep Mac Control–Space available. Model evidence and comparisons live in [MODEL_RESEARCH.md](docs/MODEL_RESEARCH.md); the current phone measurements are in [streaming-final.json](docs/benchmarks/streaming-final.json).
 
+Mac personal-data reset: Devesh authorized a fresh store after unreadable encrypted dictionary entries blocked additions. The new store retains the existing configuration and model files; the previous database is in recoverable Trash. Database integrity, unchanged settings, successful startup/hotkey registration, and a dictionary addition surviving app reopening were verified. Only LocalScribe restarted. No iPhone data was reset.
+
 ## Implemented
 
 - Native SwiftUI app with editable transcripts, Copy/Share, optional protected history/dictionary, explicit downloads, model selection, local performance/WER screens and System/Light/Dark appearance.
