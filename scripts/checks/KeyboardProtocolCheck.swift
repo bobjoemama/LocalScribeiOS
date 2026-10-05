@@ -1,6 +1,7 @@
 import Foundation
 
 @main
+@MainActor
 struct KeyboardProtocolCheck {
     enum CheckFailure: Error { case failed(String) }
     static var count = 0
@@ -28,7 +29,7 @@ struct KeyboardProtocolCheck {
         let start = KeyboardCommand(sessionID: session, utteranceID: utterance, action: .start, createdAt: now)
         let stop = KeyboardCommand(sessionID: session, utteranceID: utterance, action: .stop, createdAt: now)
         try check(start.isValid(for: ready, now: now), "Fresh start command accepted")
-        try check(stop.isValid(for: ready, now: now), "Fresh stop command passes envelope validation")
+        try check(!stop.isValid(for: ready, now: now), "Stop rejects an idle session")
         try check(start.id != stop.id, "Commands use independent IDs")
         try check(!start.isValid(for: expired, now: now), "Expired session rejects command")
         let delivery = KeyboardSessionStatus(sessionID: session, expiresAt: now, deliveryExpiresAt: now.addingTimeInterval(30), heartbeatAt: now, phase: .ready, utteranceID: utterance, transcript: "Final words")
@@ -52,6 +53,21 @@ struct KeyboardProtocolCheck {
         try check(!KeyboardCommand(sessionID: UUID(), utteranceID: utterance, action: .start, createdAt: now).isValid(for: ready, now: now), "Wrong session rejected")
         try check(!KeyboardCommand(sessionID: session, utteranceID: utterance, action: .start, createdAt: now.addingTimeInterval(-10.01)).isValid(for: ready, now: now), "Stale command rejected")
         try check(!KeyboardCommand(sessionID: session, utteranceID: utterance, action: .start, createdAt: now.addingTimeInterval(1.01)).isValid(for: ready, now: now), "Future command rejected")
+
+        let recording = KeyboardSessionStatus(sessionID: session, expiresAt: ready.expiresAt, heartbeatAt: now, phase: .recording, utteranceID: utterance)
+        let cancel = KeyboardCommand(sessionID: session, utteranceID: utterance, action: .cancel, createdAt: now)
+        try check(stop.isValid(for: recording, now: now), "Stop accepts current confirmed recording")
+        try check(cancel.isValid(for: recording, now: now), "Cancel accepts current confirmed recording")
+        try check(!cancel.isValid(for: ready, now: now), "Cancel rejects idle session")
+        let processing = KeyboardSessionStatus(sessionID: session, expiresAt: ready.expiresAt, heartbeatAt: now, phase: .transcribing, utteranceID: utterance)
+        try check(!cancel.isValid(for: processing, now: now), "Cancel rejects already finishing speech")
+        try check(!stop.isValid(for: processing, now: now), "Stop rejects already finishing speech")
+        try check(!KeyboardCommand(sessionID: session, utteranceID: UUID(), action: .cancel, createdAt: now).isValid(for: recording, now: now), "Cancel rejects a different utterance")
+        try check(!KeyboardCommand(sessionID: session, utteranceID: UUID(), action: .stop, createdAt: now).isValid(for: recording, now: now), "Stop rejects a different utterance")
+        try check(!KeyboardCommand(sessionID: UUID(), utteranceID: utterance, action: .cancel, createdAt: now).isValid(for: recording, now: now), "Cancel rejects another session")
+        try check(!KeyboardCommand(sessionID: session, utteranceID: utterance, action: .cancel, createdAt: now.addingTimeInterval(-11)).isValid(for: recording, now: now), "Cancel rejects stale command")
+        try check(!cancel.isValid(for: recording, now: now.addingTimeInterval(4)), "Cancel rejects stale app heartbeat")
+        try check(!cancel.isValid(for: delivery, now: now), "Result delivery lease grants no cancellation")
 
         let originalDocument = UUID()
         let otherDocument = UUID()
@@ -92,6 +108,21 @@ struct KeyboardProtocolCheck {
         try check(try restartedStore.readReceipt()?.utteranceID == utterance, "Receipt survives keyboard store recreation")
         try store.writeStatus(KeyboardSessionStatus())
         try check(try store.readStatus()?.transcript == nil, "Disarming overwrites pending transcript")
+
+        let copyUtterance = UUID()
+        let copyResult = KeyboardSessionStatus(sessionID: session, expiresAt: now, deliveryExpiresAt: now.addingTimeInterval(30), heartbeatAt: now.addingTimeInterval(-20), phase: .ready, utteranceID: copyUtterance, transcript: "Owned pending words")
+        let claimedCopy = try store.claimPendingResult(copyResult, now: now)
+        try check(claimedCopy?.text == "Owned pending words" && claimedCopy?.utteranceID == copyUtterance, "Copy claims only owned ASR result after app suspension")
+        try check(try store.readReceipt()?.utteranceID == copyUtterance, "Copy consumption persists before clipboard delivery")
+        try check(try store.claimPendingResult(copyResult, now: now) == nil, "Copied result cannot later auto-insert or deliver twice")
+        let copyRestart = try SharedKeyboardStore(directory: directory)
+        try check(try copyRestart.claimPendingResult(copyResult, now: now) == nil, "Keyboard restart cannot replay copied result")
+        let anotherResult = KeyboardSessionStatus(sessionID: session, expiresAt: now, deliveryExpiresAt: now.addingTimeInterval(30), heartbeatAt: now, phase: .ready, utteranceID: UUID(), transcript: "Next speech")
+        try check(try store.claimPendingResult(anotherResult, now: now.addingTimeInterval(30)) == nil, "Expired result cannot be copied")
+        try check(try store.claimPendingResult(emptyResult, now: now) == nil, "Empty result cannot be copied")
+        try check(try store.claimPendingResult(anotherResult, now: now)?.text == "Next speech", "Next utterance has independent delivery receipt")
+        try store.writeCommand(cancel)
+        try check(try store.readCommand() == cancel, "Cancel command round-trip retains all identity fences")
 
         let statusURL = directory.appendingPathComponent("KeyboardBridge/status.json")
         try Data("{corrupt".utf8).write(to: statusURL, options: .atomic)

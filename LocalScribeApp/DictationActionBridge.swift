@@ -131,9 +131,9 @@ final class DictationActionBridge {
             liveActivity.update(phase: .transcribing, elapsed: controller.elapsed)
         case .idle:
             guard didBeginRecording else { return }
-            let text = controller.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = controller.transcript
             didBeginRecording = false
-            if text.isEmpty {
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 liveActivity.finish(copied: false, elapsed: controller.elapsed)
                 activeSessionID = nil
             } else {

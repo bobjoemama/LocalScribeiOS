@@ -9,7 +9,7 @@ struct LocalScribeApplication: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                LocalScribeRootView(controller: context.controller).disabled(context.benchmarkStatus != nil)
+                LocalScribeRootView(controller: context.controller, notes: context.notesController).disabled(context.benchmarkStatus != nil)
                 if let status = context.benchmarkStatus {
                     VStack(spacing: 16) {
                         ProgressView()
@@ -27,6 +27,7 @@ struct LocalScribeApplication: App {
 @MainActor
 private final class AppContext: ObservableObject {
     let controller: AppController
+    let notesController = NotesController()
     let keyboardCoordinator: KeyboardSessionCoordinator
     let actionBridge: DictationActionBridge
     @Published private(set) var benchmarkStatus: String?

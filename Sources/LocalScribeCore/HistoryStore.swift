@@ -8,6 +8,7 @@ public struct HistoryStore: Sendable {
         return try JSONDecoder().decode([TranscriptEntry].self, from: Data(contentsOf: file))
     }
     public func save(_ entries: [TranscriptEntry]) throws {
+        _ = try load() // Preserve a corrupt or unreadable existing file.
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(entries)
         #if os(iOS)
@@ -30,6 +31,7 @@ public struct DictionaryStore: Sendable {
         return try JSONDecoder().decode([DictionaryRule].self, from: Data(contentsOf: file))
     }
     public func save(_ rules: [DictionaryRule]) throws {
+        _ = try load() // Preserve a corrupt or unreadable existing file.
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(rules)
         #if os(iOS)

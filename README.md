@@ -1,6 +1,6 @@
 # LocalScribe for iOS
 
-Native SwiftUI dictation with speech recognition on your device. Includes a UIKit keyboard, editable transcripts, local history, personal word corrections, explicit model downloads and local resource/accuracy measurements. Source is Apache-2.0; model and runtime licenses are separate (see `NOTICE.md`).
+Native SwiftUI dictation with speech recognition on your device. Includes a UIKit keyboard, editable transcripts, local history, saved notes, personal word replacements, spoken snippets, explicit model downloads and local resource/accuracy measurements. Source is Apache-2.0; model and runtime licenses are separate (see `NOTICE.md`).
 
 Requires iOS 18 or later. The default is Parakeet Realtime through exact-version FluidAudio 0.17.5, configured for CPU-only Core ML streaming. Phonon-2 remains available for formatted dictation with CPU + Neural Engine execution. Recognition loads verified local files; missing models produce an error rather than a network fallback. The app supports three exact-weight Phonon-2 encoders, Ultra, Redux and optional Parakeet Realtime EOU. Current research, exact sizes, stack alternatives and evidence limits: [model/runtime comparison](docs/MODEL_RESEARCH.md).
 
@@ -16,6 +16,18 @@ Phonon-2, Ultra and Redux use overlapping recognition windows; the first update 
 Ordinary typing works without Full Access. Full Access is needed to write local shared-container commands, not to send audio to a service. The keyboard never reads or saves surrounding host text. Automatic insertion is bound to the original document and disarmed when the editing context changes; otherwise use Insert dictation. Results expire after 30 seconds. A delivery receipt prevents replay but a crash between receipt and host insertion can lose automatic delivery; the app retains the transcript.
 
 Settings contains local performance and word error rate (WER) measurements. WER compares a supplied reference with raw recognition before dictionary corrections, normalizing case and punctuation. CPU and memory reports cover the whole app process. Requested Core ML compute units do not establish actual execution placement. GPU/Neural Engine utilization, energy and system-wide memory pressure require device profiling; this UI does not manufacture those measurements.
+
+## Dictionary, snippets and notes
+
+Open **Library → Dictionary → +**. Enter the phrase the model recognizes in **Say**, then the text you want in **Replace with**. For example, `local scape` → `LocalScribe`. Rules match whole phrases without regard to capitalization, prefer longer overlapping phrases, and run once without rewriting replacement text. This changes text after recognition; it does not retrain the speech model. Search, edit, disable or confirm deletion of a rule. A failed save keeps the editor open and preserves the existing library.
+
+In **Library → Snippets**, save a spoken phrase such as `my email signature` and its full expansion. Line breaks, casing and whitespace in the expansion are preserved. A whole-trigger dictation produces the exact expansion, ignoring added trailing sentence punctuation; a trigger inside a longer sentence leaves surrounding text in place. Dictionary and snippet triggers cannot conflict. Personalization applies to live/final text, keyboard delivery and shortcut copying; raw recognition remains separate for WER.
+
+**Library → Notes** supports typing and dictation using the selected model, search, Copy/Share and confirmed deletion. Notes autosave after two seconds and flush when leaving/backgrounding. Only that editor's recording is appended to its note. Save errors retain the pending text for retry. The note title comes from its first line; no model generates it. A completed transcript can also be saved as a note from Dictate's pencil action.
+
+**History** groups transcripts by date, supports safe editing, Copy/Share, confirmed deletion, filtered text export and confirmed Clear all. Settings offers retention of all history, today's calendar day, seven days or thirty days. Retention defaults to Never and requires confirmation before removing older entries. Usage measures only retained history, not lifetime or speech-only timing. Keyboard settings offer an idle timeout of 1, 5, 15 or 30 minutes; active dictation renews it. Recording settings can prefer the built-in microphone and enable start/stop haptics; both are off by default. The keyboard adds Cancel during recording and Copy for a pending result, with receipts preventing later duplicate insertion.
+
+The comparison uses current [official iOS feature evidence](docs/IOS_FEATURE_PARITY.md). It is not a claim of complete Wispr parity: model-backed transformations, cloud/team/account services, fuzzy/automatic learning and unsafe host-context Undo are excluded. Audio is still discarded; failed-recording audio replay is not implemented. Model-specific language support remains visible rather than implying every engine supports every language. The current [native light/dark feature captures](docs/previews/features) use explicit synthetic data in an owned simulator, not personal phone data or real recognition results.
 
 ## Privacy and storage
 
@@ -49,6 +61,7 @@ swiftc -swift-version 6 SharedKeyboard/KeyboardProtocol.swift \
 scripts/check_app_controller.sh
 scripts/check_action_shortcut.sh
 scripts/check_dictation_tail.sh
+scripts/check_personalization_controller.sh
 ```
 
 On this Mac, prefix Xcode commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; the global command-line-tools selection is left unchanged. The local Swift package isolates platform-independent correction, storage, capture and WER tests. `--without-fluidaudio` generates a UI-only project whose runtime visibly reports unavailable; it is not a working recognition build.
@@ -75,7 +88,7 @@ Without `--benchmark-downloads`, missing models fail without networking. Each pr
 
 The native app follows Apple's containing-app microphone/shared-container pattern, studied against Muesli and platform guidance, with finite explicit sessions and no cloud summarization/sync dependency. Model-specific adapters can implement `LocalTranscriptionEngine`; alternative stacks are researched but not bundled.
 
-See [remaining work and verification](tasklist.md). The Mac redesign is in the separate [LocalScribe desktop repository](https://github.com/bobjoemama/LocalScribe); its screenshots in `docs/previews/mac` use isolated mocked settings data. [iOS light preview](docs/previews/ios-light-dictate.png) and [dark model selection](docs/previews/ios-dark-models.png) are actual simulator renderings. [Mac dark preview](docs/previews/mac/workspace-dark-1220x760-dictation.png) shows the revised candidate. The iOS app offers System/Light/Dark; the Mac candidate follows system appearance. Preview screenshots do not prove physical-device speech recognition.
+See [remaining work and verification](tasklist.md). The Mac redesign is in the separate [LocalScribe desktop repository](https://github.com/bobjoemama/LocalScribe); its screenshots in `docs/previews/mac` use isolated mocked settings data. [Dictionary light preview](docs/previews/features/ios-light-dictionary.png) and [Snippets dark preview](docs/previews/features/ios-dark-snippets.png) are actual simulator renderings. [Mac dark preview](docs/previews/mac/workspace-dark-1220x760-dictation.png) shows the revised candidate. The iOS app offers System/Light/Dark; the Mac candidate follows system appearance. Preview screenshots do not prove physical-device speech recognition.
 
 
 ## DEBUG microphone and streaming verification

@@ -136,7 +136,7 @@ final class KeyboardSessionCoordinator {
             sawRecording = false
             publish()
             guard !storageFailed else { return }
-        case .stop:
+        case .stop, .cancel:
             guard controller.phase == .recording, utteranceID == command.utteranceID else { return }
         }
         handlingCommand = true
@@ -148,6 +148,14 @@ final class KeyboardSessionCoordinator {
                 if self.revision == commandRevision && controller.phase == .recording {
                     self.sawRecording = true
                 }
+            } else if command.action == .cancel {
+                // Clear ownership before publishing idle so no discarded speech
+                // can be delivered by the completion callback or polling fallback.
+                self.sawRecording = false
+                self.result = nil
+                self.utteranceID = nil
+                self.deliveryExpiresAt = nil
+                await controller.cancelRecording()
             } else {
                 await controller.stopRecording()
             }

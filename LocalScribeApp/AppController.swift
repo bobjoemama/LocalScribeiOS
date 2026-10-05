@@ -33,15 +33,22 @@ final class AppController: ObservableObject {
     @Published var saveHistory: Bool {
         didSet { defaults.set(saveHistory, forKey: "saveHistory") }
     }
-    @Published var dictionary: [DictionaryRule] {
-        didSet {
-            guard dictionaryWritable else {
-                errorMessage = "Your existing dictionary could not be opened. It is preserved; new corrections cannot be saved until the storage issue is resolved."
-                return
-            }
-            do { try dictionaryStore.save(dictionary) }
-            catch { errorMessage = "Could not save your dictionary: \(error.localizedDescription)" }
-        }
+    @Published private(set) var dictionary: [DictionaryRule]
+    @Published private(set) var snippets: [SpokenSnippet] = []
+    @Published private(set) var completedRecordingID: UUID?
+    @Published private(set) var historyRetentionDays = 0
+    var currentRecordingID: UUID? { recordingID }
+    var canEditDictionary: Bool { dictionaryWritable }
+    var canEditSnippets: Bool { snippetsWritable }
+    var canEditHistory: Bool { historyWritable && phase == .idle }
+    @Published var keyboardIdleMinutes: Int {
+        didSet { defaults.set(keyboardIdleMinutes, forKey: "keyboardIdleMinutes") }
+    }
+    @Published var preferBuiltInMicrophone: Bool {
+        didSet { defaults.set(preferBuiltInMicrophone, forKey: "preferBuiltInMicrophone"); recorder.preferBuiltInMicrophone = preferBuiltInMicrophone }
+    }
+    @Published var hapticFeedback: Bool {
+        didSet { defaults.set(hapticFeedback, forKey: "hapticFeedback"); recorder.hapticFeedbackEnabled = hapticFeedback }
     }
 
     var onDictationFinished: (() -> Void)?
@@ -50,6 +57,8 @@ final class AppController: ObservableObject {
     private let recorder = AudioRecorder()
     private let store: HistoryStore
     private let dictionaryStore: DictionaryStore
+    private let snippetStore: SnippetStore
+    private var personalizer = TranscriptPersonalizer(dictionary: [], snippets: [])
     private let defaults: UserDefaults
     private let verificationMode: Bool
     private var recordingStartedAt: Date?
@@ -58,6 +67,7 @@ final class AppController: ObservableObject {
     private var currentEntryID: UUID?
     private var recordingTimer: Timer?
     private var sessionTimer: Timer?
+    private var recordingCleanupTask: Task<Void, Never>?
     private var preparationTask: Task<Void, Error>?
     private var preparationModel: SpeechModel?
     private var preparationRevision = 0
@@ -73,6 +83,7 @@ final class AppController: ObservableObject {
     private var microphoneRevision = 0
     private var historyWritable = true
     private var dictionaryWritable = true
+    private var snippetsWritable = true
     var keyboardSessionActive: Bool { keyboardSessionExpiresAt.map { $0 > Date() } ?? false }
     var isBusy: Bool { phase == .preparing || phase == .transcribing }
 
@@ -86,14 +97,27 @@ final class AppController: ObservableObject {
         self.verificationMode = verificationMode
         selectedModel = SpeechModel(rawValue: defaults.string(forKey: "selectedModel") ?? "") ?? .parakeetRealtimeEOU
         saveHistory = defaults.object(forKey: "saveHistory") as? Bool ?? true
+        let idle = defaults.integer(forKey: "keyboardIdleMinutes")
+        keyboardIdleMinutes = [1, 5, 15, 30].contains(idle) ? idle : 5
+        preferBuiltInMicrophone = defaults.bool(forKey: "preferBuiltInMicrophone")
+        hapticFeedback = defaults.bool(forKey: "hapticFeedback")
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("LocalScribe", isDirectory: true)
         store = HistoryStore(file: historyURL ?? directory.appendingPathComponent("history.json"))
         dictionaryStore = DictionaryStore(file: (historyURL?.deletingLastPathComponent() ?? directory).appendingPathComponent("dictionary.json"))
+        snippetStore = SnippetStore(file: (historyURL?.deletingLastPathComponent() ?? directory).appendingPathComponent("snippets.json"))
         dictionary = []
+        recorder.preferBuiltInMicrophone = preferBuiltInMicrophone
+        recorder.hapticFeedbackEnabled = hapticFeedback
         do { dictionary = try dictionaryStore.load() }
         catch { dictionaryWritable = false; errorMessage = "Your dictionary could not be opened. It has been preserved: \(error.localizedDescription)" }
+        do { snippets = try snippetStore.load() }
+        catch { snippetsWritable = false; errorMessage = "Your snippets could not be opened. They have been preserved: \(error.localizedDescription)" }
+        personalizer = TranscriptPersonalizer(dictionary: dictionary, snippets: snippets)
         do { history = try store.load() }
         catch { historyWritable = false; errorMessage = "Your history could not be opened. It has been preserved: \(error.localizedDescription)" }
+        let retention = defaults.integer(forKey: "historyRetentionDays")
+        historyRetentionDays = [0, 1, 7, 30].contains(retention) ? retention : 0
+        pruneRetainedHistory()
         recorder.onLevel = { [weak self] level in
             guard self?.phase == .recording else { return }
             self?.level = level
@@ -153,6 +177,7 @@ final class AppController: ObservableObject {
     }
 
     func startRecording() async {
+        await recordingCleanupTask?.value
         guard !verificationMode, phase == .idle, downloadingModel == nil else { return }
         guard foreground || keyboardSessionActive else { errorMessage = "Open LocalScribe to start a microphone session."; return }
         guard installedModels.contains(selectedModel) else { errorMessage = "Download your selected model in Models before dictating."; return }
@@ -178,16 +203,18 @@ final class AppController: ObservableObject {
             recorder.beginCapture()
             let id = UUID()
             recordingID = id
+            completedRecordingID = nil
             transcript = ""; rawTranscript = ""; partialText = ""; currentEntryID = nil; captureModel = model; captureBackgroundInferenceAllowed = backgroundAllowed
             capturedSampleCount = 0; captureWarning = nil; acceptsLiveUpdates = true
             elapsed = 0; level = 0; recordingStartedAt = Date(); phase = .recording
+            recordingFeedback()
             if keyboardSessionActive { renewKeyboardSession() }
             recordingTimer?.invalidate()
             recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, self.phase == .recording, let start = self.recordingStartedAt else { return }
                     self.elapsed = Date().timeIntervalSince(start)
-                    if let expires = self.keyboardSessionExpiresAt, expires.timeIntervalSinceNow <= 60 { self.renewKeyboardSession() }
+                    if let expires = self.keyboardSessionExpiresAt, expires.timeIntervalSinceNow <= min(60, TimeInterval(self.keyboardIdleMinutes * 30)) { self.renewKeyboardSession() }
                 }
             }
             let task = Task { [self] in
@@ -200,7 +227,7 @@ final class AppController: ObservableObject {
                     Task { @MainActor in
                         guard let self, self.recordingID == id, self.acceptsLiveUpdates else { return }
                         self.rawTranscript = update.text
-                        self.partialText = TranscriptCorrection.apply(self.dictionary, to: update.text)
+                        self.partialText = self.personalizer.apply(update.text)
                     }
                 }
                 while phase == .recording, recordingID == id {
@@ -269,6 +296,7 @@ final class AppController: ObservableObject {
         let model = captureModel ?? selectedModel
         let backgroundAllowed = captureBackgroundInferenceAllowed
         recordingStartedAt = nil; level = 0; phase = .transcribing
+        recordingFeedback()
         if endKeyboardSession { disableKeyboardSession() }
         else if keyboardSessionActive { renewKeyboardSession() }
         defer {
@@ -296,13 +324,13 @@ final class AppController: ObservableObject {
             guard recordingID == id else { return }
             acceptsLiveUpdates = false
             rawTranscript = recognized
-            transcript = TranscriptCorrection.apply(dictionary, to: recognized).trimmingCharacters(in: .whitespacesAndNewlines)
+            transcript = personalizer.apply(recognized.trimmingCharacters(in: .whitespacesAndNewlines))
             partialText = ""
             guard !transcript.isEmpty else { throw AppError.emptyTranscript }
         } catch {
             acceptsLiveUpdates = false
             // A later recognition failure must not erase words already delivered.
-            transcript = TranscriptCorrection.apply(dictionary, to: rawTranscript).trimmingCharacters(in: .whitespacesAndNewlines)
+            transcript = personalizer.apply(rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines))
             partialText = ""
             errorMessage = error.localizedDescription + (transcript.isEmpty ? "" : " Captured text remains available to copy or share.")
             if let streaming = engine as? any StreamingLocalTranscriptionEngine { await streaming.cancelStreaming() }
@@ -315,6 +343,7 @@ final class AppController: ObservableObject {
             updated.insert(entry, at: 0)
             do {
                 guard historyWritable else { throw AppError.historyUnavailable }
+                updated = retainedHistory(updated, days: historyRetentionDays)
                 try store.save(updated)
                 history = updated; currentEntryID = entry.id
             } catch {
@@ -328,10 +357,51 @@ final class AppController: ObservableObject {
         guard recordingID == id else { return }
         streamingTask = nil; recordingID = nil; captureModel = nil; captureBackgroundInferenceAllowed = false; acceptsLiveUpdates = false
         actionButtonRecording = false
+        completedRecordingID = id
         phase = .idle
         onDictationFinished?()
         endBackgroundCompletion()
         scheduleModelRelease()
+    }
+
+    /// Explicit cancellation discards this utterance and never finalizes it into
+    /// history or a clipboard result. The keyboard's armed microphone may remain.
+    func cancelRecording() async {
+        if phase == .preparing { await cancelPreparation(); return }
+        guard phase == .recording else { return }
+        microphoneRevision += 1
+        recordingID = nil
+        completedRecordingID = nil
+        acceptsLiveUpdates = false
+        recordingTimer?.invalidate(); recordingTimer = nil
+        _ = recorder.endCapture(keepEngineRunning: keyboardSessionActive)
+        let streamTask = streamingTask
+        streamingTask = nil
+        streamTask?.cancel()
+        transcript = ""; rawTranscript = ""; partialText = ""
+        captureModel = nil; captureBackgroundInferenceAllowed = false
+        actionButtonRecording = false; recordingStartedAt = nil; elapsed = 0; level = 0
+        errorMessage = nil; captureWarning = nil
+        phase = .idle
+        onDictationFinished?()
+        let previous = recordingCleanupTask
+        let engine = engine
+        let cleanup = Task {
+            await previous?.value
+            _ = await streamTask?.result
+            if let streaming = engine as? any StreamingLocalTranscriptionEngine { await streaming.cancelStreaming() }
+        }
+        recordingCleanupTask = cleanup
+        await cleanup.value
+        recordingCleanupTask = nil
+        endBackgroundCompletion()
+        scheduleModelRelease()
+    }
+
+    private func recordingFeedback() {
+        #if canImport(UIKit)
+        if hapticFeedback { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+        #endif
     }
 
     func cancelPreparation() async {
@@ -366,9 +436,9 @@ final class AppController: ObservableObject {
     }
 
     private func renewKeyboardSession() {
-        keyboardSessionExpiresAt = Date().addingTimeInterval(300)
+        keyboardSessionExpiresAt = Date().addingTimeInterval(TimeInterval(keyboardIdleMinutes * 60))
         sessionTimer?.invalidate()
-        sessionTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in
+        sessionTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(keyboardIdleMinutes * 60), repeats: false) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 if self.phase == .recording { self.renewKeyboardSession() }
@@ -403,21 +473,113 @@ final class AppController: ObservableObject {
             else if phase == .preparing { Task { await cancelPreparation() } }
             else { recorder.shutdown(); if phase == .idle { releaseRuntime() } }
         }
-        if active, phase == .idle { prewarmSelectedModel() }
+        if active, phase == .idle { pruneRetainedHistory(); prewarmSelectedModel() }
+    }
+
+    func upsertDictionaryRule(id: UUID?, heard: String, replacement: String, isEnabled: Bool) throws {
+        guard dictionaryWritable else { throw AppError.dictionaryUnavailable }
+        if let id, !dictionary.contains(where: { $0.id == id }) { throw AppError.entryChanged }
+        let rule = DictionaryRule(id: id ?? UUID(), heard: heard.trimmingCharacters(in: .whitespacesAndNewlines), replacement: replacement, isEnabled: isEnabled)
+        try PersonalizationValidation.validate(rule: rule, dictionary: dictionary, snippets: snippets, excludingID: id)
+        var updated = dictionary
+        if let id, let index = updated.firstIndex(where: { $0.id == id }) { updated[index] = rule }
+        else { updated.append(rule) }
+        try dictionaryStore.save(updated)
+        dictionary = updated
+        rebuildPersonalizer()
+    }
+
+    func deleteDictionaryRule(id: UUID) throws {
+        guard dictionaryWritable else { throw AppError.dictionaryUnavailable }
+        guard dictionary.contains(where: { $0.id == id }) else { throw AppError.entryChanged }
+        let updated = dictionary.filter { $0.id != id }
+        try dictionaryStore.save(updated)
+        dictionary = updated
+        rebuildPersonalizer()
+    }
+
+    func upsertSnippet(id: UUID?, trigger: String, expansion: String, isEnabled: Bool) throws {
+        guard snippetsWritable else { throw AppError.snippetsUnavailable }
+        if let id, !snippets.contains(where: { $0.id == id }) { throw AppError.entryChanged }
+        let snippet = SpokenSnippet(id: id ?? UUID(), trigger: trigger.trimmingCharacters(in: .whitespacesAndNewlines), expansion: expansion, isEnabled: isEnabled)
+        try PersonalizationValidation.validate(snippet: snippet, dictionary: dictionary, snippets: snippets, excludingID: id)
+        var updated = snippets
+        if let id, let index = updated.firstIndex(where: { $0.id == id }) { updated[index] = snippet }
+        else { updated.append(snippet) }
+        try snippetStore.save(updated)
+        snippets = updated
+        rebuildPersonalizer()
+    }
+
+    func deleteSnippet(id: UUID) throws {
+        guard snippetsWritable else { throw AppError.snippetsUnavailable }
+        guard snippets.contains(where: { $0.id == id }) else { throw AppError.entryChanged }
+        let updated = snippets.filter { $0.id != id }
+        try snippetStore.save(updated)
+        snippets = updated
+        rebuildPersonalizer()
+    }
+
+    private func rebuildPersonalizer() {
+        personalizer = TranscriptPersonalizer(dictionary: dictionary, snippets: snippets)
+        if phase == .recording { partialText = personalizer.apply(rawTranscript) }
     }
 
     func saveTranscriptEdits() {
         guard let id = currentEntryID else { return }
         updateHistory(id: id, text: transcript)
     }
-    func updateHistory(id: UUID, text: String) {
-        guard historyWritable else { errorMessage = AppError.historyUnavailable.localizedDescription; return }
-        guard let index = history.firstIndex(where: { $0.id == id }) else { return }
+    func historyRemovalCount(for days: Int) -> Int {
+        history.count - retainedHistory(history, days: days).count
+    }
+
+    func setHistoryRetention(days: Int) throws {
+        guard [0, 1, 7, 30].contains(days), canEditHistory else { throw AppError.historyUnavailable }
+        let updated = retainedHistory(history, days: days)
+        try store.save(updated)
+        history = updated
+        historyRetentionDays = days
+        defaults.set(days, forKey: "historyRetentionDays")
+        if let id = currentEntryID, !history.contains(where: { $0.id == id }) { currentEntryID = nil }
+    }
+
+    private func retainedHistory(_ entries: [TranscriptEntry], days: Int) -> [TranscriptEntry] {
+        guard days > 0, let cutoff = Calendar.current.date(byAdding: .day, value: 1 - days, to: Calendar.current.startOfDay(for: Date())) else { return entries }
+        return entries.filter { $0.createdAt >= cutoff }
+    }
+
+    private func pruneRetainedHistory() {
+        guard canEditHistory, historyRetentionDays > 0 else { return }
+        let updated = retainedHistory(history, days: historyRetentionDays)
+        guard updated.count != history.count else { return }
+        do { try store.save(updated); history = updated }
+        catch { errorMessage = "History could not be trimmed: \(error.localizedDescription) Existing transcripts were preserved." }
+    }
+
+    func replaceHistory(id: UUID, text: String) throws {
+        guard canEditHistory else { throw AppError.historyUnavailable }
+        guard let index = history.firstIndex(where: { $0.id == id }) else { throw AppError.entryChanged }
         var updated = history
         updated[index].text = text
-        do { try store.save(updated); history = updated }
+        try store.save(updated)
+        history = updated
+    }
+
+    func updateHistory(id: UUID, text: String) {
+        do { try replaceHistory(id: id, text: text) }
         catch { errorMessage = "Your edit could not be saved: \(error.localizedDescription)" }
     }
+
+    func deleteHistory(ids: Set<UUID>) throws {
+        guard canEditHistory else { throw AppError.historyUnavailable }
+        guard ids.allSatisfy({ id in history.contains(where: { $0.id == id }) }) else { throw AppError.entryChanged }
+        let updated = history.filter { !ids.contains($0.id) }
+        try store.save(updated)
+        history = updated
+        if let id = currentEntryID, ids.contains(id) { currentEntryID = nil }
+    }
+
+    func clearHistory() throws { try deleteHistory(ids: Set(history.map(\.id))) }
 
     private func beginBackgroundCompletion() {
         guard backgroundCompletionTask == .invalid else { return }
@@ -533,13 +695,16 @@ final class AppController: ObservableObject {
 }
 
 private enum AppError: LocalizedError {
-    case modelMissing, emptyTranscript, sessionEnded, historyUnavailable, streamingUnavailable
+    case modelMissing, emptyTranscript, sessionEnded, historyUnavailable, streamingUnavailable, dictionaryUnavailable, snippetsUnavailable, entryChanged
     var errorDescription: String? {
         switch self {
         case .modelMissing: "The downloaded model could not be verified. Please try downloading it again."
         case .emptyTranscript: "No speech was recognized. Try a longer recording in a quieter place."
         case .sessionEnded: "The microphone session ended. Open LocalScribe to start again."
         case .streamingUnavailable: "This speech engine does not support live dictation."
+        case .dictionaryUnavailable: "Your existing dictionary is unavailable and has been preserved. Resolve the storage issue before changing it."
+        case .snippetsUnavailable: "Your existing snippets are unavailable and have been preserved. Resolve the storage issue before changing them."
+        case .entryChanged: "This entry has changed or is no longer available. Close the editor and try again."
         case .historyUnavailable: "Existing history could not be opened and has been preserved. Resolve the storage issue before saving new entries."
         }
     }

@@ -1,7 +1,11 @@
 import UIKit
+import UniformTypeIdentifiers
 
 /// A lightweight text keyboard. Microphone and model inference stay in the containing app.
 final class KeyboardViewController: UIInputViewController {
+    private enum SecondaryAction { case cancel, copy }
+    private var secondaryAction: SecondaryAction?
+    private let secondaryActionButton = UIButton(type: .system)
     private enum Layout { case letters, numbers, symbols }
     private var layout: Layout = .letters
     private var shifted = true
@@ -13,6 +17,7 @@ final class KeyboardViewController: UIInputViewController {
     private var status: KeyboardSessionStatus?
     private var autoInsertionTarget = KeyboardAutoInsertionTarget()
     private var pendingCommand: KeyboardCommand?
+    private var lastCopiedUtterance: UUID?
     private var isVisible = false
     private let rows = UIStackView()
     private let headline = UILabel()
@@ -123,6 +128,12 @@ final class KeyboardViewController: UIInputViewController {
         dictateButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         dictateButton.addTarget(self, action: #selector(dictationTapped), for: .touchUpInside)
         panel.addArrangedSubview(dictateButton)
+        secondaryActionButton.configuration = .plain()
+        secondaryActionButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        secondaryActionButton.setContentHuggingPriority(.required, for: .horizontal)
+        secondaryActionButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        secondaryActionButton.addTarget(self, action: #selector(secondaryActionTapped), for: .touchUpInside)
+        panel.addArrangedSubview(secondaryActionButton)
         root.addArrangedSubview(panel)
     }
 
@@ -288,9 +299,18 @@ final class KeyboardViewController: UIInputViewController {
             if let pendingCommand {
                 if (pendingCommand.action == .start && status.phase == .recording && status.utteranceID == pendingCommand.utteranceID)
                     || (pendingCommand.action == .stop && status.phase != .recording)
+                    || (pendingCommand.action == .cancel && status.phase != .recording && status.utteranceID != pendingCommand.utteranceID)
                     || status.phase == .failed {
                     self.pendingCommand = nil
                 }
+            }
+            if let pendingCommand {
+                switch pendingCommand.action {
+                case .start: show("Starting…", "Keep this field open for automatic insertion.", busy: true)
+                case .stop: show("Stopping…", "Finishing your dictation.", busy: true)
+                case .cancel: show("Cancelling…", "This dictation will be discarded.", busy: true)
+                }
+                return
             }
             if status.hasDeliverableResult(), let utterance = status.utteranceID, let text = status.transcript,
                try store?.readReceipt()?.utteranceID != utterance {
@@ -298,11 +318,16 @@ final class KeyboardViewController: UIInputViewController {
                     if try insertResult(text, utterance: utterance, automatic: true) {
                         show("Inserted", "")
                     } else {
-                        show("Dictation ready", "Insert into this text field.", action: "Insert", symbol: "text.badge.plus")
+                        show("Dictation ready", "Insert into this text field.", action: "Insert", symbol: "text.badge.plus", secondary: .copy)
                     }
                 } else {
-                    show("Dictation ready", "Insert into this text field.", action: "Insert", symbol: "text.badge.plus")
+                    show("Dictation ready", "Insert into this text field.", action: "Insert", symbol: "text.badge.plus", secondary: .copy)
                 }
+                return
+            }
+            if !status.canRecord(), status.hasDeliverableResult() {
+                let copied = status.utteranceID == lastCopiedUtterance
+                show(copied ? "Copied" : "Inserted", copied ? "Paste your dictation in any app." : "Microphone off.")
                 return
             }
             if !status.canRecord() && status.phase != .transcribing {
@@ -312,14 +337,15 @@ final class KeyboardViewController: UIInputViewController {
             }
             switch status.phase {
             case .recording:
-                show("Recording", "Tap Stop when finished.", action: "Stop", symbol: "stop.fill", enabled: pendingCommand == nil)
+                show("Recording", "Tap Stop when finished.", action: "Stop", symbol: "stop.fill", enabled: pendingCommand == nil, secondary: .cancel)
             case .transcribing:
                 show("Transcribing…", status.canRecord() ? "On-device transcription." : "Microphone off.", busy: true)
             case .failed:
                 show("Dictation unavailable", status.message ?? "Open Local Scribe to resume.", action: "Record", symbol: "mic.fill")
             case .ready:
                 let minutes = max(1, Int(ceil((status.expiresAt?.timeIntervalSinceNow ?? 0) / 60)))
-                show("Dictation", "Session ends in \(minutes)m", action: "Record", symbol: "mic.fill", enabled: pendingCommand == nil)
+                let copied = status.utteranceID != nil && status.utteranceID == lastCopiedUtterance
+                show(copied ? "Copied" : "Dictation", copied ? "Paste your dictation in any app." : "Session ends in \(minutes)m", action: "Record", symbol: "mic.fill", enabled: pendingCommand == nil)
             case .inactive:
                 show("Keyboard session off", "Open Local Scribe to enable dictation.")
             }
@@ -328,7 +354,7 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
-    private func show(_ title: String, _ subtitle: String, action: String? = nil, symbol: String? = nil, busy: Bool = false, enabled: Bool = true) {
+    private func show(_ title: String, _ subtitle: String, action: String? = nil, symbol: String? = nil, busy: Bool = false, enabled: Bool = true, secondary: SecondaryAction? = nil) {
         headline.text = title
         detail.text = subtitle
         detail.isHidden = subtitle.isEmpty
@@ -343,6 +369,15 @@ final class KeyboardViewController: UIInputViewController {
         dictateButton.isEnabled = enabled
         dictateButton.accessibilityLabel = action
         dictateButton.accessibilityHint = subtitle
+        secondaryAction = secondary
+        var secondaryConfiguration = UIButton.Configuration.plain()
+        secondaryConfiguration.title = secondary == .cancel ? "Cancel" : "Copy"
+        secondaryConfiguration.baseForegroundColor = secondary == .cancel ? .systemRed : .systemBlue
+        secondaryActionButton.configuration = secondaryConfiguration
+        secondaryActionButton.isHidden = secondary == nil
+        secondaryActionButton.isEnabled = enabled && pendingCommand == nil
+        secondaryActionButton.accessibilityLabel = secondaryConfiguration.title
+        secondaryActionButton.accessibilityHint = secondary == .cancel ? "Discard this dictation without inserting text." : "Copy this dictation instead of inserting it."
         if busy { activityIndicator.startAnimating() } else { activityIndicator.stopAnimating() }
     }
 
@@ -374,9 +409,34 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
+    @objc private func secondaryActionTapped() {
+        guard hasFullAccess, pendingCommand == nil, let status, let store else { return }
+        do {
+            switch secondaryAction {
+            case .copy:
+                autoInsertionTarget.invalidate()
+                guard let delivery = try store.claimPendingResult(status) else { refreshBridge(); return }
+                lastCopiedUtterance = delivery.utteranceID
+                UIPasteboard.general.setItems([[UTType.utf8PlainText.identifier: delivery.text]], options: [.localOnly: true])
+                show("Copied", "Paste your dictation in any app.")
+            case .cancel:
+                guard let session = status.sessionID, let utterance = status.utteranceID else { return }
+                let command = KeyboardCommand(sessionID: session, utteranceID: utterance, action: .cancel)
+                guard command.isValid(for: status) else { refreshBridge(); return }
+                autoInsertionTarget.invalidate()
+                try store.writeCommand(command)
+                pendingCommand = command
+                show("Cancelling…", "This dictation will be discarded.", busy: true)
+            case nil: break
+            }
+        } catch {
+            show("Dictation unavailable", "Open Local Scribe to check shared access.")
+        }
+    }
+
     @discardableResult
     private func insertResult(_ text: String, utterance: UUID, automatic: Bool = false) throws -> Bool {
-        guard let store else { return false }
+        guard let store, let status, status.utteranceID == utterance, status.transcript == text else { return false }
         if automatic {
             autoInsertionTarget.observeDocument(textDocumentProxy.documentIdentifier)
             guard autoInsertionTarget.allows(utteranceID: utterance, documentIdentifier: textDocumentProxy.documentIdentifier) else { return false }
@@ -384,8 +444,8 @@ final class KeyboardViewController: UIInputViewController {
         // Claim before insertion prevents duplicate insertion after a process restart.
         // TextDocumentProxy and file IO cannot form an atomic transaction: a crash between
         // these operations may lose the insertion, but never deliberately replays it.
-        try store.writeReceipt(KeyboardDeliveryReceipt(utteranceID: utterance))
-        textDocumentProxy.insertText(text)
+        guard let delivery = try store.claimPendingResult(status) else { return false }
+        textDocumentProxy.insertText(delivery.text)
         autoInsertionTarget.invalidate()
         pendingCommand = nil
         return true

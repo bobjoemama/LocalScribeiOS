@@ -113,27 +113,23 @@ public struct DictionaryRule: Codable, Identifiable, Equatable, Sendable {
     public var id: UUID
     public var heard: String
     public var replacement: String
-    public init(id: UUID = UUID(), heard: String, replacement: String) {
-        self.id = id; self.heard = heard; self.replacement = replacement
+    public var isEnabled: Bool
+    public init(id: UUID = UUID(), heard: String, replacement: String, isEnabled: Bool = true) {
+        self.id = id; self.heard = heard; self.replacement = replacement; self.isEnabled = isEnabled
+    }
+    private enum CodingKeys: String, CodingKey { case id, heard, replacement, isEnabled }
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        heard = try values.decode(String.self, forKey: .heard)
+        replacement = try values.decode(String.self, forKey: .replacement)
+        isEnabled = try values.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
     }
 }
 
 public enum TranscriptCorrection {
-    /// Replace whole phrases once, longest first, without changing substrings or reprocessing replacements.
+    /// Kept for existing callers. Longest literal whole-phrase matches apply once.
     public static func apply(_ rules: [DictionaryRule], to text: String) -> String {
-        let valid = rules.filter { !$0.heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            .sorted { $0.heard.count > $1.heard.count }
-        guard !valid.isEmpty else { return text }
-        let patterns = valid.map { NSRegularExpression.escapedPattern(for: $0.heard.trimmingCharacters(in: .whitespacesAndNewlines)) }
-        guard let regex = try? NSRegularExpression(pattern: "(?<![\\p{L}\\p{N}_])(?:" + patterns.joined(separator: "|") + ")(?![\\p{L}\\p{N}_])", options: .caseInsensitive) else { return text }
-        let source = text as NSString
-        let result = NSMutableString(string: text)
-        for match in regex.matches(in: text, range: NSRange(location: 0, length: source.length)).reversed() {
-            let heard = source.substring(with: match.range)
-            if let rule = valid.first(where: { $0.heard.trimmingCharacters(in: .whitespacesAndNewlines).compare(heard, options: .caseInsensitive) == .orderedSame }) {
-                result.replaceCharacters(in: match.range, with: rule.replacement)
-            }
-        }
-        return result as String
+        TranscriptPersonalizer(dictionary: rules, snippets: []).apply(text)
     }
 }

@@ -8,14 +8,28 @@ struct LocalScribeRootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("appearance") private var appearance = "system"
     @State private var tab = 0
+    @State private var showingModels = false
+    @State private var createdNote: CreatedNoteRequest?
+    @State private var libraryPath: [LibraryDestination] = []
+    @ObservedObject var notes: NotesController
 
-    init(controller: AppController) {
+    init(controller: AppController, notes: NotesController) {
         _controller = ObservedObject(wrappedValue: controller)
+        _notes = ObservedObject(wrappedValue: notes)
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        let names = ["dictate", "history", "models", "settings"]
+        let names = ["dictate", "history", "library", "settings"]
         if let index = arguments.firstIndex(of: "--preview-tab"), index + 1 < arguments.count {
             _tab = State(initialValue: names.firstIndex(of: arguments[index + 1]) ?? 0)
+        }
+        if let index = arguments.firstIndex(of: "--preview-library"), index + 1 < arguments.count {
+            let destination: LibraryDestination? = switch arguments[index + 1] {
+            case "dictionary": .dictionary
+            case "snippets": .snippets
+            case "notes": .notes
+            default: nil
+            }
+            if let destination { _tab = State(initialValue: 2); _libraryPath = State(initialValue: [destination]) }
         }
         #endif
     }
@@ -30,14 +44,21 @@ struct LocalScribeRootView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            DictateView(controller: controller, openModels: { tab = 2 })
+            DictateView(controller: controller, openModels: { showingModels = true }, saveNote: { text in createdNote = CreatedNoteRequest(id: notes.create(text: text)) })
                 .tabItem { Label("Dictate", systemImage: "mic") }.tag(0)
-            HistoryView(controller: controller)
+            NativeHistoryView(controller: controller)
                 .tabItem { Label("History", systemImage: "clock") }.tag(1)
-            ModelsView(controller: controller)
-                .tabItem { Label("Models", systemImage: "cpu") }.tag(2)
-            SettingsView(controller: controller)
+            LibraryView(controller: controller, notes: notes, path: $libraryPath)
+                .tabItem { Label("Library", systemImage: "books.vertical") }.tag(2)
+            SettingsView(controller: controller, openModels: { showingModels = true })
                 .tabItem { Label("Settings", systemImage: "gearshape") }.tag(3)
+        }
+        .sheet(isPresented: $showingModels) { ModelsView(controller: controller) }
+        .sheet(item: $createdNote) { request in
+            NavigationStack {
+                NotesView(controller: notes, dictation: controller, initialNoteID: request.id)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { createdNote = nil } } }
+            }
         }
         .preferredColorScheme(colorScheme)
         .alert("LocalScribe", isPresented: Binding(
@@ -57,14 +78,27 @@ struct LocalScribeRootView: View {
             if recording { tab = 0 }
         }
         .onOpenURL { url in
-            if url.scheme == "localscribe", url.host == "dictation" { tab = 0 }
+            guard url.scheme == "localscribe" else { return }
+            switch url.host {
+            case "dictation": tab = 0
+            case "models": showingModels = true
+            case "dictionary": tab = 2; libraryPath = [.dictionary]
+            case "snippets": tab = 2; libraryPath = [.snippets]
+            case "notes": tab = 2; libraryPath = [.notes]
+            case "history": tab = 1
+            case "settings": tab = 3
+            default: break
+            }
         }
     }
 }
 
+private struct CreatedNoteRequest: Identifiable { let id: UUID }
+
 private struct DictateView: View {
     @ObservedObject var controller: AppController
     let openModels: () -> Void
+    let saveNote: (String) -> Void
     @State private var copied = false
     @FocusState private var editing: Bool
     private var ready: Bool { controller.installedModels.contains(controller.selectedModel) }
@@ -92,6 +126,12 @@ private struct DictateView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { recordingControls }
             .navigationTitle("Dictate").navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if !active, !controller.transcript.isEmpty {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { saveNote(controller.transcript) } label: { Image(systemName: "square.and.pencil") }
+                            .accessibilityLabel("Save transcript as a note")
+                    }
+                }
                 if editing {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Done") { editing = false; controller.saveTranscriptEdits() }
@@ -232,6 +272,10 @@ private struct DictateView: View {
                         .font(.caption).disabled(controller.isBusy)
                 }
             }
+            if recording {
+                Button("Cancel recording", role: .destructive) { Task { await controller.cancelRecording() } }
+                    .font(.footnote)
+            }
             Text("Audio stays on this iPhone and is not saved.").font(.caption).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 20).padding(.vertical, 16)
@@ -281,85 +325,6 @@ private struct DictateView: View {
             .buttonStyle(.bordered).controlSize(.large).disabled(textToCopy.isEmpty)
         ShareLink(item: textToCopy) { Label("Share", systemImage: "square.and.arrow.up") }
             .buttonStyle(.bordered).controlSize(.large).disabled(textToCopy.isEmpty)
-    }
-}
-
-private struct HistoryView: View {
-    @ObservedObject var controller: AppController
-    @State private var search = ""
-    @State private var selected: TranscriptEntry?
-    private var entries: [TranscriptEntry] {
-        controller.history.filter { search.isEmpty || $0.text.localizedCaseInsensitiveContains(search) }
-    }
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(entries) { entry in
-                    Button { selected = entry } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(entry.text).foregroundStyle(.primary).lineLimit(3)
-                            Text(entry.createdAt, format: .dateTime.month(.abbreviated).day().hour().minute())
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text(duration(entry.duration)).font(.caption).foregroundStyle(.secondary)
-                        }.padding(.vertical, 4)
-                    }
-                }
-                if !entries.isEmpty {
-                    Section {
-                        Text("Stored on this iPhone and excluded from device backups.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .overlay {
-                if entries.isEmpty {
-                    ContentUnavailableView(search.isEmpty ? "No transcripts" : "No results", systemImage: search.isEmpty ? "clock" : "magnifyingglass", description: Text(search.isEmpty ? "Finished dictations appear here when history is enabled." : "Try another word or phrase."))
-                }
-            }
-            .searchable(text: $search, prompt: "Search transcripts")
-            .navigationTitle("History")
-            .sheet(item: $selected) { entry in
-                HistoryEditor(entry: entry) { text in controller.updateHistory(id: entry.id, text: text) }
-            }
-        }
-    }
-}
-
-private struct HistoryEditor: View {
-    let entry: TranscriptEntry
-    let save: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var draft: String
-    @State private var copied = false
-    init(entry: TranscriptEntry, save: @escaping (String) -> Void) {
-        self.entry = entry; self.save = save; _draft = State(initialValue: entry.text)
-    }
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextEditor(text: $draft).font(.body).frame(minHeight: 260)
-                        .accessibilityLabel("Edit saved transcript")
-                    Button { UIPasteboard.general.string = draft; copied = true } label: {
-                        Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                    }
-                    ShareLink(item: draft) { Label("Share", systemImage: "square.and.arrow.up") }
-                }
-                Section {
-                    LabeledContent("Recorded") {
-                        Text(entry.createdAt, format: .dateTime.month().day().year().hour().minute())
-                    }
-                    LabeledContent("Duration", value: duration(entry.duration))
-                    LabeledContent("Model", value: entry.model.name)
-                }
-            }
-            .navigationTitle("Transcript").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Save") { save(draft); dismiss() } }
-            }
-            .onChange(of: draft) { _, _ in copied = false }
-        }
     }
 }
 
@@ -451,13 +416,27 @@ private struct ModelDetailsView: View {
 
 private struct SettingsView: View {
     @ObservedObject var controller: AppController
+    let openModels: () -> Void
+    @State private var requestedRetention: Int?
+    @State private var retentionError: String?
     @AppStorage("appearance") private var appearance = "system"
     var body: some View {
         NavigationStack {
             Form {
+                Section { Button("Choose model", action: openModels) }
                 Section {
                     Toggle("Keep transcript history", isOn: $controller.saveHistory)
-                    NavigationLink("Dictionary") { DictionaryView(controller: controller) }
+                    Picker("Auto-delete history", selection: Binding(get: { controller.historyRetentionDays }, set: { days in
+                        if days == 0 {
+                            do { try controller.setHistoryRetention(days: 0) } catch { retentionError = error.localizedDescription }
+                        } else { requestedRetention = days }
+                    })) {
+                        Text("Never").tag(0)
+                        Text("Before today").tag(1)
+                        Text("After 7 days").tag(7)
+                        Text("After 30 days").tag(30)
+                    }.disabled(!controller.canEditHistory)
+                    NavigationLink("Usage") { HistoryUsageView(controller: controller) }
                 } footer: {
                     Text("History is protected while locked and excluded from backups. Turning it off keeps existing entries.")
                 }
@@ -465,9 +444,12 @@ private struct SettingsView: View {
                     if let expiry = controller.keyboardSessionExpiresAt {
                         LabeledContent("Idle timeout") {
                             if controller.phase == .idle { Text(expiry, style: .timer).monospacedDigit() }
-                            else { Text("5 minutes") }
+                            else { Text(controller.keyboardIdleMinutes == 1 ? "1 minute" : "\(controller.keyboardIdleMinutes) minutes") }
                         }
                     }
+                    Picker("Idle timeout", selection: $controller.keyboardIdleMinutes) {
+                        ForEach([1, 5, 15, 30], id: \.self) { value in Text(value == 1 ? "1 minute" : "\(value) minutes").tag(value) }
+                    }.disabled(controller.keyboardSessionActive)
                     Button(controller.keyboardSessionActive ? "End session" : "Enable microphone") {
                         Task {
                             if controller.keyboardSessionActive { await controller.finishKeyboardSession() }
@@ -478,7 +460,13 @@ private struct SettingsView: View {
                 } header: {
                     Text("Keyboard microphone")
                 } footer: {
-                    Text("The microphone stays on until you end the session or stop dictating for 5 minutes. Audio between dictations is discarded. Realtime recognizes speech in the background; Neural Engine models wait until LocalScribe is open.")
+                    Text("The microphone stays on until you end the session or reach the selected idle timeout. Audio between dictations is discarded. Realtime recognizes speech in the background; Neural Engine models wait until LocalScribe is open.")
+                }
+                Section("Recording") {
+                    Toggle("Use built-in microphone", isOn: $controller.preferBuiltInMicrophone)
+                        .disabled(controller.phase != .idle || controller.keyboardSessionActive)
+                    Toggle("Haptic feedback", isOn: $controller.hapticFeedback)
+                        .disabled(controller.phase != .idle || controller.keyboardSessionActive)
                 }
                 Section {
                     NavigationLink("Action Button & shortcuts") { ActionButtonSetupView() }
@@ -497,6 +485,20 @@ private struct SettingsView: View {
                     Text("Recognition runs on this iPhone. No account, analytics, or cloud transcription. Recordings are held in memory, then discarded.")
                 }
             }.navigationTitle("Settings")
+            .alert("Change history retention?", isPresented: Binding(get: { requestedRetention != nil }, set: { if !$0 { requestedRetention = nil } })) {
+                Button("Cancel", role: .cancel) { requestedRetention = nil }
+                Button("Apply", role: .destructive) {
+                    if let days = requestedRetention {
+                        do { try controller.setHistoryRetention(days: days) } catch { retentionError = error.localizedDescription }
+                    }
+                    requestedRetention = nil
+                }
+            } message: {
+                Text("Deletes \(controller.historyRemovalCount(for: requestedRetention ?? 0)) older transcripts now and automatically removes older entries later. Dates use calendar days. This cannot be undone.")
+            }
+            .alert("History could not be changed", isPresented: Binding(get: { retentionError != nil }, set: { if !$0 { retentionError = nil } })) {
+                Button("OK") { retentionError = nil }
+            } message: { Text(retentionError ?? "") }
         }
     }
 }
@@ -536,7 +538,7 @@ private struct KeyboardSetupView: View {
             Section("Setup") {
                 Text("1. Open iPhone Settings → General → Keyboard → Keyboards → Add New Keyboard, then choose LocalScribe.")
                 Text("2. Allow Full Access for communication with the LocalScribe app. The keyboard does not use a network transcription service.")
-                Text("3. Open LocalScribe and enable the keyboard microphone in Settings. The session ends after 5 minutes without dictation.")
+                Text("3. Open LocalScribe and enable the keyboard microphone in Settings. The session ends after the idle timeout you choose in Settings.")
                 Text("4. Switch to another app and select the LocalScribe keyboard to record and insert text.")
             }
             Section("Microphone access") {
@@ -546,45 +548,27 @@ private struct KeyboardSetupView: View {
     }
 }
 
-private struct DictionaryView: View {
+private enum LibraryDestination: Hashable { case dictionary, snippets, notes }
+
+private struct LibraryView: View {
     @ObservedObject var controller: AppController
-    @State private var heard = ""
-    @State private var replacement = ""
-    @State private var editingID: UUID?
+    @ObservedObject var notes: NotesController
+    @Binding var path: [LibraryDestination]
     var body: some View {
-        Form {
-            Section {
-                TextField("Recognized phrase", text: $heard).textInputAutocapitalization(.never).autocorrectionDisabled()
-                TextField("Replacement", text: $replacement).autocorrectionDisabled()
-                Button(editingID == nil ? "Add" : "Save") {
-                    let phrase = heard.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let text = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if let id = editingID, let index = controller.dictionary.firstIndex(where: { $0.id == id }) {
-                        controller.dictionary[index] = DictionaryRule(id: id, heard: phrase, replacement: text)
-                    } else if let index = controller.dictionary.firstIndex(where: { $0.heard.compare(phrase, options: .caseInsensitive) == .orderedSame }) {
-                        controller.dictionary[index].replacement = text
-                    } else { controller.dictionary.append(DictionaryRule(heard: phrase, replacement: text)) }
-                    heard = ""; replacement = ""; editingID = nil
-                }.disabled(heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || replacement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                if editingID != nil { Button("Cancel edit") { heard = ""; replacement = ""; editingID = nil } }
-            } header: {
-                Text(editingID == nil ? "Add correction" : "Edit correction")
-            } footer: {
-                Text("Replaces matching whole phrases after transcription. Capitalization is ignored.")
-            }
-            if !controller.dictionary.isEmpty {
-                Section("Saved corrections") {
-                    ForEach(controller.dictionary) { rule in
-                        Button { heard = rule.heard; replacement = rule.replacement; editingID = rule.id } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(rule.heard).foregroundStyle(.primary)
-                                Text(rule.replacement).foregroundStyle(.secondary)
-                            }
-                        }.accessibilityLabel("Edit correction: \(rule.heard), replaced with \(rule.replacement)")
-                    }
+        NavigationStack(path: $path) {
+            List {
+                NavigationLink(value: LibraryDestination.dictionary) { Label("Dictionary", systemImage: "textformat.abc") }
+                NavigationLink(value: LibraryDestination.snippets) { Label("Snippets", systemImage: "text.badge.plus") }
+                NavigationLink(value: LibraryDestination.notes) { Label("Notes", systemImage: "note.text") }
+            }.navigationTitle("Library")
+            .navigationDestination(for: LibraryDestination.self) { destination in
+                switch destination {
+                case .dictionary: DictionaryView(controller: controller)
+                case .snippets: SnippetsView(controller: controller)
+                case .notes: NotesView(controller: notes, dictation: controller)
                 }
             }
-        }.navigationTitle("Dictionary").navigationBarTitleDisplayMode(.inline)
+        }
     }
 }
 

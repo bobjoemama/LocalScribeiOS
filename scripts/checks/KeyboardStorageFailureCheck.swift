@@ -15,6 +15,7 @@ final class AppController: ObservableObject {
     var keyboardSessionActive: Bool { keyboardSessionExpiresAt.map { $0 > Date() } ?? false }
 
     func startRecording() async { transcript = ""; phase = .recording }
+    func cancelRecording() async { transcript = ""; phase = .idle; onDictationFinished?() }
     func stopRecording() async {
         phase = .transcribing
         transcript = "Captured words remain in the app."

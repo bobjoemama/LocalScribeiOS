@@ -6,7 +6,7 @@ public enum KeyboardSessionPhase: String, Codable, Sendable {
 }
 
 public struct KeyboardCommand: Codable, Equatable, Sendable {
-    public enum Action: String, Codable, Sendable { case start, stop }
+    public enum Action: String, Codable, Sendable { case start, stop, cancel }
     public let id: UUID
     public let sessionID: UUID
     public let utteranceID: UUID
@@ -23,7 +23,11 @@ public struct KeyboardCommand: Codable, Equatable, Sendable {
 
     public func isValid(for status: KeyboardSessionStatus, now: Date = Date()) -> Bool {
         let age = now.timeIntervalSince(createdAt)
-        return age >= -1 && age <= 10 && status.sessionID == sessionID && status.canRecord(at: now)
+        guard age >= -1 && age <= 10, status.sessionID == sessionID, status.canRecord(at: now) else { return false }
+        switch action {
+        case .start: return true
+        case .stop, .cancel: return status.phase == .recording && status.utteranceID == utteranceID
+        }
     }
 }
 
@@ -68,6 +72,12 @@ public struct KeyboardSessionStatus: Codable, Equatable, Sendable {
               deliveryExpiresAt > now, let transcript else { return false }
         return !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+}
+
+/// A delivery claimed by the keyboard. Contains only this utterance's local ASR result.
+public struct KeyboardPendingDelivery: Equatable, Sendable {
+    public let utteranceID: UUID
+    public let text: String
 }
 
 public struct KeyboardDeliveryReceipt: Codable, Equatable, Sendable {
@@ -142,6 +152,15 @@ public final class SharedKeyboardStore {
     public func writeCommand(_ command: KeyboardCommand) throws { try write(command, to: "command.json") }
     public func readReceipt() throws -> KeyboardDeliveryReceipt? { try read("receipt.json") }
     public func writeReceipt(_ receipt: KeyboardDeliveryReceipt) throws { try write(receipt, to: "receipt.json") }
+
+    /// Claim before insert/copy so a copied result cannot be inserted by a later poll.
+    /// File IO and host insertion/clipboard writes cannot form one atomic transaction.
+    public func claimPendingResult(_ status: KeyboardSessionStatus, now: Date = Date()) throws -> KeyboardPendingDelivery? {
+        guard status.hasDeliverableResult(at: now), let utterance = status.utteranceID,
+              let text = status.transcript, try readReceipt()?.utteranceID != utterance else { return nil }
+        try writeReceipt(KeyboardDeliveryReceipt(utteranceID: utterance, consumedAt: now))
+        return KeyboardPendingDelivery(utteranceID: utterance, text: text)
+    }
 
     private func read<T: Decodable>(_ name: String) throws -> T? {
         let url = directory.appendingPathComponent(name)

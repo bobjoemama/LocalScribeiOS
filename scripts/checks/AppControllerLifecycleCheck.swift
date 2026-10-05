@@ -29,6 +29,8 @@ struct FixtureCaptureSnapshot {
 }
 @MainActor final class AudioRecorder {
     static var latest: AudioRecorder?
+    var preferBuiltInMicrophone = false
+    var hapticFeedbackEnabled = false
     var onLevel: ((Float) -> Void)?
     var onOverflow: ((Int) -> Void)?
     var onCaptureFailure: ((RecordingError) -> Void)?

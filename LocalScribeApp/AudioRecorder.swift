@@ -21,6 +21,8 @@ final class AudioRecorder {
     private let capture = CaptureBuffer()
     private var tapInstalled = false
     private var observers: [NSObjectProtocol] = []
+    var preferBuiltInMicrophone = false
+    var hapticFeedbackEnabled = false
     var onLevel: ((Float) -> Void)?
     /// Actual lost samples due to consumer backpressure, not a duration limit.
     var onOverflow: ((Int) -> Void)?
@@ -51,7 +53,13 @@ final class AudioRecorder {
         guard allowed else { throw RecordingError.microphoneDenied }
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+        try session.setAllowHapticsAndSystemSoundsDuringRecording(hapticFeedbackEnabled)
         try session.setActive(true)
+        if preferBuiltInMicrophone, let microphone = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
+            try session.setPreferredInput(microphone)
+        } else {
+            try session.setPreferredInput(nil)
+        }
         do {
             let input = engine.inputNode
             let inputFormat = input.outputFormat(forBus: 0)
