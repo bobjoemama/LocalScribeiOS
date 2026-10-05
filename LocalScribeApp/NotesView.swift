@@ -27,7 +27,7 @@ struct NotesView: View {
 
     var body: some View {
         List {
-            if controller.errorMessage != nil { NotesSaveError(controller: controller) }
+            if controller.errorMessage != nil { NotesSaveError(controller: controller, dictation: dictation) }
             if controller.isLoading {
                 ProgressView("Opening notes…")
             } else if matchingNotes.isEmpty {
@@ -72,6 +72,7 @@ struct NotesView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     newNoteID = controller.create()
+                    search = ""
                     showNewNote = true
                 } label: { Label("Create a note", systemImage: "square.and.pencil") }
                 .disabled(controller.isLoading)
@@ -96,12 +97,14 @@ struct NotesView: View {
 
 private struct NotesSaveError: View {
     @ObservedObject var controller: NotesController
+    @ObservedObject var dictation: AppController
     var body: some View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
                 Label("Notes couldn’t be saved", systemImage: "exclamationmark.triangle").font(.headline)
                 Text(controller.errorMessage ?? "").font(.subheadline).foregroundStyle(.secondary)
                 Button("Retry saving") { Task { await controller.retrySave() } }.disabled(controller.isSaving || controller.isLoading)
+                NavigationLink("Manage saved data") { SavedDataView(controller: dictation, notes: controller) }
             }.padding(.vertical, 6)
         }
     }
@@ -137,7 +140,9 @@ private struct NoteEditor: View {
             if controller.errorMessage != nil {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(controller.errorMessage ?? "").font(.footnote).foregroundStyle(.secondary)
+                    NavigationLink("Manage saved data") { SavedDataView(controller: dictation, notes: controller) }
                     Button("Retry saving") { Task { await controller.retrySave() } }
+                        .disabled(controller.isSaving || controller.isLoading)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding()
                 Divider()
             }

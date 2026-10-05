@@ -13,6 +13,7 @@ final class KeyboardViewController: UIInputViewController {
     private var lastShiftTap = Date.distantPast
     private var pollTimer: Timer?
     private var deleteTimer: Timer?
+    private var deletePressID: UUID?
     private var store: SharedKeyboardStore?
     private var status: KeyboardSessionStatus?
     private var autoInsertionTarget = KeyboardAutoInsertionTarget()
@@ -68,8 +69,7 @@ final class KeyboardViewController: UIInputViewController {
         isVisible = false
         pollTimer?.invalidate()
         pollTimer = nil
-        deleteTimer?.invalidate()
-        deleteTimer = nil
+        deleteReleased()
         // Changing fields/apps requires an explicit insert; never surprise a new text field.
         autoInsertionTarget.invalidate()
         pendingCommand = nil
@@ -243,17 +243,26 @@ final class KeyboardViewController: UIInputViewController {
         autoInsertionTarget.invalidate()
         textDocumentProxy.deleteBackward()
         deleteTimer?.invalidate()
+        let pressID = UUID()
+        deletePressID = pressID
         deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, self.isVisible, self.deletePressID == pressID else { return }
                 self.deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
-                    Task { @MainActor [weak self] in self?.textDocumentProxy.deleteBackward() }
+                    Task { @MainActor [weak self] in
+                        guard let self, self.isVisible, self.deletePressID == pressID else { return }
+                        self.textDocumentProxy.deleteBackward()
+                    }
                 }
             }
         }
     }
 
-    @objc private func deleteReleased() { deleteTimer?.invalidate(); deleteTimer = nil }
+    @objc private func deleteReleased() {
+        deletePressID = nil
+        deleteTimer?.invalidate()
+        deleteTimer = nil
+    }
 
     @objc private func modifierTapped() {
         if layout == .letters {

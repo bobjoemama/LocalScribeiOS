@@ -14,6 +14,8 @@ Latest desktop direction: inspect the installed Wispr Flow desktop app with comp
 
 Desktop recovery must be usable through the app rather than requiring scripts or manual database replacement. Devesh requested subagent audits and fixes of demonstrated desktop bugs, using focused tests, scripts and lint while keeping dictation available. Provide visible recovery for unreadable saved data, reliable library editing and recording cleanup; distinguish bounded verification from an exhaustive bug-free claim.
 
+The same bounded audit applies to the iPhone. Closing the Mac window hides it and keeps dictation available; Command–Q or actual Quit must terminate LocalScribe and its microphone, speech workers and loaded models. Devesh clarified this after correcting an earlier request to quit on window close. A start-request log is not evidence that microphone capture is active.
+
 The model research and its evidence live in `docs/MODEL_RESEARCH.md`. Remaining delivery work and verification status live in `tasklist.md`.
 
 Devesh requested an iPhone Action Button shortcut: first hold starts recording, second hold finishes local transcription and copies it to the clipboard; show useful recording/processing/result states in Dynamic Island. Use native App Intents, ActivityKit and a widget extension, with fallback if Live Activities are disabled. Follow iOS inference permissions and runtime-reported capabilities; no unsupported background Neural Engine claim.

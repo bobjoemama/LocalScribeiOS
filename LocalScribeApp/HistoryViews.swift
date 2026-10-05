@@ -4,6 +4,7 @@ import LocalScribeCore
 
 struct NativeHistoryView: View {
     @ObservedObject var controller: AppController
+    var openSavedData: (() -> Void)? = nil
     @State private var search = ""
     @State private var selectedEntry: TranscriptEntry?
     @State private var deletingEntry: TranscriptEntry?
@@ -25,6 +26,12 @@ struct NativeHistoryView: View {
     var body: some View {
         NavigationStack {
             List {
+                if controller.unreadableSavedData.contains(.history) {
+                    Section {
+                        Text("Your saved history could not be opened.")
+                        if let openSavedData { Button("Manage saved data", action: openSavedData) }
+                    }
+                }
                 ForEach(days) { day in
                     Section {
                         ForEach(day.entries) { entry in
@@ -36,9 +43,9 @@ struct NativeHistoryView: View {
                 }
             }
             .overlay {
-                if controller.history.isEmpty {
+                if controller.history.isEmpty && !controller.unreadableSavedData.contains(.history) {
                     ContentUnavailableView("No saved transcripts", systemImage: "clock", description: Text("Dictations appear here when history is enabled."))
-                } else if visible.isEmpty {
+                } else if visible.isEmpty && !controller.unreadableSavedData.contains(.history) {
                     ContentUnavailableView.search(text: search)
                 }
             }
@@ -61,6 +68,8 @@ struct NativeHistoryView: View {
             .sheet(item: $selectedEntry) { entry in
                 HistoryTranscriptEditor(entry: entry, canSave: controller.canEditHistory) { text in
                     try controller.replaceHistory(id: entry.id, text: text)
+                    // Reveal the saved edit even if it no longer matches this search.
+                    search = ""
                 }
             }
             .alert("Delete transcript?", isPresented: Binding(
@@ -173,6 +182,7 @@ private struct HistoryTranscriptEditor: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        failure = nil
                         do { try save(draft); dismiss() }
                         catch { failure = error.localizedDescription }
                     }.disabled(!canSave || !changed)

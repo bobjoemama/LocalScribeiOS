@@ -88,8 +88,12 @@ final class DictationActionBridge {
         await controller.startActionButtonRecording()
         logger.notice("Shortcut start returned; recording=\(controller.phase == .recording, privacy: .public) activity=\(self.recordingActivityStarted, privacy: .public)")
         if controller.phase == .recording, !recordingActivityStarted {
-            await controller.stopActionButtonRecording()
+            // This start never acquired the platform recording contract. Discard
+            // its audio instead of finalizing it into history or the clipboard.
+            didBeginRecording = false
             activeSessionID = nil
+            pendingResult = nil
+            await controller.cancelRecording()
             throw DictationActionError.failed("iOS could not start the recording Live Activity. Open LocalScribe to record directly, or check Live Activities in iPhone Settings.")
         }
         guard controller.phase == .recording, didBeginRecording else {

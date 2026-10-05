@@ -11,6 +11,7 @@ final class NotesController: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private let store: NoteStore
+    private let notesFile: URL
     private var writable = false
     private var savedIDs: Set<UUID> = []
     private var revision = 0
@@ -20,7 +21,9 @@ final class NotesController: ObservableObject {
     init(historyDirectoryURL: URL? = nil) {
         let base = historyDirectoryURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("LocalScribe", isDirectory: true)
-        store = NoteStore(file: base.appendingPathComponent("Notes", isDirectory: true).appendingPathComponent("notes.json"))
+        let file = base.appendingPathComponent("Notes", isDirectory: true).appendingPathComponent("notes.json")
+        notesFile = file
+        store = NoteStore(file: file)
         Task {
             await loadPreservingDrafts()
             if hasUnsavedChanges { await flush() }
@@ -67,6 +70,10 @@ final class NotesController: ObservableObject {
     private func changed() {
         revision += 1
         hasUnsavedChanges = true
+        scheduleAutosave()
+    }
+
+    private func scheduleAutosave() {
         autosaveTask?.cancel()
         autosaveTask = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(2)) } catch { return }
@@ -110,6 +117,32 @@ final class NotesController: ObservableObject {
             if !(await task.value) { return false }
         }
     }
+
+    /// Called only after explicit confirmation. Never let an older autosave
+    /// overwrite the new empty store, and leave drafts intact if recovery fails.
+    @discardableResult func resetSavedNotes() async throws -> URL? {
+        guard !isLoading, !isSaving, saveTask == nil else {
+            throw NSError(domain: "LocalScribe.Notes", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Wait for notes to finish loading or saving, then try again."])
+        }
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        do {
+            let backup = try SavedDataRecovery.reset(file: notesFile, emptyData: NoteStore.emptyData())
+            revision += 1
+            notes = []
+            savedIDs = []
+            hasUnsavedChanges = false
+            writable = true
+            errorMessage = nil
+            return backup
+        } catch {
+            if hasUnsavedChanges { scheduleAutosave() }
+            throw error
+        }
+    }
+
+    func savedDataBackups() throws -> [URL] { try SavedDataRecovery.backups(for: notesFile) }
 
     func retrySave() async {
         if !writable { await loadPreservingDrafts() }

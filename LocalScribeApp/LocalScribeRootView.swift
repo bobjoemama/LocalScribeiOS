@@ -9,6 +9,7 @@ struct LocalScribeRootView: View {
     @AppStorage("appearance") private var appearance = "system"
     @State private var tab = 0
     @State private var showingModels = false
+    @State private var showingSavedData = false
     @State private var createdNote: CreatedNoteRequest?
     @State private var libraryPath: [LibraryDestination] = []
     @ObservedObject var notes: NotesController
@@ -46,14 +47,20 @@ struct LocalScribeRootView: View {
         TabView(selection: $tab) {
             DictateView(controller: controller, openModels: { showingModels = true }, saveNote: { text in createdNote = CreatedNoteRequest(id: notes.create(text: text)) })
                 .tabItem { Label("Dictate", systemImage: "mic") }.tag(0)
-            NativeHistoryView(controller: controller)
+            NativeHistoryView(controller: controller, openSavedData: { showingSavedData = true })
                 .tabItem { Label("History", systemImage: "clock") }.tag(1)
-            LibraryView(controller: controller, notes: notes, path: $libraryPath)
+            LibraryView(controller: controller, notes: notes, path: $libraryPath, openSavedData: { showingSavedData = true })
                 .tabItem { Label("Library", systemImage: "books.vertical") }.tag(2)
-            SettingsView(controller: controller, openModels: { showingModels = true })
+            SettingsView(controller: controller, notes: notes, openModels: { showingModels = true })
                 .tabItem { Label("Settings", systemImage: "gearshape") }.tag(3)
         }
         .sheet(isPresented: $showingModels) { ModelsView(controller: controller) }
+        .sheet(isPresented: $showingSavedData) {
+            NavigationStack {
+                SavedDataView(controller: controller, notes: notes)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showingSavedData = false } } }
+            }
+        }
         .sheet(item: $createdNote) { request in
             NavigationStack {
                 NotesView(controller: notes, dictation: controller, initialNoteID: request.id)
@@ -416,6 +423,7 @@ private struct ModelDetailsView: View {
 
 private struct SettingsView: View {
     @ObservedObject var controller: AppController
+    @ObservedObject var notes: NotesController
     let openModels: () -> Void
     @State private var requestedRetention: Int?
     @State private var retentionError: String?
@@ -479,6 +487,7 @@ private struct SettingsView: View {
                     }
                 }
                 Section {
+                    NavigationLink("Saved data") { SavedDataView(controller: controller, notes: notes) }
                     NavigationLink("Performance & accuracy") { PerformanceView(controller: controller) }
                     NavigationLink("About & credits") { AboutView() }
                 } footer: {
@@ -554,6 +563,7 @@ private struct LibraryView: View {
     @ObservedObject var controller: AppController
     @ObservedObject var notes: NotesController
     @Binding var path: [LibraryDestination]
+    let openSavedData: () -> Void
     var body: some View {
         NavigationStack(path: $path) {
             List {
@@ -563,8 +573,8 @@ private struct LibraryView: View {
             }.navigationTitle("Library")
             .navigationDestination(for: LibraryDestination.self) { destination in
                 switch destination {
-                case .dictionary: DictionaryView(controller: controller)
-                case .snippets: SnippetsView(controller: controller)
+                case .dictionary: DictionaryView(controller: controller, openSavedData: openSavedData)
+                case .snippets: SnippetsView(controller: controller, openSavedData: openSavedData)
                 case .notes: NotesView(controller: notes, dictation: controller)
                 }
             }

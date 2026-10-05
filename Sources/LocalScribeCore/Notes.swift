@@ -62,6 +62,10 @@ public actor NoteStore {
     private struct Header: Decodable { let version: Int }
     public init(file: URL) { self.file = file }
 
+    public static func emptyData() throws -> Data {
+        try JSONEncoder().encode(Document(version: 2, notes: []))
+    }
+
     public func load() throws -> [NoteEntry] {
         guard FileManager.default.fileExists(atPath: file.path) else { return [] }
         return try decode(Data(contentsOf: file))

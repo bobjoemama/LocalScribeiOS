@@ -31,6 +31,12 @@ The comparison uses current [official iOS feature evidence](docs/IOS_FEATURE_PAR
 
 ## Privacy and storage
 
+In Settings → Saved data, retry opening files after unlocking, or confirm a reset
+of history, dictionary, snippets or notes. Reset preserves a protected recovery
+copy of the previous saved file and keeps models and settings. Recovery copies
+can be exported from the same screen; they contain saved text. Unreadable library
+and history screens link directly to these controls.
+
 No cloud recognition, account, analytics or updater is implemented. Explicit model setup contacts Hugging Face and its download/CDN infrastructure. Audio samples remain in a bounded in-memory buffer and are not saved as audio files. History is optional; turning it off stops saving subsequent transcripts. Existing history remains available. History and dictionary JSON use complete file protection and are excluded from backups. Temporary keyboard state uses protection after first unlock to support app/keyboard handoff and is also excluded from backups. Model directories are excluded from backups. Transcripts can still leave the app through explicit copy/share or insertion into the chosen host app.
 
 Models are pinned to immutable revisions in `Resources/model-integrity.json`, verified against file sizes and publisher SHA-256/Git object hashes before cold loading. Publisher hashes provide integrity relative to the publisher, not independent signed provenance. Core ML may create additional system-managed compiled caches beyond the listed model bytes.

@@ -25,7 +25,7 @@ public struct KeyboardCommand: Codable, Equatable, Sendable {
         let age = now.timeIntervalSince(createdAt)
         guard age >= -1 && age <= 10, status.sessionID == sessionID, status.canRecord(at: now) else { return false }
         switch action {
-        case .start: return true
+        case .start: return status.phase == .ready || status.phase == .failed
         case .stop, .cancel: return status.phase == .recording && status.utteranceID == utteranceID
         }
     }
@@ -157,7 +157,13 @@ public final class SharedKeyboardStore {
     /// File IO and host insertion/clipboard writes cannot form one atomic transaction.
     public func claimPendingResult(_ status: KeyboardSessionStatus, now: Date = Date()) throws -> KeyboardPendingDelivery? {
         guard status.hasDeliverableResult(at: now), let utterance = status.utteranceID,
-              let text = status.transcript, try readReceipt()?.utteranceID != utterance else { return nil }
+              let text = status.transcript,
+              let current = try readStatus(), current.hasDeliverableResult(at: now),
+              current.sessionID == status.sessionID, current.utteranceID == utterance,
+              current.transcript == text,
+              try readReceipt()?.utteranceID != utterance else { return nil }
+        // UI snapshots can outlive a revoked/replaced result. Recheck the authoritative
+        // snapshot before claiming so an old tap cannot replace a newer receipt.
         try writeReceipt(KeyboardDeliveryReceipt(utteranceID: utterance, consumedAt: now))
         return KeyboardPendingDelivery(utteranceID: utterance, text: text)
     }

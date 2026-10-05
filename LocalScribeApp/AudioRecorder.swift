@@ -20,6 +20,7 @@ final class AudioRecorder {
     private let engine = AVAudioEngine()
     private let capture = CaptureBuffer()
     private var tapInstalled = false
+    private var activationRevision: UInt = 0
     private var observers: [NSObjectProtocol] = []
     var preferBuiltInMicrophone = false
     var hapticFeedbackEnabled = false
@@ -49,18 +50,24 @@ final class AudioRecorder {
 
     func arm() async throws {
         if engine.isRunning { return }
+        let revision = activationRevision
         let allowed = await AVAudioApplication.requestRecordPermission()
+        // Permission can outlive Cancel/backgrounding. Fence before touching the
+        // audio session or input tap, rather than repairing a stale activation later.
+        guard revision == activationRevision else { throw CancellationError() }
+        try Task.checkCancellation()
         guard allowed else { throw RecordingError.microphoneDenied }
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
-        try session.setAllowHapticsAndSystemSoundsDuringRecording(hapticFeedbackEnabled)
-        try session.setActive(true)
-        if preferBuiltInMicrophone, let microphone = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
-            try session.setPreferredInput(microphone)
-        } else {
-            try session.setPreferredInput(nil)
-        }
+        if engine.isRunning { return }
         do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+            try session.setAllowHapticsAndSystemSoundsDuringRecording(hapticFeedbackEnabled)
+            try session.setActive(true)
+            if preferBuiltInMicrophone, let microphone = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
+                try session.setPreferredInput(microphone)
+            } else {
+                try session.setPreferredInput(nil)
+            }
             let input = engine.inputNode
             let inputFormat = input.outputFormat(forBus: 0)
             guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else { throw RecordingError.unavailableInput }
@@ -108,6 +115,7 @@ final class AudioRecorder {
         return samples
     }
     func shutdown() {
+        activationRevision &+= 1
         capture.discard()
         engine.stop()
         if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }

@@ -91,9 +91,15 @@ struct DictationActivityAttributes {
         try check(controller.phase == .idle && !recorder.recording, "Unavailable required Live Activity does not activate microphone")
         DictationLiveActivity.authorized = true
         DictationLiveActivity.requestSucceeds = false
+        AudioRecorder.samplesOnBeginCapture = 8_000
+        controller.saveHistory = true
+        let writesBeforeFailedStart = UIPasteboard.general.writes.count
         do { _ = try await StartDictationShortcut().perform(); throw Failure.check("Activity creation failure must fail") }
         catch DictationActionError.failed { checks += 1 }
         try check(controller.phase == .idle && !recorder.recording, "Activity creation failure stops capture before successful shortcut return")
+        try check(controller.transcript.isEmpty && controller.history.isEmpty, "Failed Activity creation discards captured audio rather than finalizing or saving it")
+        try check(UIPasteboard.general.writes.count == writesBeforeFailedStart, "Failed shortcut start never replaces the clipboard")
+        AudioRecorder.samplesOnBeginCapture = 0
         owner = nil
         try check(retainedBridge == nil, "Handler holds no hidden second recorder owner")
         retainedBridge = nil

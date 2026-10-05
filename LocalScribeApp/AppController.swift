@@ -581,6 +581,57 @@ final class AppController: ObservableObject {
 
     func clearHistory() throws { try deleteHistory(ids: Set(history.map(\.id))) }
 
+    var unreadableSavedData: Set<SavedDataCollection> {
+        var result: Set<SavedDataCollection> = []
+        if !historyWritable { result.insert(.history) }
+        if !dictionaryWritable { result.insert(.dictionary) }
+        if !snippetsWritable { result.insert(.snippets) }
+        return result
+    }
+
+    func retrySavedData() throws -> [String] {
+        try requireIdleSavedDataRecovery()
+        var failures: [String] = []
+        do { dictionary = try dictionaryStore.load(); dictionaryWritable = true }
+        catch { dictionaryWritable = false; failures.append("Dictionary: \(error.localizedDescription)") }
+        do { snippets = try snippetStore.load(); snippetsWritable = true }
+        catch { snippetsWritable = false; failures.append("Snippets: \(error.localizedDescription)") }
+        do { history = try store.load(); historyWritable = true }
+        catch { historyWritable = false; failures.append("History: \(error.localizedDescription)") }
+        personalizer = TranscriptPersonalizer(dictionary: dictionary, snippets: snippets)
+        return failures
+    }
+
+    @discardableResult func resetSavedData(_ collection: SavedDataCollection) throws -> URL? {
+        try requireIdleSavedDataRecovery()
+        let file: URL
+        switch collection {
+        case .history: file = store.file
+        case .dictionary: file = dictionaryStore.file
+        case .snippets: file = snippetStore.file
+        case .notes: throw NSError(domain: "LocalScribe", code: 1, userInfo: [NSLocalizedDescriptionKey: "Reset notes through the notes controller."])
+        }
+        let backup = try SavedDataRecovery.reset(file: file, emptyData: Data("[]".utf8))
+        switch collection {
+        case .history: history = []; historyWritable = true; currentEntryID = nil
+        case .dictionary: dictionary = []; dictionaryWritable = true
+        case .snippets: snippets = []; snippetsWritable = true
+        case .notes: break
+        }
+        personalizer = TranscriptPersonalizer(dictionary: dictionary, snippets: snippets)
+        return backup
+    }
+
+    func savedDataBackups() throws -> [URL] {
+        try [store.file, dictionaryStore.file, snippetStore.file].flatMap { try SavedDataRecovery.backups(for: $0) }
+    }
+
+    private func requireIdleSavedDataRecovery() throws {
+        guard phase == .idle, !keyboardSessionActive, !actionButtonRecording else {
+            throw NSError(domain: "LocalScribe", code: 1, userInfo: [NSLocalizedDescriptionKey: "Stop recording and end the keyboard microphone session before managing saved data."])
+        }
+    }
+
     private func beginBackgroundCompletion() {
         guard backgroundCompletionTask == .invalid else { return }
         backgroundCompletionTask = UIApplication.shared.beginBackgroundTask(withName: "Finish local dictation") { [weak self] in

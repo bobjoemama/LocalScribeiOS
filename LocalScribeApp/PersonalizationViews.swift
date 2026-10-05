@@ -4,6 +4,7 @@ import UIKit
 
 struct DictionaryView: View {
     @ObservedObject var controller: AppController
+    var openSavedData: (() -> Void)? = nil
     @State private var search = ""
     @State private var editor: PersonalizationEditorRequest?
     @State private var deleting: DictionaryRule?
@@ -17,6 +18,12 @@ struct DictionaryView: View {
 
     var body: some View {
         List {
+            if !controller.canEditDictionary {
+                Section {
+                    Text("Your saved dictionary could not be opened.")
+                    if let openSavedData { Button("Manage saved data", action: openSavedData) }
+                }
+            }
             Section {
                 ForEach(rules) { rule in
                     Button {
@@ -44,7 +51,7 @@ struct DictionaryView: View {
             }
         }
         .overlay {
-            if rules.isEmpty {
+            if rules.isEmpty && controller.canEditDictionary {
                 ContentUnavailableView(search.isEmpty ? "No corrections" : "No results", systemImage: search.isEmpty ? "text.book.closed" : "magnifyingglass", description: Text(search.isEmpty ? "Add how a word or phrase should be written." : "Try another word or phrase."))
             }
         }
@@ -57,7 +64,9 @@ struct DictionaryView: View {
                     .disabled(!controller.canEditDictionary)
             }
         }
-        .sheet(item: $editor) { request in PersonalizationEditor(controller: controller, request: request) }
+        .sheet(item: $editor) { request in
+            PersonalizationEditor(controller: controller, request: request) { search = "" }
+        }
         .confirmationDialog("Delete correction?", isPresented: deletionPresented, titleVisibility: .visible) {
             if let rule = deleting {
                 Button("Delete", role: .destructive) {
@@ -85,6 +94,7 @@ struct DictionaryView: View {
 
 struct SnippetsView: View {
     @ObservedObject var controller: AppController
+    var openSavedData: (() -> Void)? = nil
     @State private var search = ""
     @State private var editor: PersonalizationEditorRequest?
     @State private var deleting: SpokenSnippet?
@@ -98,6 +108,12 @@ struct SnippetsView: View {
 
     var body: some View {
         List {
+            if !controller.canEditSnippets {
+                Section {
+                    Text("Your saved snippets could not be opened.")
+                    if let openSavedData { Button("Manage saved data", action: openSavedData) }
+                }
+            }
             Section {
                 ForEach(snippets) { snippet in
                     Button {
@@ -127,7 +143,7 @@ struct SnippetsView: View {
             }
         }
         .overlay {
-            if snippets.isEmpty {
+            if snippets.isEmpty && controller.canEditSnippets {
                 ContentUnavailableView(search.isEmpty ? "No snippets" : "No results", systemImage: search.isEmpty ? "text.alignleft" : "magnifyingglass", description: Text(search.isEmpty ? "Save text to insert with a spoken phrase." : "Try another word or phrase."))
             }
         }
@@ -140,7 +156,9 @@ struct SnippetsView: View {
                     .disabled(!controller.canEditSnippets)
             }
         }
-        .sheet(item: $editor) { request in PersonalizationEditor(controller: controller, request: request) }
+        .sheet(item: $editor) { request in
+            PersonalizationEditor(controller: controller, request: request) { search = "" }
+        }
         .confirmationDialog("Delete snippet?", isPresented: deletionPresented, titleVisibility: .visible) {
             if let snippet = deleting {
                 Button("Delete", role: .destructive) {
@@ -192,17 +210,20 @@ private struct PersonalizationEditorRequest: Identifiable {
 private struct PersonalizationEditor: View {
     @ObservedObject var controller: AppController
     let request: PersonalizationEditorRequest
+    let onSaved: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var trigger: String
     @State private var output: String
     @State private var enabled: Bool
     @State private var errorMessage: String?
+    @State private var confirmingDiscard = false
     @FocusState private var focus: Field?
     private enum Field { case trigger, output }
 
-    init(controller: AppController, request: PersonalizationEditorRequest) {
+    init(controller: AppController, request: PersonalizationEditorRequest, onSaved: @escaping () -> Void) {
         self.controller = controller
         self.request = request
+        self.onSaved = onSaved
         switch request.entry {
         case .correction(let rule):
             _trigger = State(initialValue: rule?.heard ?? "")
@@ -220,6 +241,14 @@ private struct PersonalizationEditor: View {
         switch request.entry {
         case .correction(let rule): rule == nil
         case .snippet(let snippet): snippet == nil
+        }
+    }
+    private var hasChanges: Bool {
+        switch request.entry {
+        case .correction(let rule):
+            trigger != (rule?.heard ?? "") || output != (rule?.replacement ?? "") || enabled != (rule?.isEnabled ?? true)
+        case .snippet(let snippet):
+            trigger != (snippet?.trigger ?? "") || output != (snippet?.expansion ?? "") || enabled != (snippet?.isEnabled ?? true)
         }
     }
     private var canEdit: Bool { isSnippet ? controller.canEditSnippets : controller.canEditDictionary }
@@ -263,7 +292,9 @@ private struct PersonalizationEditor: View {
             .navigationTitle(isSnippet ? (isNew ? "New snippet" : "Edit snippet") : (isNew ? "New correction" : "Edit correction"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { if hasChanges { confirmingDiscard = true } else { dismiss() } }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", action: save).disabled(!canEdit || !validDraft)
                 }
@@ -272,7 +303,11 @@ private struct PersonalizationEditor: View {
                     Button("Done") { focus = nil }
                 }
             }
-            .interactiveDismissDisabled()
+            .interactiveDismissDisabled(hasChanges)
+            .confirmationDialog("Discard unsaved changes?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
+                Button("Discard changes", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
             .alert("Could not save", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
                 Button("OK") { errorMessage = nil }
             } message: { Text(errorMessage ?? "") }
@@ -280,6 +315,7 @@ private struct PersonalizationEditor: View {
     }
 
     private func save() {
+        errorMessage = nil
         do {
             switch request.entry {
             case .correction(let rule):
@@ -287,6 +323,7 @@ private struct PersonalizationEditor: View {
             case .snippet(let snippet):
                 try controller.upsertSnippet(id: snippet?.id, trigger: trigger, expansion: output, isEnabled: enabled)
             }
+            onSaved()
             dismiss()
         } catch { errorMessage = error.localizedDescription }
     }

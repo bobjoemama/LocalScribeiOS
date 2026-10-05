@@ -37,6 +37,7 @@ struct FixtureCaptureSnapshot {
     var onInterruption: (() -> Void)?
     var armContinuation: CheckedContinuation<Void, Never>?
     static var holdNextArm = false
+    static var samplesOnBeginCapture = 0
     var captureSnapshot = FixtureCaptureSnapshot()
     var pending: [Float] = []
     var recording = false
@@ -49,7 +50,10 @@ struct FixtureCaptureSnapshot {
         }
         armed = true
     }
-    func beginCapture() { captureSnapshot = .init(); pending = []; recording = true }
+    func beginCapture() {
+        captureSnapshot = .init(); pending = []; recording = true
+        feed(Self.samplesOnBeginCapture)
+    }
     func drainCapture(minimumSamples: Int, maximumSamples: Int) -> [Float] {
         guard pending.count >= minimumSamples else { return [] }
         let count = min(pending.count, maximumSamples)

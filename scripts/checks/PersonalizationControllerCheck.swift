@@ -92,6 +92,26 @@ import LocalScribeCore
         try check(historyController.keyboardSessionActive && keyboardRecorder.armed, "Keyboard cancel preserves explicitly armed idle microphone")
         _ = bridge
         await historyController.finishKeyboardSession()
+        let dictionaryFile = file.deletingLastPathComponent().appendingPathComponent("dictionary.json")
+        let original = Data("corrupt dictionary fixture".utf8)
+        try original.write(to: dictionaryFile)
+        let recovered = AppController(engine: engine, defaults: defaults, historyURL: file)
+        try check(!recovered.canEditDictionary, "Corrupt library becomes read-only before user recovery")
+        try check(recovered.unreadableSavedData.contains(.dictionary), "Corrupt collection is identified in recovery UI")
+        try check(!(try recovered.retrySavedData()).isEmpty, "Retry preserves malformed saved data")
+        let savedSelection = recovered.selectedModel
+        let savedHistoryPreference = recovered.saveHistory
+        let backup = try recovered.resetSavedData(.dictionary)
+        try check(backup != nil && (try Data(contentsOf: backup!)) == original, "Recovery preserves exact unreadable dictionary bytes")
+        try check(recovered.canEditDictionary && recovered.dictionary.isEmpty, "Confirmed recovery enables editing immediately")
+        try check(recovered.selectedModel == savedSelection && recovered.saveHistory == savedHistoryPreference, "Recovery retains model and history preferences")
+        try recovered.upsertDictionaryRule(id: nil, heard: "recovered", replacement: "Recovered", isEnabled: true)
+        try check(try DictionaryStore(file: dictionaryFile).load().count == 1, "User can add a dictionary term after recovery")
+        await recovered.refreshInstalledModels()
+        await recovered.startRecording()
+        do { _ = try recovered.resetSavedData(.dictionary); throw Failure.failed("Recovery interrupted active recording") }
+        catch { try check(recovered.phase == .recording && recovered.dictionary.count == 1, "Recovery rejects active recording without changing it") }
+        await recovered.cancelRecording()
         print("PASS: \(checks) personalization/history/cancel controller checks")
     }
 }
