@@ -38,8 +38,8 @@ final class AppController: ObservableObject {
     @Published private(set) var completedRecordingID: UUID?
     @Published private(set) var historyRetentionDays = 0
     var currentRecordingID: UUID? { recordingID }
-    var canEditDictionary: Bool { dictionaryWritable }
-    var canEditSnippets: Bool { snippetsWritable }
+    var canEditDictionary: Bool { dictionaryWritable && snippetsWritable }
+    var canEditSnippets: Bool { dictionaryWritable && snippetsWritable }
     var canEditHistory: Bool { historyWritable && phase == .idle }
     @Published var keyboardIdleMinutes: Int {
         didSet { defaults.set(keyboardIdleMinutes, forKey: "keyboardIdleMinutes") }
@@ -477,7 +477,7 @@ final class AppController: ObservableObject {
     }
 
     func upsertDictionaryRule(id: UUID?, heard: String, replacement: String, isEnabled: Bool) throws {
-        guard dictionaryWritable else { throw AppError.dictionaryUnavailable }
+        guard dictionaryWritable && snippetsWritable else { throw AppError.libraryUnavailable }
         if let id, !dictionary.contains(where: { $0.id == id }) { throw AppError.entryChanged }
         let rule = DictionaryRule(id: id ?? UUID(), heard: heard.trimmingCharacters(in: .whitespacesAndNewlines), replacement: replacement, isEnabled: isEnabled)
         try PersonalizationValidation.validate(rule: rule, dictionary: dictionary, snippets: snippets, excludingID: id)
@@ -499,7 +499,7 @@ final class AppController: ObservableObject {
     }
 
     func upsertSnippet(id: UUID?, trigger: String, expansion: String, isEnabled: Bool) throws {
-        guard snippetsWritable else { throw AppError.snippetsUnavailable }
+        guard dictionaryWritable && snippetsWritable else { throw AppError.libraryUnavailable }
         if let id, !snippets.contains(where: { $0.id == id }) { throw AppError.entryChanged }
         let snippet = SpokenSnippet(id: id ?? UUID(), trigger: trigger.trimmingCharacters(in: .whitespacesAndNewlines), expansion: expansion, isEnabled: isEnabled)
         try PersonalizationValidation.validate(snippet: snippet, dictionary: dictionary, snippets: snippets, excludingID: id)
@@ -746,7 +746,7 @@ final class AppController: ObservableObject {
 }
 
 private enum AppError: LocalizedError {
-    case modelMissing, emptyTranscript, sessionEnded, historyUnavailable, streamingUnavailable, dictionaryUnavailable, snippetsUnavailable, entryChanged
+    case modelMissing, emptyTranscript, sessionEnded, historyUnavailable, streamingUnavailable, dictionaryUnavailable, snippetsUnavailable, libraryUnavailable, entryChanged
     var errorDescription: String? {
         switch self {
         case .modelMissing: "The downloaded model could not be verified. Please try downloading it again."
@@ -755,6 +755,7 @@ private enum AppError: LocalizedError {
         case .streamingUnavailable: "This speech engine does not support live dictation."
         case .dictionaryUnavailable: "Your existing dictionary is unavailable and has been preserved. Resolve the storage issue before changing it."
         case .snippetsUnavailable: "Your existing snippets are unavailable and have been preserved. Resolve the storage issue before changing them."
+        case .libraryUnavailable: "Some saved replacements could not be opened. Open Saved data to retry or reset the affected collection before adding terms or snippets."
         case .entryChanged: "This entry has changed or is no longer available. Close the editor and try again."
         case .historyUnavailable: "Existing history could not be opened and has been preserved. Resolve the storage issue before saving new entries."
         }

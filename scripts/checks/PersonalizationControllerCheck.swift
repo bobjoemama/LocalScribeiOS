@@ -97,6 +97,9 @@ import LocalScribeCore
         try original.write(to: dictionaryFile)
         let recovered = AppController(engine: engine, defaults: defaults, historyURL: file)
         try check(!recovered.canEditDictionary, "Corrupt library becomes read-only before user recovery")
+        try check(!recovered.canEditSnippets, "Unreadable dictionary cannot silently hide cross-library trigger conflicts")
+        do { try recovered.upsertSnippet(id: nil, trigger: "unknown trigger", expansion: "Unknown", isEnabled: true); throw Failure.failed("Unknown dictionary conflicts were ignored") }
+        catch { try check(recovered.snippets.isEmpty, "Failed cross-library save leaves snippets unchanged") }
         try check(recovered.unreadableSavedData.contains(.dictionary), "Corrupt collection is identified in recovery UI")
         try check(!(try recovered.retrySavedData()).isEmpty, "Retry preserves malformed saved data")
         let savedSelection = recovered.selectedModel

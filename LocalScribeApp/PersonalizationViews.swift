@@ -20,7 +20,7 @@ struct DictionaryView: View {
         List {
             if !controller.canEditDictionary {
                 Section {
-                    Text("Your saved dictionary could not be opened.")
+                    Text("Some saved replacements could not be opened.")
                     if let openSavedData { Button("Manage saved data", action: openSavedData) }
                 }
             }
@@ -110,7 +110,7 @@ struct SnippetsView: View {
         List {
             if !controller.canEditSnippets {
                 Section {
-                    Text("Your saved snippets could not be opened.")
+                    Text("Some saved replacements could not be opened.")
                     if let openSavedData { Button("Manage saved data", action: openSavedData) }
                 }
             }
