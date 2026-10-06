@@ -3,7 +3,7 @@ import LocalScribeCore
 
 struct EnginePreparationPhaseTiming: Codable, Sendable {
     enum Phase: String, Codable, Sendable {
-        case previousModelRelease, installationCheck, integrityVerification, localCoreMLLoad, recognizerInitialization
+        case previousModelRelease, installationCheck, integrityVerification, localCoreMLLoad, nativeCPULoad, vocabularyLoad, preprocessorLoad, encoderLoad, decoderLoad, jointLoad, recognizerInitialization
     }
     let phase: Phase
     let elapsedSeconds: Double
@@ -48,6 +48,7 @@ protocol PerformanceReportingEngine: LocalTranscriptionEngine {
 @preconcurrency import AVFoundation
 import CoreML
 import FluidAudio
+import MoonshineVoice
 
 /// The runtime is isolated from the main UI actor. Only explicit installation
 /// uses networking; prepare and transcription load verified local files.
@@ -58,6 +59,16 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         let models: AsrModels?
         let offline: AsrManager?
         let realtime: StreamingEouAsrManager?
+        var moonshine: MoonshineCPUAdapter? = nil
+    }
+    /// Transfers sole ownership of the previous runtime into its release phase.
+    private actor PreviousRuntimeRelease {
+        private var runtime: PreparedRuntime?
+        init(_ runtime: PreparedRuntime?) { self.runtime = runtime }
+        func release() async {
+            await LocalModelEngine.cleanup(runtime)
+            runtime = nil
+        }
     }
     private struct PreparationFlight {
         let id: UUID
@@ -70,6 +81,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         let model: SpeechModel
         let windowed: SlidingWindowAsrManager?
         let realtime: StreamingEouAsrManager?
+        var moonshine: MoonshineCPUAdapter? = nil
         let onUpdate: @Sendable (SpeechTranscriptUpdate) -> Void
         let probe: PerformanceProbe
         var updates: Task<Void, Never>?
@@ -95,10 +107,12 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
     private let manifest: ModelIntegrityManifest
     private let root: URL
     private static func computeUnits(for model: SpeechModel) -> MLComputeUnits {
-        model == .parakeetRealtimeEOU ? .cpuOnly : .cpuAndNeuralEngine
+        model == .parakeetRealtimeEOU || model == .moonshineSmall ? .cpuOnly : model == .parakeetPhononLUT3 ? .cpuAndGPU : .cpuAndNeuralEngine
     }
     private static func backend(_ model: SpeechModel) -> String {
-        computeUnits(for: model) == .cpuOnly
+        if model == .moonshineSmall { return "Moonshine native ONNX Runtime CPU only; GPU and Neural Engine disabled" }
+        if model == .parakeetPhononLUT3 { return "Core ML encoder CPU + GPU; other components CPU + Neural Engine; foreground inference only" }
+        return computeUnits(for: model) == .cpuOnly
             ? "Core ML CPU only; GPU and Neural Engine disabled"
             : "Core ML CPU + Neural Engine; GPU disabled; foreground inference only"
     }
@@ -108,6 +122,11 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
     init() throws {
         manifest = try .bundled()
         root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("SpeechModels", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var excludedRoot = root
+        try excludedRoot.setResourceValues(values)
         AppLogger.minimumLevel = .fault
         AppLogger.mirrorsToConsole = false
         ModelRegistry.revisionOverrides = Dictionary(manifest.models.map { ($0.repository, $0.revision) }, uniquingKeysWith: { first, _ in first })
@@ -118,6 +137,9 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         case .parakeetPhonon: "phonon2"
         case .parakeetPhononG4: "phonon2-g4"
         case .parakeetPhononG1: "phonon2-g1"
+        case .parakeetPhononLUT6: "phonon2-lut6"
+        case .parakeetPhononLUT3: "phonon2-lut3"
+        case .moonshineSmall: "moonshine-small"
         case .parakeetRedux: "redux"
         case .parakeetRealtimeEOU: "parakeet-eou-320ms"
         }
@@ -127,16 +149,18 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
     private func repo(_ model: SpeechModel) -> Repo {
         switch model {
         case .parakeetUltra: .parakeetUltra
-        case .parakeetPhonon, .parakeetPhononG4, .parakeetPhononG1: .phonon2
+        case .parakeetPhonon, .parakeetPhononG4, .parakeetPhononG1, .parakeetPhononLUT6, .parakeetPhononLUT3: .phonon2
         case .parakeetRedux: .parakeetRedux
         case .parakeetRealtimeEOU: .parakeetEou320
+        case .moonshineSmall: .phonon2 // Never used for Moonshine local paths.
         }
     }
     private func version(_ model: SpeechModel) -> AsrModelVersion {
         switch model {
         case .parakeetUltra: .ultra
-        case .parakeetPhonon, .parakeetPhononG4, .parakeetPhononG1: .phonon2
+        case .parakeetPhonon, .parakeetPhononG4, .parakeetPhononG1, .parakeetPhononLUT6, .parakeetPhononLUT3: .phonon2
         case .parakeetRedux: .redux
+        case .moonshineSmall: .phonon2 // Separate native runtime.
         case .parakeetRealtimeEOU: .phonon2 // EOU uses its separate streaming recognizer.
         }
     }
@@ -145,7 +169,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         return root.appendingPathComponent("\(item.id)-\(item.revision)", isDirectory: true)
     }
     private func modelDirectory(_ model: SpeechModel) throws -> URL {
-        try location(model).appendingPathComponent(repo(model).folderName, isDirectory: true)
+        try location(model).appendingPathComponent(model == .moonshineSmall ? "moonshine-small" : repo(model).folderName, isDirectory: true)
     }
     func isInstalled(_ model: SpeechModel) async -> Bool {
         guard let dir = try? modelDirectory(model), let item = try? entry(model) else { return false }
@@ -165,11 +189,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         var excluded = installRoot
         try excluded.setResourceValues(resourceValues)
         let directory = try modelDirectory(model)
-        if model == .parakeetPhononG4 || model == .parakeetPhononG1 || model == .parakeetRealtimeEOU {
-            try await PinnedModelDownloader.download(item, to: directory, progress: progress)
-        } else {
-            try await ModelHub.download(repo(model), to: installRoot, progressHandler: { value in progress(min(0.95, value.fractionCompleted * 0.95)) })
-        }
+        try await PinnedModelDownloader.download(item, to: directory, progress: progress)
         try ModelIntegrity.verify(item, at: directory)
         try Data(item.revision.utf8).write(to: directory.appendingPathComponent("localscribe-verified-revision"), options: .atomic)
         progress(1)
@@ -226,7 +246,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         let item = try entry(model)
         let directory = try modelDirectory(model)
         let asrVersion = version(model)
-        let old = prepared
+        let old = PreviousRuntimeRelease(prepared)
         prepared = nil
         let id = UUID()
         preparationEpoch = id
@@ -236,7 +256,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
             var timer = EnginePreparationTimer()
             timer.begin(.previousModelRelease)
             do {
-                await Self.cleanup(old)
+                await old.release()
                 try Task.checkCancellation()
                 timer.begin(.installationCheck)
                 guard Self.installed(item, at: directory) else { throw ModelInstallationError.missingModel }
@@ -244,7 +264,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                 await self?.setPreparationStage(.verifyingFiles, id: id)
                 try ModelIntegrity.verify(item, at: directory)
                 try Task.checkCancellation()
-                timer.begin(.localCoreMLLoad)
+                timer.begin(model == .moonshineSmall ? .nativeCPULoad : .localCoreMLLoad)
                 await self?.setPreparationStage(.loadingCoreML, id: id)
                 let configuration = MLModelConfiguration()
                 // iOS 27 restricts background ANE access without an additional
@@ -252,7 +272,13 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                 // encoder, decoder and joint, for the background dictation path.
                 configuration.computeUnits = Self.computeUnits(for: model)
                 let runtime: PreparedRuntime
-                if model == .parakeetRealtimeEOU {
+                if model == .moonshineSmall {
+                    let manager = try MoonshineCPUAdapter(directory: directory)
+                    try Task.checkCancellation()
+                    timer.begin(.recognizerInitialization)
+                    await self?.setPreparationStage(.initializingRecognizer, id: id)
+                    runtime = PreparedRuntime(model: model, models: nil, offline: nil, realtime: nil, moonshine: manager)
+                } else if model == .parakeetRealtimeEOU {
                     let manager = StreamingEouAsrManager(configuration: configuration, chunkSize: .ms320)
                     do {
                         try await manager.loadModels(from: directory)
@@ -263,8 +289,14 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                         runtime = PreparedRuntime(model: model, models: nil, offline: nil, realtime: manager)
                     } catch { await manager.cleanup(); throw error }
                 } else {
-                    let models = try AsrModels.loadLocal(from: directory, version: asrVersion,
-                        configuration: configuration, encoderComputeUnits: configuration.computeUnits)
+                    let models: AsrModels
+                    if model == .parakeetPhononLUT3 || model == .parakeetPhononLUT6 {
+                        configuration.computeUnits = .cpuAndNeuralEngine
+                        models = try Self.loadDensePhonon(directory: directory, model: model, configuration: configuration, timer: &timer)
+                    } else {
+                        models = try AsrModels.loadLocal(from: directory, version: asrVersion,
+                            configuration: configuration, encoderComputeUnits: configuration.computeUnits)
+                    }
                     try Task.checkCancellation()
                     timer.begin(.recognizerInitialization)
                     await self?.setPreparationStage(.initializingRecognizer, id: id)
@@ -331,9 +363,39 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
             return (attributes?[.size] as? NSNumber)?.int64Value == $0.size
         }
     }
+    private static func loadDensePhonon(directory: URL, model: SpeechModel,
+                                        configuration: MLModelConfiguration,
+                                        timer: inout EnginePreparationTimer) throws -> AsrModels {
+        timer.begin(.vocabularyLoad)
+        let data = try Data(contentsOf: directory.appendingPathComponent(ModelNames.ASR.vocabularyFile))
+        let raw = try JSONDecoder().decode([String: String].self, from: data)
+        let vocabulary = Dictionary(uniqueKeysWithValues: raw.compactMap { key, value in Int(key).map { ($0, value) } })
+        guard (0..<AsrModelVersion.phonon2.blankId).allSatisfy({ vocabulary[$0] != nil }) else {
+            throw ModelInstallationError.integrity("incomplete Phonon vocabulary")
+        }
+        func component(_ name: String, units: MLComputeUnits,
+                       phase: EnginePreparationPhaseTiming.Phase) throws -> MLModel {
+            try Task.checkCancellation()
+            timer.begin(phase)
+            let config = MLModelConfiguration()
+            config.computeUnits = units
+            return try MLModel(contentsOf: directory.appendingPathComponent(name), configuration: config)
+        }
+        let preprocessor = try component(ModelNames.ASR.preprocessorFile, units: .cpuOnly, phase: .preprocessorLoad)
+        // Catalog installs the selected dense encoder under FluidAudio's
+        // canonical Encoder.mlmodelc path; no runtime artifact substitution.
+        let encoder = try component(ModelNames.ASR.encoderFile,
+            units: model == .parakeetPhononLUT3 ? .cpuAndGPU : .cpuAndNeuralEngine, phase: .encoderLoad)
+        let decoder = try component(ModelNames.ASR.decoderFile, units: .cpuAndNeuralEngine, phase: .decoderLoad)
+        let joint = try component(ModelNames.ASR.jointV3File, units: .cpuAndNeuralEngine, phase: .jointLoad)
+        return AsrModels(encoder: encoder, preprocessor: preprocessor, decoder: decoder, joint: joint,
+                         configuration: configuration, vocabulary: vocabulary, version: .phonon2)
+    }
+
     private static func cleanup(_ runtime: PreparedRuntime?) async {
         await runtime?.offline?.cleanup()
         await runtime?.realtime?.cleanup()
+        await runtime?.moonshine?.unload()
     }
     private func record(_ model: SpeechModel, stage: EnginePerformanceReport.Stage, successful: Bool,
                         resources: PerformanceReport, backend: String? = nil,
@@ -382,7 +444,9 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
             do {
                 try Task.checkCancellation()
                 let text: String
-                if let manager = runtime.offline {
+                if let moonshine = runtime.moonshine {
+                    text = try await moonshine.transcribe(samples)
+                } else if let manager = runtime.offline {
                     var state = try TdtDecoderState()
                     text = try await manager.transcribe(samples, decoderState: &state).text
                 } else if let realtime = runtime.realtime {
@@ -402,6 +466,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                 return text
             } catch {
                 await runtime.realtime?.reset()
+                await runtime.moonshine?.cancel()
                 await self?.record(runtime.model, stage: .transcription, successful: false,
                                    resources: await probe.finish(audioSeconds: Double(samples.count) / 16_000))
                 throw error
@@ -432,7 +497,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
             manager = SlidingWindowAsrManager(config: configuration)
         } else { manager = nil }
         stream = StreamState(id: id, model: runtime.model, windowed: manager, realtime: runtime.realtime,
-                             onUpdate: onUpdate, probe: probe)
+                             moonshine: runtime.moonshine, onUpdate: onUpdate, probe: probe)
         let operationID = UUID()
         let task = Task { try await self.startStreamingSession(runtime, id: id) }
         beginOperation = (operationID, task)
@@ -452,7 +517,9 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
     private func startStreamingSession(_ runtime: PreparedRuntime, id: UUID) async throws {
         try Task.checkCancellation()
         guard stream?.id == id else { throw CancellationError() }
-        if let realtime = runtime.realtime {
+        if let moonshine = runtime.moonshine {
+            try await moonshine.begin()
+        } else if let realtime = runtime.realtime {
             await realtime.reset()
             try Task.checkCancellation()
             guard stream?.id == id, let callback = stream?.onUpdate else { throw CancellationError() }
@@ -507,6 +574,13 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
     private func processStreamingSamples(_ samples: [Float], id: UUID) async throws {
         guard stream?.id == id else { throw CancellationError() }
         stream?.sampleCount += samples.count
+        if let moonshine = stream?.moonshine {
+            let update = try await moonshine.append(samples)
+            try Task.checkCancellation()
+            guard stream?.id == id else { throw CancellationError() }
+            if let update { stream?.onUpdate(update) }
+            return
+        }
         if let realtime = stream?.realtime {
             try await realtime.appendAudio(Self.pcm(samples))
             try await realtime.processBufferedAudio()
@@ -545,6 +619,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         stream = state
         let operationID = UUID()
         let task = Task { () throws -> String in
+            if let moonshine = state.moonshine { return try await moonshine.finish() }
             if let realtime = state.realtime { return try await realtime.finish() }
             guard let manager = state.windowed else { throw ModelInstallationError.missingModel }
             if !state.pending.isEmpty { await manager.streamAudio(try Self.pcm(state.pending)) }
@@ -600,6 +675,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                 await manager.setPartialTranscriptCallback { _ in }
                 await manager.reset()
             }
+            await state.moonshine?.cancel()
             _ = await state.probe.finish()
         }
         streamCleanupTask = task

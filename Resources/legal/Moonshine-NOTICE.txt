@@ -1,0 +1,17 @@
+Moonshine Small Streaming English and Moonshine Voice
+Copyright (c) 2025 Useful Sensors, Inc. (dba Moonshine AI)
+
+Runtime: Moonshine Voice Swift 0.1.5
+https://github.com/moonshine-ai/moonshine/tree/234f60faa0eb388b01cdf7e60aca232af37aefda
+
+English streaming weights: MIT License (see Moonshine-LICENSE.txt).
+Official publisher assets:
+https://huggingface.co/moonshine-ai/moonshine-voice-assets/tree/0bf2f2e5aff22e6fbba4300b00a4e00bbc4f8aae/model/small-streaming-en/quantized_26_08_21
+
+LocalScribe installs the eight required model files without modifying weights,
+selects CPU inference and supplies its own microphone and transcript UI.
+The optional attention decoder and spelling model are not installed.
+
+Linked runtime dependencies include ONNX Runtime (MIT), kaldi-native-fbank
+(Apache-2.0), utf8proc (MIT), utf-8 (MIT), and nlohmann/json (MIT).
+Their upstream licenses are bundled as Moonshine-*-LICENSE.txt.

@@ -18,6 +18,12 @@ final class AppController: ObservableObject {
     @Published private(set) var installedModels: Set<SpeechModel> = []
     @Published private(set) var downloadingModel: SpeechModel?
     @Published private(set) var downloadProgress = 0.0
+    @Published private(set) var downloadCompletedCount = 0
+    @Published private(set) var downloadTotalCount = 0
+    @Published private(set) var failedDownloadModel: SpeechModel?
+    @Published private(set) var downloadCancelled = false
+    private var downloadTask: Task<Void, Error>?
+    private var downloadRevision = 0
     @Published private(set) var level: Float = 0
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var keyboardSessionExpiresAt: Date?
@@ -71,7 +77,7 @@ final class AppController: ObservableObject {
     private var preparationTask: Task<Void, Error>?
     private var preparationModel: SpeechModel?
     private var preparationRevision = 0
-    private var preparedModel: SpeechModel?
+    @Published private(set) var preparedModel: SpeechModel?
     private var streamingTask: Task<Void, Error>?
     private var recordingID: UUID?
     private var capturedSampleCount: Int64 = 0
@@ -163,17 +169,59 @@ final class AppController: ObservableObject {
     }
 
     func download(_ model: SpeechModel) async {
-        guard downloadingModel == nil, phase == .idle, !keyboardSessionActive else { return }
-        errorMessage = nil; downloadingModel = model; downloadProgress = 0
-        defer { downloadingModel = nil; prewarmSelectedModel() }
-        do {
-            try await engine.download(model) { [weak self] progress in
-                Task { @MainActor in self?.downloadProgress = min(1, max(0, progress)) }
+        await downloadModels([model])
+    }
+
+    func downloadAllMissingModels() async {
+        await downloadModels(SpeechModel.allCases.filter { !installedModels.contains($0) })
+    }
+
+    func cancelDownload() {
+        guard downloadingModel != nil else { return }
+        downloadCancelled = true
+        downloadTask?.cancel()
+    }
+
+    private func downloadModels(_ models: [SpeechModel]) async {
+        guard !models.isEmpty, downloadingModel == nil, phase == .idle, !keyboardSessionActive else { return }
+        errorMessage = nil; failedDownloadModel = nil; downloadCancelled = false
+        downloadCompletedCount = 0; downloadTotalCount = models.count
+        downloadRevision += 1
+        let revision = downloadRevision
+        downloadingModel = models[0]; downloadProgress = 0
+        let engine = engine
+        let task = Task { [self] in
+            for model in models {
+                try Task.checkCancellation()
+                downloadingModel = model; downloadProgress = 0
+                do {
+                    try await engine.download(model) { [weak self] progress in
+                        Task { @MainActor in
+                            guard let self, self.downloadRevision == revision,
+                                  self.downloadingModel == model, !self.downloadCancelled else { return }
+                            self.downloadProgress = min(1, max(0, progress))
+                        }
+                    }
+                    try Task.checkCancellation()
+                    guard await engine.isInstalled(model) else { throw AppError.modelMissing }
+                    installedModels.insert(model)
+                    downloadCompletedCount += 1
+                } catch {
+                    if !Task.isCancelled { failedDownloadModel = model }
+                    throw error
+                }
             }
-            await refreshInstalledModels()
-            guard installedModels.contains(model) else { throw AppError.modelMissing }
-            selectedModel = model
-        } catch { errorMessage = "Model download failed: \(error.localizedDescription)" }
+        }
+        downloadTask = task
+        do { try await task.value }
+        catch is CancellationError { downloadCancelled = true }
+        catch {
+            if !downloadCancelled { errorMessage = "Download failed for \(downloadingModel?.name ?? "model"): \(error.localizedDescription)" }
+        }
+        downloadTask = nil
+        downloadingModel = nil
+        // Installation never changes the user's choice or loads successive models.
+        await refreshInstalledModels()
     }
 
     func startRecording() async {

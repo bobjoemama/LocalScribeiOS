@@ -5,6 +5,7 @@ import Foundation
     static func main() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("localscribe-integrity-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         let bytes = Data("a local model payload".utf8)
         let sha256 = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         let gitSHA1 = Insecure.SHA1.hash(data: Data("blob \(bytes.count)\0".utf8) + bytes).map { String(format: "%02x", $0) }.joined()
@@ -25,8 +26,10 @@ import Foundation
         tampered[0] = 0
         try tampered.write(to: root.appendingPathComponent("weight.bin"))
         try mustReject(entry())
+        try mustReject(entry(sha256: sha256))
         let manifest = try JSONDecoder().decode(ModelIntegrityManifest.self, from: Data(contentsOf: URL(fileURLWithPath: "Resources/model-integrity.json")))
         let expectedFileCounts = ["phonon2": 18, "phonon2-g4": 18, "phonon2-g1": 18,
+                                  "phonon2-lut6": 18, "phonon2-lut3": 18, "moonshine-small": 8,
                                   "ultra": 18, "redux": 18, "parakeet-eou-320ms": 16]
         precondition(Set(manifest.models.map(\.id)) == Set(expectedFileCounts.keys))
         for model in manifest.models {
@@ -34,6 +37,16 @@ import Foundation
             precondition(model.files.reduce(Int64(0)) { $0 + $1.size } == model.totalBytes)
             precondition(Set(model.files.map(\.path)).count == model.files.count)
         }
+        for id in ["phonon2-lut6", "phonon2-lut3"] {
+            let model = manifest.models.first { $0.id == id }!
+            let encoder = model.files.filter { $0.path.hasPrefix("Encoder.mlmodelc/") }
+            precondition(encoder.count == 4)
+            precondition(encoder.allSatisfy { $0.remotePath?.hasPrefix("Encoder_\(id.hasSuffix("lut6") ? "lut6" : "lut3").mlmodelc/") == true })
+        }
+        let moonshine = manifest.models.first { $0.id == "moonshine-small" }!
+        let required = Set(["adapter.ort", "cross_kv.ort", "decoder_kv.ort", "encoder.ort", "frontend.model.ort", "frontend.weights.ort", "streaming_config.json", "tokenizer.bin"])
+        precondition(Set(moonshine.files.map(\.path)) == required)
+        precondition(moonshine.files.allSatisfy { $0.sha256?.count == 64 && $0.remotePath == "model/small-streaming-en/quantized_26_08_21/" + $0.path })
         print("PASS: SHA256, Git blob identity, tampering, truncation, path traversal, pinned catalog totals")
     }
 }

@@ -89,9 +89,25 @@ actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRep
     var callback: (@Sendable (SpeechTranscriptUpdate) -> Void)?
     var oldCallback: (@Sendable (SpeechTranscriptUpdate) -> Void)?
     func isInstalled(_ model: SpeechModel) async -> Bool { installed.contains(model) }
-    func download(_ model: SpeechModel, progress: @escaping @Sendable (Double) -> Void) async throws {}
+    var downloaded: [SpeechModel] = []
+    var prepared: [SpeechModel] = []
+    var downloadFailure: SpeechModel?
+    var slowDownload = false
+    var slowDownloadModel: SpeechModel?
+    func configureDownloads(failure: SpeechModel? = nil, slow: Bool = false, slowModel: SpeechModel? = nil) { downloadFailure = failure; slowDownload = slow; slowDownloadModel = slowModel }
+    func downloads() -> [SpeechModel] { downloaded }
+    func preparations() -> [SpeechModel] { prepared }
+    func download(_ model: SpeechModel, progress: @escaping @Sendable (Double) -> Void) async throws {
+        downloaded.append(model)
+        progress(0.25)
+        if slowDownload || slowDownloadModel == model { try await Task.sleep(for: .seconds(10)) }
+        try Task.checkCancellation()
+        if downloadFailure == model { throw Failure.expected }
+        installed.insert(model)
+        progress(1)
+    }
     func prepare(_ model: SpeechModel) async throws {
-        prepareCalls += 1
+        prepareCalls += 1; prepared.append(model)
         if holdPreparation { await withCheckedContinuation { loadContinuation = $0 } }
         try Task.checkCancellation()
     }
@@ -328,6 +344,50 @@ extension SharedKeyboardStore {
         pendingRecorder.armContinuation?.resume()
         await pendingStart.value
         try check(pendingController.phase == .idle && !pendingController.actionButtonRecording && !pendingRecorder.recording, "Shortcut never activates a pending permission microphone after leaving foreground")
+        let downloadEngine = LifecycleEngine()
+        await downloadEngine.releasePreparation()
+        let downloads = await fixture(downloadEngine)
+        try await eventually { downloads.preparedModel == .parakeetPhonon }
+        await downloads.downloadAllMissingModels()
+        try check(downloads.selectedModel == .parakeetPhonon, "Bulk installation preserves selected model")
+        try check(downloads.installedModels.count == SpeechModel.allCases.count, "Bulk downloads install every missing catalog model")
+        let installedSequence = await downloadEngine.downloads()
+        try check(Set(installedSequence).count == installedSequence.count && !installedSequence.contains(.parakeetPhonon), "Bulk queue skips installed models and downloads each missing model once")
+        let preparedSequence = await downloadEngine.preparations()
+        try check(preparedSequence == [.parakeetPhonon], "Installing models never prepares unselected runtimes")
+
+        let partialEngine = LifecycleEngine()
+        await partialEngine.releasePreparation()
+        let partialDownloads = await fixture(partialEngine)
+        let missing = SpeechModel.allCases.filter { !partialDownloads.installedModels.contains($0) }
+        await partialEngine.configureDownloads(slowModel: missing[1])
+        let partialQueue = Task { await partialDownloads.downloadAllMissingModels() }
+        try await eventually { partialDownloads.downloadingModel == missing[1] }
+        partialDownloads.cancelDownload()
+        await partialQueue.value
+        try check(partialDownloads.installedModels.contains(missing[0]) && !partialDownloads.installedModels.contains(missing[1]), "Bulk cancellation retains completed installation and excludes partial model")
+        let cancelledQueue = await partialEngine.downloads()
+        try check(cancelledQueue == Array(missing.prefix(2)), "Bulk cancellation prevents later queued downloads")
+        try check(partialDownloads.selectedModel == .parakeetPhonon, "Bulk cancellation preserves selection")
+
+        let failureEngine = LifecycleEngine()
+        await failureEngine.releasePreparation()
+        await failureEngine.configureDownloads(failure: .parakeetUltra)
+        let failingDownloads = await fixture(failureEngine)
+        await failingDownloads.download(.parakeetUltra)
+        try check(failingDownloads.failedDownloadModel == .parakeetUltra && failingDownloads.errorMessage != nil, "Download failure identifies retry model")
+        try check(!failingDownloads.installedModels.contains(.parakeetUltra) && failingDownloads.selectedModel == .parakeetPhonon, "Failed download neither installs nor selects model")
+        await failureEngine.configureDownloads(slow: true)
+        let cancellingDownload = Task { await failingDownloads.download(.parakeetUltra) }
+        try await eventually { failingDownloads.downloadingModel == .parakeetUltra }
+        failingDownloads.cancelDownload()
+        await cancellingDownload.value
+        try check(failingDownloads.downloadCancelled && failingDownloads.downloadingModel == nil, "Cancellation waits for download operation to exit before clearing busy state")
+        try check(!failingDownloads.installedModels.contains(.parakeetUltra), "Cancelled partial download is never marked installed")
+        await failureEngine.configureDownloads()
+        await failingDownloads.download(.parakeetUltra)
+        try check(failingDownloads.installedModels.contains(.parakeetUltra) && failingDownloads.selectedModel == .parakeetPhonon, "Retry installs without changing selection")
+
         print("PASS: \(checks) actual AppController lifecycle checks")
     }
 }

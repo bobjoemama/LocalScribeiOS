@@ -37,6 +37,24 @@ struct AboutView: View {
                 sourceLink("Original model", "https://huggingface.co/nvidia/parakeet_realtime_eou_120m-v1")
                 sourceLink("Core ML conversion", "https://huggingface.co/FluidInference/parakeet-realtime-eou-120m-coreml")
             }
+            Section("Moonshine Small") {
+                Text("Streaming English model and CPU runtime by Moonshine AI. MIT License.")
+                    .foregroundStyle(.secondary)
+                documentLink("Model & runtime license", resource: "Moonshine-LICENSE")
+                documentLink("Runtime notices", resource: "Moonshine-NOTICE")
+                NavigationLink("Dependency licenses") {
+                    Form {
+                        documentLink("ONNX Runtime", resource: "Moonshine-ONNXRuntime-LICENSE")
+                        documentLink("kaldi-native-fbank", resource: "Moonshine-kaldi-native-fbank-LICENSE")
+                        documentLink("utf8proc", resource: "Moonshine-utf8proc-LICENSE")
+                        documentLink("utf-8", resource: "Moonshine-utf8-LICENSE")
+                        documentLink("nlohmann/json", resource: "Moonshine-nlohmann-LICENSE")
+                    }.navigationTitle("Dependency licenses").navigationBarTitleDisplayMode(.inline)
+                }
+                sourceLink("Moonshine source", "https://github.com/moonshine-ai/moonshine")
+                sourceLink("Swift runtime", "https://github.com/moonshine-ai/moonshine-swift")
+                sourceLink("Model files", "https://huggingface.co/moonshine-ai/moonshine-voice-assets")
+            }
             Section {
                 documentLink("Third-party notices", resource: "THIRD_PARTY_NOTICES")
             } footer: {

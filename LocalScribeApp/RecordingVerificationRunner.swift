@@ -21,12 +21,15 @@ struct RecordingVerificationRunner {
             guard index + 1 < arguments.count else { throw VerificationError("--verify-models requires comma-separated IDs") }
             values = arguments[index + 1].split(separator: ",", omittingEmptySubsequences: false).map(String.init)
         } else { values = ["phonon2"] }
-        guard !values.isEmpty, values.count <= 6, Set(values).count == values.count else { throw VerificationError("Use distinct verification model IDs") }
+        guard !values.isEmpty, values.count <= SpeechModel.allCases.count, Set(values).count == values.count else { throw VerificationError("Use distinct verification model IDs") }
         models = try values.map {
             switch $0 {
             case "phonon2": .parakeetPhonon
             case "phonon2-g4": .parakeetPhononG4
             case "phonon2-g1": .parakeetPhononG1
+            case "phonon2-lut6": .parakeetPhononLUT6
+            case "phonon2-lut3": .parakeetPhononLUT3
+            case "moonshine-small": .moonshineSmall
             case "ultra": .parakeetUltra
             case "redux": .parakeetRedux
             case "eou320", "parakeet-eou-320ms": .parakeetRealtimeEOU

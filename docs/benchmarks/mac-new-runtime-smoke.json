@@ -1,0 +1,77 @@
+{
+  "fixtureSHA256": "c85401f70630847182fc5852d28ced0910629f5207ae38aa6a1464fd3daa3bfa",
+  "records": [
+    {
+      "artifact": "moonshine-small-streaming-cpu",
+      "precision": "onnx-cpu",
+      "mode": "after-stop",
+      "audioSeconds": 5.855,
+      "loadSeconds": 0.235,
+      "inferenceSeconds": 0.277,
+      "transcript": "Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+      "exactNormalizedReference": true,
+      "nonemptyPartialCount": 0
+    },
+    {
+      "artifact": "moonshine-small-streaming-cpu",
+      "precision": "onnx-cpu",
+      "mode": "live",
+      "audioSeconds": 5.855,
+      "loadSeconds": 0.057,
+      "inferenceSeconds": 0.768,
+      "transcript": "Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+      "exactNormalizedReference": true,
+      "nonemptyPartialCount": 18
+    },
+    {
+      "artifact": "phonon-2-coreml-lut3-gpu",
+      "precision": "coreml-lut3-gpu",
+      "mode": "after-stop",
+      "audioSeconds": 5.855,
+      "loadSeconds": 0.099,
+      "inferenceSeconds": 4.101,
+      "transcript": "mister Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+      "exactNormalizedReference": true,
+      "nonemptyPartialCount": 0
+    },
+    {
+      "artifact": "phonon-2-coreml-lut3-gpu",
+      "precision": "coreml-lut3-gpu",
+      "mode": "live",
+      "audioSeconds": 5.855,
+      "loadSeconds": 0.092,
+      "inferenceSeconds": 3.406,
+      "transcript": "mister Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+      "exactNormalizedReference": true,
+      "nonemptyPartialCount": 4
+    },
+    {
+      "artifact": "phonon-2-coreml-lut6-ane",
+      "precision": "coreml-lut6-ane",
+      "mode": "after-stop",
+      "audioSeconds": 5.855,
+      "loadSeconds": 16.78,
+      "inferenceSeconds": 0.109,
+      "transcript": "mister Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+      "exactNormalizedReference": true,
+      "nonemptyPartialCount": 0
+    },
+    {
+      "artifact": "phonon-2-coreml-lut6-ane",
+      "precision": "coreml-lut6-ane",
+      "mode": "live",
+      "audioSeconds": 5.855,
+      "loadSeconds": 0.066,
+      "inferenceSeconds": 0.132,
+      "transcript": "mister Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+      "exactNormalizedReference": true,
+      "nonemptyPartialCount": 4
+    }
+  ],
+  "scope": "Public 5.855-second fixture; accelerated feed; one run per mode; Mac only; no microphone.",
+  "limitations": [
+    "OS/Core ML caches not reset",
+    "Load times include cache effects; not a cold-load comparison",
+    "No peak-memory, energy or representative WER measurement"
+  ]
+}

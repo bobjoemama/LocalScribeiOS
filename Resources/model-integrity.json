@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "researchedAt": "2026-10-04",
+  "researchedAt": "2026-10-05",
   "runtime": {
     "repository": "https://github.com/FluidInference/FluidAudio",
     "version": "0.17.5"
@@ -681,6 +681,310 @@
           "gitBlobSHA1": "462081190dbb331a0dde13e99d5cfa99b302f0a7"
         }
       ]
+    },
+    {
+      "id": "phonon2-lut6",
+      "repository": "FluidInference/phonon-2-coreml",
+      "revision": "a812a0dfef205660787ef6234317ab79acf4d5d6",
+      "license": "CC-BY-4.0",
+      "files": [
+        {
+          "path": "Decoder.mlmodelc/analytics/coremldata.bin",
+          "size": 243,
+          "gitBlobSHA1": "44591f4863ac424b46f5546006c1e77fc0a44a4f",
+          "sha256": "3d1a9cd4d7b7956d20c48d9a8041717f9f02c6db72dfeda565080e1cff1db3a3"
+        },
+        {
+          "path": "Decoder.mlmodelc/coremldata.bin",
+          "size": 554,
+          "gitBlobSHA1": "ed4ef9e5de9cee0214e556d479e7e4b76645326f",
+          "sha256": "2590e4588972f8d3d1ddb10ce603decffd2e9bb79a88c6096a58c5732f6369fd"
+        },
+        {
+          "path": "Decoder.mlmodelc/model.mil",
+          "size": 13110,
+          "gitBlobSHA1": "36dcd5cbb71d13f42a177427ddbab7539e0d167e"
+        },
+        {
+          "path": "Decoder.mlmodelc/weights/weight.bin",
+          "size": 23604992,
+          "gitBlobSHA1": "1958eb729bfcedd59df4a06055c1326782148c72",
+          "sha256": "05181616ed1af70b2aad0463d08d1d73a245af4ccb6159df79994f28c135d9d6"
+        },
+        {
+          "path": "Encoder.mlmodelc/analytics/coremldata.bin",
+          "remotePath": "Encoder_lut6.mlmodelc/analytics/coremldata.bin",
+          "size": 243,
+          "gitBlobSHA1": "c71a945524fe65dfe1e0f41429458d9cef7cf35d",
+          "sha256": "bc0cc104cf4ae27b72a8fe7c68e40661836b6dd08239e3db0586b17213bf7484"
+        },
+        {
+          "path": "Encoder.mlmodelc/coremldata.bin",
+          "remotePath": "Encoder_lut6.mlmodelc/coremldata.bin",
+          "size": 528,
+          "gitBlobSHA1": "fa5a6007be30b8779448567aedd0cd4b9919c7f2",
+          "sha256": "d82b3dca2026a5535c20f1f6fca2f16597300af4e21846def3cf55154f6d791a"
+        },
+        {
+          "path": "Encoder.mlmodelc/model.mil",
+          "remotePath": "Encoder_lut6.mlmodelc/model.mil",
+          "size": 864769,
+          "gitBlobSHA1": "fed03489574d83d9c6a8c54e75045d34fb1258a6",
+          "sha256": "a9b56189ff2663ad4bd0e98e319a26d672b09f555f2796b89b1d3f4e978e0536"
+        },
+        {
+          "path": "Encoder.mlmodelc/weights/weight.bin",
+          "remotePath": "Encoder_lut6.mlmodelc/weights/weight.bin",
+          "size": 469043456,
+          "gitBlobSHA1": "3df74a3d8676aa9f12d97e0bf3446ada741e4bc0",
+          "sha256": "9f14749ad954661a2f82365e8e21fff44a1f3fe00b2620669718ee57a501403d"
+        },
+        {
+          "path": "JointDecisionv3.mlmodelc/analytics/coremldata.bin",
+          "size": 243,
+          "gitBlobSHA1": "2d5a6e5a7e699a88b0f992de33c26a36d034de41",
+          "sha256": "7b53f663c4400205f8bc00243076de50f95d8a1a64978dee7232eb0ddc7d683c"
+        },
+        {
+          "path": "JointDecisionv3.mlmodelc/coremldata.bin",
+          "size": 586,
+          "gitBlobSHA1": "342136ed3876463a53bbac7863a2c2108c892d86",
+          "sha256": "8d2170f28b28466476f62484a0c8b07c2d31713ac254d1b7cf80eba8070e9554"
+        },
+        {
+          "path": "JointDecisionv3.mlmodelc/model.mil",
+          "size": 11777,
+          "gitBlobSHA1": "be552d46f98f9dc9b242b0d1659833db60aa3f83"
+        },
+        {
+          "path": "JointDecisionv3.mlmodelc/weights/weight.bin",
+          "size": 12642764,
+          "gitBlobSHA1": "50047af585ad2b2a6ef64c696815aa963c07e9b3",
+          "sha256": "5f922e335bc57174645fd6ede581395f1ae846f7227898301b5a1a7585f4ab45"
+        },
+        {
+          "path": "Preprocessor.mlmodelc/analytics/coremldata.bin",
+          "size": 243,
+          "gitBlobSHA1": "cadf776b6eddc28eae76654cdff21b7c61efbd78",
+          "sha256": "c9beeb989c8d66f8be11df59bc6df277ec76cee404f6865b46243835ef562f6d"
+        },
+        {
+          "path": "Preprocessor.mlmodelc/coremldata.bin",
+          "size": 486,
+          "gitBlobSHA1": "c86b363f1bbf6a4f38ec5757390b7ac17e99adda",
+          "sha256": "dbde3f2300842c1fd51ef3ff948a0bcffe65ffd2dca10707f2509f32c1d65b1d"
+        },
+        {
+          "path": "Preprocessor.mlmodelc/metadata.json",
+          "size": 2841,
+          "gitBlobSHA1": "06162c58cf2f5343a0e60f36f843bcdf3cc58527"
+        },
+        {
+          "path": "Preprocessor.mlmodelc/model.mil",
+          "size": 28181,
+          "gitBlobSHA1": "f987e2479228436c49189aa47edb376db74dcff5"
+        },
+        {
+          "path": "Preprocessor.mlmodelc/weights/weight.bin",
+          "size": 491072,
+          "gitBlobSHA1": "47be051f50981bc166d0bcf6111cff47dd0db117",
+          "sha256": "129b76e3aeafa8afa3ea76d995b964b145fe83700d579f6ff42c4c38fa0968ea"
+        },
+        {
+          "path": "parakeet_vocab.json",
+          "size": 151122,
+          "gitBlobSHA1": "c684822ec3b671ebc449c433a7012398d39b8bb0"
+        }
+      ],
+      "totalBytes": 506857210
+    },
+    {
+      "id": "phonon2-lut3",
+      "repository": "FluidInference/phonon-2-coreml",
+      "revision": "a812a0dfef205660787ef6234317ab79acf4d5d6",
+      "license": "CC-BY-4.0",
+      "files": [
+        {
+          "path": "Decoder.mlmodelc/analytics/coremldata.bin",
+          "size": 243,
+          "gitBlobSHA1": "44591f4863ac424b46f5546006c1e77fc0a44a4f",
+          "sha256": "3d1a9cd4d7b7956d20c48d9a8041717f9f02c6db72dfeda565080e1cff1db3a3"
+        },
+        {
+          "path": "Decoder.mlmodelc/coremldata.bin",
+          "size": 554,
+          "gitBlobSHA1": "ed4ef9e5de9cee0214e556d479e7e4b76645326f",
+          "sha256": "2590e4588972f8d3d1ddb10ce603decffd2e9bb79a88c6096a58c5732f6369fd"
+        },
+        {
+          "path": "Decoder.mlmodelc/model.mil",
+          "size": 13110,
+          "gitBlobSHA1": "36dcd5cbb71d13f42a177427ddbab7539e0d167e"
+        },
+        {
+          "path": "Decoder.mlmodelc/weights/weight.bin",
+          "size": 23604992,
+          "gitBlobSHA1": "1958eb729bfcedd59df4a06055c1326782148c72",
+          "sha256": "05181616ed1af70b2aad0463d08d1d73a245af4ccb6159df79994f28c135d9d6"
+        },
+        {
+          "path": "Encoder.mlmodelc/analytics/coremldata.bin",
+          "remotePath": "Encoder_lut3.mlmodelc/analytics/coremldata.bin",
+          "size": 243,
+          "gitBlobSHA1": "ce12083efa20c3d1b380c402b982ffe98ce59a29",
+          "sha256": "5c47d10f96c1c1676a5cb7948e671951aef03f0c7a52dcdd334e1e46c5f45c88"
+        },
+        {
+          "path": "Encoder.mlmodelc/coremldata.bin",
+          "remotePath": "Encoder_lut3.mlmodelc/coremldata.bin",
+          "size": 528,
+          "gitBlobSHA1": "fec8afeee326dd94657b7f84505c4116d27c6f18",
+          "sha256": "aac6704ceb8e22f7e6bfb3b72873116cf5d8515901c97eece7dee00575aeebcd"
+        },
+        {
+          "path": "Encoder.mlmodelc/model.mil",
+          "remotePath": "Encoder_lut3.mlmodelc/model.mil",
+          "size": 864621,
+          "gitBlobSHA1": "94ef603628c39bb8f0216ca40d052bcec9533b3d",
+          "sha256": "fc9a5ec3d5cf5e3a383c6db597e4ceace49363f24a7909ea84578e66e1a4e426"
+        },
+        {
+          "path": "Encoder.mlmodelc/weights/weight.bin",
+          "remotePath": "Encoder_lut3.mlmodelc/weights/weight.bin",
+          "size": 251988224,
+          "gitBlobSHA1": "b3a98e4b98e38df04910de71521cd37199e1da27",
+          "sha256": "6dcbfd60705bad8906a8233c2637c0c9718b532bb029d156d301ee786cdc4bcf"
+        },
+        {
+          "path": "JointDecisionv3.mlmodelc/analytics/coremldata.bin",
+          "size": 243,
+          "gitBlobSHA1": "2d5a6e5a7e699a88b0f992de33c26a36d034de41",
+          "sha256": "7b53f663c4400205f8bc00243076de50f95d8a1a64978dee7232eb0ddc7d683c"
+        },
+        {
+          "path": "JointDecisionv3.mlmodelc/coremldata.bin",
+          "size": 586,
+          "gitBlobSHA1": "342136ed3876463a53bbac7863a2c2108c892d86",
+          "sha256": "8d2170f28b28466476f62484a0c8b07c2d31713ac254d1b7cf80eba8070e9554"
+        },
+        {
+          "path": "JointDecisionv3.mlmodelc/model.mil",
+          "size": 11777,
+          "gitBlobSHA1": "be552d46f98f9dc9b242b0d1659833db60aa3f83"
+        },
+        {
+          "path": "JointDecisionv3.mlmodelc/weights/weight.bin",
+          "size": 12642764,
+          "gitBlobSHA1": "50047af585ad2b2a6ef64c696815aa963c07e9b3",
+          "sha256": "5f922e335bc57174645fd6ede581395f1ae846f7227898301b5a1a7585f4ab45"
+        },
+        {
+          "path": "Preprocessor.mlmodelc/analytics/coremldata.bin",
+          "size": 243,
+          "gitBlobSHA1": "cadf776b6eddc28eae76654cdff21b7c61efbd78",
+          "sha256": "c9beeb989c8d66f8be11df59bc6df277ec76cee404f6865b46243835ef562f6d"
+        },
+        {
+          "path": "Preprocessor.mlmodelc/coremldata.bin",
+          "size": 486,
+          "gitBlobSHA1": "c86b363f1bbf6a4f38ec5757390b7ac17e99adda",
+          "sha256": "dbde3f2300842c1fd51ef3ff948a0bcffe65ffd2dca10707f2509f32c1d65b1d"
+        },
+        {
+          "path": "Preprocessor.mlmodelc/metadata.json",
+          "size": 2841,
+          "gitBlobSHA1": "06162c58cf2f5343a0e60f36f843bcdf3cc58527"
+        },
+        {
+          "path": "Preprocessor.mlmodelc/model.mil",
+          "size": 28181,
+          "gitBlobSHA1": "f987e2479228436c49189aa47edb376db74dcff5"
+        },
+        {
+          "path": "Preprocessor.mlmodelc/weights/weight.bin",
+          "size": 491072,
+          "gitBlobSHA1": "47be051f50981bc166d0bcf6111cff47dd0db117",
+          "sha256": "129b76e3aeafa8afa3ea76d995b964b145fe83700d579f6ff42c4c38fa0968ea"
+        },
+        {
+          "path": "parakeet_vocab.json",
+          "size": 151122,
+          "gitBlobSHA1": "c684822ec3b671ebc449c433a7012398d39b8bb0"
+        }
+      ],
+      "totalBytes": 289801830
+    },
+    {
+      "id": "moonshine-small",
+      "repository": "moonshine-ai/moonshine-voice-assets",
+      "revision": "0bf2f2e5aff22e6fbba4300b00a4e00bbc4f8aae",
+      "license": "MIT",
+      "files": [
+        {
+          "path": "adapter.ort",
+          "remotePath": "model/small-streaming-en/quantized_26_08_21/adapter.ort",
+          "size": 2870368,
+          "gitBlobSHA1": "26ba9d18a226de9a21f7c7604cc48338eace2aa1",
+          "sha256": "c665f742364febad597cc9ac1e0b341ffbee0e24a1466e2f3bde95e6e4771762"
+        },
+        {
+          "path": "cross_kv.ort",
+          "remotePath": "model/small-streaming-en/quantized_26_08_21/cross_kv.ort",
+          "size": 5356536,
+          "gitBlobSHA1": "66c22be60b65f3bd626c15c73c1b51b65140cd8a",
+          "sha256": "e2d3417144e9514055ebfefe8dcc4c0a55a55adcb8530435844c75c53e352bf6"
+        },
+        {
+          "path": "decoder_kv.ort",
+          "remotePath": "model/small-streaming-en/quantized_26_08_21/decoder_kv.ort",
+          "size": 81878600,
+          "gitBlobSHA1": "7f4fa84bc16c76c009dff0325f671715d73852da",
+          "sha256": "1a05465b1dd955858dfcbee039c0020fb5dd982b0f5094c34e61735d518d771b"
+        },
+        {
+          "path": "encoder.ort",
+          "remotePath": "model/small-streaming-en/quantized_26_08_21/encoder.ort",
+          "size": 44148576,
+          "gitBlobSHA1": "54a406dafdda3ac8c1338ae024598c7eb0094669",
+          "sha256": "2d4d973e91e8aca08c51e7e7efa28a46ab265b63d809d5294d18b86bcd85b993"
+        },
+        {
+          "path": "frontend.model.ort",
+          "remotePath": "model/small-streaming-en/quantized_26_08_21/frontend.model.ort",
+          "size": 26944,
+          "gitBlobSHA1": "bdb6d49a35aedd788f73ce5414320efcc3331145",
+          "sha256": "09b1210ae30dc5f0f3e45f0ebab914c254741323114f53fbbe5ae62cca35058f"
+        },
+        {
+          "path": "frontend.weights.ort",
+          "remotePath": "model/small-streaming-en/quantized_26_08_21/frontend.weights.ort",
+          "size": 7769464,
+          "gitBlobSHA1": "b81153f44a1221410cc22472a5911794aa61c5af",
+          "sha256": "7ef97521bd4bad3928f5bb6808586f4fcc6e92bd5990394112eed7d4052ec338"
+        },
+        {
+          "path": "streaming_config.json",
+          "remotePath": "model/small-streaming-en/quantized_26_08_21/streaming_config.json",
+          "size": 512,
+          "gitBlobSHA1": "0c39f5f897398d0132a0fd710c3d4ce12c8ce86b",
+          "sha256": "26f02b6afb22d60871a5efd85c3d38e569cc0ddb6c5eb6e93d3260152ae8a47a"
+        },
+        {
+          "path": "tokenizer.bin",
+          "remotePath": "model/small-streaming-en/quantized_26_08_21/tokenizer.bin",
+          "size": 249974,
+          "gitBlobSHA1": "c4d8dd65a7ce7ac1c534188379b283e35aa7f654",
+          "sha256": "6884b35fd6377d4c4d32336a0bc152f36b64d1e45b6503683cdc238250a8472d"
+        }
+      ],
+      "totalBytes": 142300974
+    }
+  ],
+  "additionalRuntimes": [
+    {
+      "repository": "https://github.com/moonshine-ai/moonshine",
+      "version": "0.1.5",
+      "revision": "234f60faa0eb388b01cdf7e60aca232af37aefda"
     }
   ]
 }

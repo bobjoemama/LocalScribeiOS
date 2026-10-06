@@ -338,29 +338,51 @@ private struct DictateView: View {
 private struct ModelsView: View {
     @ObservedObject var controller: AppController
     @State private var detailModel: SpeechModel?
+    @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    if controller.downloadingModel != nil {
+                        Text("Downloading model \(controller.downloadCompletedCount + 1) of \(controller.downloadTotalCount)")
+                            .foregroundStyle(.secondary)
+                        Button(controller.downloadCancelled ? "Cancelling…" : "Cancel download", role: .cancel) { controller.cancelDownload() }
+                            .disabled(controller.downloadCancelled)
+                    } else {
+                        Button("Download all missing models") { Task { await controller.downloadAllMissingModels() } }
+                            .disabled(controller.installedModels.count == SpeechModel.allCases.count || controller.phase != .idle || controller.keyboardSessionActive)
+                        if controller.downloadCancelled { Text("Download cancelled. Installed models are kept.").foregroundStyle(.secondary) }
+                        if let failed = controller.failedDownloadModel {
+                            Button("Retry \(failed.name)") { Task { await controller.download(failed) } }
+                                .disabled(controller.phase != .idle || controller.keyboardSessionActive)
+                        }
+                    }
+                    if let error = controller.errorMessage { Text(error).foregroundStyle(.red) }
+                    if let status = controller.modelStatus { Text(status).foregroundStyle(.secondary) }
+                }
                 Section {
                     ForEach(SpeechModel.allCases) { model in
                         modelRow(model)
                     }
                 } footer: {
-                    Text("Download once to transcribe offline. Model downloads need internet.")
+                    Text("Models stay installed for offline use. Only the selected model is loaded for dictation. Downloads need internet.")
                 }
             }.navigationTitle("Models")
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
                 .sheet(item: $detailModel) { model in ModelDetailsView(model: model) }
         }
     }
 
     private func modelRow(_ model: SpeechModel) -> some View {
         let installed = controller.installedModels.contains(model)
-        let selected = controller.selectedModel == model && installed
+        let selected = controller.selectedModel == model
         let downloading = controller.downloadingModel == model
         return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(model.name)
                 Text(model.downloadSize + " · " + (model.languages == "English" ? "English" : "25 languages"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Text([installed ? "Installed" : "Not installed", selected ? "Selected" : nil, controller.preparedModel == model ? "Loaded" : nil].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
                 if downloading {
                     if controller.downloadProgress > 0 {
@@ -374,9 +396,7 @@ private struct ModelsView: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
             if downloading {
                 ProgressView().accessibilityLabel("Download in progress")
-            } else if selected {
-                Image(systemName: "checkmark").foregroundStyle(.tint).accessibilityLabel("Selected")
-            } else {
+            } else if !selected || !installed {
                 Button {
                     if installed { controller.selectedModel = model }
                     else { Task { await controller.download(model) } }
@@ -468,7 +488,7 @@ private struct SettingsView: View {
                 } header: {
                     Text("Keyboard microphone")
                 } footer: {
-                    Text("The microphone stays on until you end the session or reach the selected idle timeout. Audio between dictations is discarded. Realtime recognizes speech in the background; Neural Engine models wait until LocalScribe is open.")
+                    Text("The microphone stays on until you end the session or reach the selected idle timeout. Audio between dictations is discarded. Realtime recognizes speech in the background; GPU and Neural Engine models wait until LocalScribe is open.")
                 }
                 Section("Recording") {
                     Toggle("Use built-in microphone", isOn: $controller.preferBuiltInMicrophone)
@@ -534,7 +554,7 @@ private struct ActionButtonSetupView: View {
                 Text("Action Button recording requires Live Activities. Enable them in iPhone Settings → Apps → LocalScribe. You can still record directly in Dictate when they are off.")
             }
             Section("Local transcription") {
-                Text("Realtime runs on the CPU and continues recognition during background recording while iOS permits audio capture. Models that use the Neural Engine pause recognition until you return to LocalScribe.")
+                Text("Realtime runs on the CPU and continues recognition during background recording while iOS permits audio capture. Models that use the GPU or Neural Engine pause recognition until you return to LocalScribe.")
                 Text("There is no fixed recording limit. If recognition cannot keep up and the audio queue fills, recording stops and reports the missing audio. Open LocalScribe to finish and copy.")
             }
         }.navigationTitle("Action Button").navigationBarTitleDisplayMode(.inline)

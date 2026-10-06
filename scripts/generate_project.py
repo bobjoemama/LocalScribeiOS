@@ -29,6 +29,9 @@ if fluid:
  obj('fluidRef','isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/FluidInference/FluidAudio.git"; requirement = { kind = exactVersion; version = 0.17.5; };')
  obj('fluidProduct',f'isa = XCSwiftPackageProductDependency; package = {ref("fluidRef")}; productName = FluidAudio;')
  obj('fluidBuild',f'isa = PBXBuildFile; productRef = {ref("fluidProduct")};')
+ obj('moonshineRef','isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/moonshine-ai/moonshine-swift.git"; requirement = { kind = exactVersion; version = 0.1.5; };')
+ obj('moonshineProduct',f'isa = XCSwiftPackageProductDependency; package = {ref("moonshineRef")}; productName = MoonshineVoice;')
+ obj('moonshineBuild',f'isa = PBXBuildFile; productRef = {ref("moonshineProduct")};')
 obj('embedKeyboard',f'isa = PBXBuildFile; fileRef = {ref("keyboardProduct")}; settings = {{ ATTRIBUTES = (RemoveHeadersOnCopy, ); }};')
 obj('embedWidget',f'isa = PBXBuildFile; fileRef = {ref("widgetProduct")}; settings = {{ ATTRIBUTES = (RemoveHeadersOnCopy, ); }};')
 obj('embedPhase',f'isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = {arr([ref("embedKeyboard"),ref("embedWidget")])}; name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0;')
@@ -38,14 +41,14 @@ obj('widgetProxy',f'isa = PBXContainerItemProxy; containerPortal = {ref("project
 obj('widgetDep',f'isa = PBXTargetDependency; target = {ref("widgetTarget")}; targetProxy = {ref("widgetProxy")};')
 for target in ['app','keyboard','widget']:
  obj(target+'Sources','isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;')
- libs=[ref('coreBuild')]+([ref('fluidBuild')] if fluid else []) if target=='app' else []
+ libs=[ref('coreBuild')]+([ref('fluidBuild'), ref('moonshineBuild')] if fluid else []) if target=='app' else []
  obj(target+'Frameworks',f'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = {arr(libs)}; runOnlyForDeploymentPostprocessing = 0;')
  obj(target+'Resources',f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = {arr([ref("manifestBuild"),ref("benchmarkBuild"),ref("legalBuild")] if target=="app" else [])}; runOnlyForDeploymentPostprocessing = 0;')
  configs=[]
  for mode in ['Debug','Release']:
   prefix={'app':'App','keyboard':'Keyboard','widget':'ActivityWidget'}[target]
   suffix={'app':'','keyboard':'.keyboard','widget':'.activity'}[target]
-  values={'SDKROOT':'iphoneos','IPHONEOS_DEPLOYMENT_TARGET':'18.0','SWIFT_VERSION':'6.0','TARGETED_DEVICE_FAMILY':'1,2','CODE_SIGN_STYLE':'Automatic','PRODUCT_NAME':'$(TARGET_NAME)','GENERATE_INFOPLIST_FILE':'NO','INFOPLIST_FILE':'Configuration/'+prefix+'-Info.plist','PRODUCT_BUNDLE_IDENTIFIER':'com.devesh.localscribe.ios'+suffix,'CURRENT_PROJECT_VERSION':'3','MARKETING_VERSION':'0.2.1','SWIFT_STRICT_CONCURRENCY':'complete','LD_RUNPATH_SEARCH_PATHS':'$(inherited) @executable_path/Frameworks'+(' @executable_path/../../Frameworks' if target!='app' else ''),'SWIFT_OPTIMIZATION_LEVEL':'-Onone' if mode=='Debug' else '-O','DEBUG_INFORMATION_FORMAT':'dwarf' if mode=='Debug' else 'dwarf-with-dsym'}
+  values={'SDKROOT':'iphoneos','IPHONEOS_DEPLOYMENT_TARGET':'18.0','SWIFT_VERSION':'6.0','TARGETED_DEVICE_FAMILY':'1,2','CODE_SIGN_STYLE':'Automatic','PRODUCT_NAME':'$(TARGET_NAME)','GENERATE_INFOPLIST_FILE':'NO','INFOPLIST_FILE':'Configuration/'+prefix+'-Info.plist','PRODUCT_BUNDLE_IDENTIFIER':'com.devesh.localscribe.ios'+suffix,'CURRENT_PROJECT_VERSION':'4','MARKETING_VERSION':'0.3.0','SWIFT_STRICT_CONCURRENCY':'complete','LD_RUNPATH_SEARCH_PATHS':'$(inherited) @executable_path/Frameworks'+(' @executable_path/../../Frameworks' if target!='app' else ''),'SWIFT_OPTIMIZATION_LEVEL':'-Onone' if mode=='Debug' else '-O','DEBUG_INFORMATION_FORMAT':'dwarf' if mode=='Debug' else 'dwarf-with-dsym'}
   if target!='widget': values['CODE_SIGN_ENTITLEMENTS']='Configuration/'+prefix+'.entitlements'
   if team: values['DEVELOPMENT_TEAM'] = team
   if target=='app': values['ASSETCATALOG_COMPILER_APPICON_NAME'] = 'AppIcon'
@@ -55,14 +58,14 @@ for target in ['app','keyboard','widget']:
  obj(target+'ConfigList',f'isa = XCConfigurationList; buildConfigurations = {arr(configs)}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')
  phases=[ref(target+p) for p in ['Sources','Frameworks','Resources']]+([ref('embedPhase')] if target=='app' else [])
  name={'app':'LocalScribe','keyboard':'LocalScribeKeyboard','widget':'LocalScribeActivityWidget'}[target]
- products=[ref('coreProduct')]+([ref('fluidProduct')] if fluid else []) if target=='app' else []
+ products=[ref('coreProduct')]+([ref('fluidProduct'), ref('moonshineProduct')] if fluid else []) if target=='app' else []
  groups={'app':['LocalScribeApp','SharedKeyboard','SharedActivity'],'keyboard':['LocalScribeKeyboard','SharedKeyboard'],'widget':['LocalScribeActivityWidget','SharedActivity']}[target]
  obj(target+'Target',f'isa = PBXNativeTarget; buildConfigurationList = {ref(target+"ConfigList")}; buildPhases = {arr(phases)}; buildRules = (); dependencies = {arr([ref("keyboardDep"),ref("widgetDep")] if target=="app" else [])}; fileSystemSynchronizedGroups = {arr([ref(group) for group in groups])}; name = {name}; packageProductDependencies = {arr(products)}; productName = {name}; productReference = {ref(target+"Product")}; productType = "com.apple.product-type.{"application" if target=="app" else "app-extension"}";')
 configs=[]
 for mode in ['Debug','Release']:
  configs.append(obj('project'+mode,f'isa = XCBuildConfiguration; buildSettings = {{ CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; }}; name = {mode};'))
 obj('projectConfigList',f'isa = XCConfigurationList; buildConfigurations = {arr(configs)}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')
-obj('project',f'isa = PBXProject; attributes = {{ BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 2700; TargetAttributes = {{ {ref("appTarget")} = {{ CreatedOnToolsVersion = 27.0; SystemCapabilities = {{ com.apple.ApplicationGroups.iOS = {{enabled = 1;}}; }}; }}; {ref("keyboardTarget")} = {{ CreatedOnToolsVersion = 27.0; SystemCapabilities = {{ com.apple.ApplicationGroups.iOS = {{enabled = 1;}}; }}; }}; {ref("widgetTarget")} = {{ CreatedOnToolsVersion = 27.0; }}; }}; }}; buildConfigurationList = {ref("projectConfigList")}; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base,); mainGroup = {ref("root")}; minimizedProjectReferenceProxies = 1; packageReferences = {arr([ref("coreRef")]+([ref("fluidRef")] if fluid else []))}; preferredProjectObjectVersion = 77; productRefGroup = {ref("products")}; projectDirPath = ""; projectRoot = ""; targets = {arr([ref("appTarget"),ref("keyboardTarget"),ref("widgetTarget")])};')
+obj('project',f'isa = PBXProject; attributes = {{ BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 2700; TargetAttributes = {{ {ref("appTarget")} = {{ CreatedOnToolsVersion = 27.0; SystemCapabilities = {{ com.apple.ApplicationGroups.iOS = {{enabled = 1;}}; }}; }}; {ref("keyboardTarget")} = {{ CreatedOnToolsVersion = 27.0; SystemCapabilities = {{ com.apple.ApplicationGroups.iOS = {{enabled = 1;}}; }}; }}; {ref("widgetTarget")} = {{ CreatedOnToolsVersion = 27.0; }}; }}; }}; buildConfigurationList = {ref("projectConfigList")}; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base,); mainGroup = {ref("root")}; minimizedProjectReferenceProxies = 1; packageReferences = {arr([ref("coreRef")]+([ref("fluidRef"), ref("moonshineRef")] if fluid else []))}; preferredProjectObjectVersion = 77; productRefGroup = {ref("products")}; projectDirPath = ""; projectRoot = ""; targets = {arr([ref("appTarget"),ref("keyboardTarget"),ref("widgetTarget")])};')
 Path('LocalScribe.xcodeproj/project.pbxproj').write_text('// !$*UTF8*$!\n{\n archiveVersion = 1; classes = {}; objectVersion = 77;\n objects = {\n'+''.join(f' {key} = {{ {value} }};\n' for key,value in sorted(objects.items()))+f' }};\n rootObject = {ref("project")};\n}}\n')
 Path('LocalScribe.xcodeproj/xcshareddata/xcschemes/LocalScribe.xcscheme').write_text(f'''<?xml version="1.0" encoding="UTF-8"?>
 <Scheme LastUpgradeVersion="2700" version="1.7">

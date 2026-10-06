@@ -1,5 +1,5 @@
 {
-  "originHash" : "98680a7d34004abf06d1ddc051f409dc3a9d13debcad874fbf871d339fcf1fad",
+  "originHash" : "5acfc08e659b6c8c561e30bf528152af9f7f1eb4a0f1fde30cb6e069a4a373b9",
   "pins" : [
     {
       "identity" : "fluidaudio",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "0b1f46289fe27d95b5e66ad8be46e64f5ee02ae7",
         "version" : "0.17.5"
+      }
+    },
+    {
+      "identity" : "moonshine-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/moonshine-ai/moonshine-swift.git",
+      "state" : {
+        "revision" : "45a14f9edf1f2a6913d3aff38c1fd4e72d5b7daa",
+        "version" : "0.1.5"
       }
     }
   ],

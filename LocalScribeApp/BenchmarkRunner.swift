@@ -25,13 +25,16 @@ struct BenchmarkRunner: Sendable {
         let identifiers = arguments[modelFlag + 1].split(separator: ",", omittingEmptySubsequences: false).map(String.init)
         guard !identifiers.isEmpty, identifiers.count <= SpeechModel.allCases.count,
               Set(identifiers).count == identifiers.count else {
-            throw BenchmarkError.invalidArguments("Use one to six distinct model IDs")
+            throw BenchmarkError.invalidArguments("Use distinct model IDs from the model catalog")
         }
         models = try identifiers.map { id in
             switch id {
             case "phonon2": .parakeetPhonon
             case "phonon2-g4": .parakeetPhononG4
             case "phonon2-g1": .parakeetPhononG1
+            case "phonon2-lut6": .parakeetPhononLUT6
+            case "phonon2-lut3": .parakeetPhononLUT3
+            case "moonshine-small": .moonshineSmall
             case "ultra": .parakeetUltra
             case "redux": .parakeetRedux
             case "eou320", "parakeet-eou-320ms": .parakeetRealtimeEOU
@@ -307,6 +310,9 @@ struct BenchmarkRunner: Sendable {
         case .parakeetPhonon: "phonon2"
         case .parakeetPhononG4: "phonon2-g4"
         case .parakeetPhononG1: "phonon2-g1"
+        case .parakeetPhononLUT6: "phonon2-lut6"
+        case .parakeetPhononLUT3: "phonon2-lut3"
+        case .moonshineSmall: "moonshine-small"
         case .parakeetUltra: "ultra"
         case .parakeetRedux: "redux"
         case .parakeetRealtimeEOU: "parakeet-eou-320ms"
