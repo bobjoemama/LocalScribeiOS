@@ -45,8 +45,10 @@ struct FixtureCaptureSnapshot {
     var armed = false
     var armCalls = 0
     init() { Self.latest = self }
-    func arm(requireExistingPermission: Bool = false) async throws {
+    private(set) var lastMixWithOtherAudio = false
+    func arm(requireExistingPermission: Bool = false, mixWithOtherAudio: Bool = false) async throws {
         armCalls += 1
+        lastMixWithOtherAudio = mixWithOtherAudio
         if Self.holdNextArm {
             Self.holdNextArm = false
             await withCheckedContinuation { armContinuation = $0 }

@@ -4,6 +4,7 @@ import LocalScribeCore
 
 enum RecordingError: LocalizedError {
     case microphoneDenied, unavailableInput, converterUnavailable, conversionFailed, noAudio
+    case audioSessionFailed(code: Int)
     var errorDescription: String? {
         switch self {
         case .microphoneDenied: "Microphone access is off. Enable it for LocalScribe in iPhone Settings."
@@ -11,6 +12,19 @@ enum RecordingError: LocalizedError {
         case .converterUnavailable: "The microphone audio format could not be prepared."
         case .conversionFailed: "Microphone audio conversion failed. Recording stopped to avoid losing more speech."
         case .noAudio: "No audio was captured. Try speaking closer to your microphone."
+        case let .audioSessionFailed(code):
+            switch code {
+            case AVAudioSession.ErrorCode.cannotInterruptOthers.rawValue:
+                "iOS could not activate the microphone from the background. Open LocalScribe and try again. Audio error: \(code) (!int)."
+            case AVAudioSession.ErrorCode.cannotStartRecording.rawValue:
+                "iOS did not permit microphone recording. Start recording with LocalScribe onscreen. Audio error: \(code) (!rec)."
+            case AVAudioSession.ErrorCode.insufficientPriority.rawValue:
+                "Another app controls the audio session. Finish its call or recording, then try again. Audio error: \(code) (!pri)."
+            case AVAudioSession.ErrorCode.siriIsRecording.rawValue:
+                "Siri is using the microphone. Wait for Siri to finish, then try again. Audio error: \(code)."
+            default:
+                "The microphone could not start. Audio error: \(code)."
+            }
         }
     }
 }
@@ -50,7 +64,7 @@ final class AudioRecorder {
 
     var microphonePermissionGranted: Bool { AVAudioApplication.shared.recordPermission == .granted }
 
-    func arm(requireExistingPermission: Bool = false) async throws {
+    func arm(requireExistingPermission: Bool = false, mixWithOtherAudio: Bool = false) async throws {
         if engine.isRunning { return }
         let revision = activationRevision
         let allowed: Bool
@@ -64,7 +78,10 @@ final class AudioRecorder {
         if engine.isRunning { return }
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+            // A nonmixable .record session cannot activate from the background.
+            // .playAndRecord supports mixing; no playback or silent keepalive is added.
+            try session.setCategory(mixWithOtherAudio ? .playAndRecord : .record, mode: .measurement,
+                                    options: mixWithOtherAudio ? [.allowBluetoothHFP, .mixWithOthers] : [.allowBluetoothHFP])
             try session.setAllowHapticsAndSystemSoundsDuringRecording(hapticFeedbackEnabled)
             try session.setActive(true)
             if preferBuiltInMicrophone, let microphone = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
@@ -104,6 +121,10 @@ final class AudioRecorder {
             try engine.start()
         } catch {
             shutdown()
+            let systemError = error as NSError
+            if systemError.domain == NSOSStatusErrorDomain {
+                throw RecordingError.audioSessionFailed(code: systemError.code)
+            }
             throw error
         }
     }

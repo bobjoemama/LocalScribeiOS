@@ -44,7 +44,7 @@ struct StopDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
 
 struct ToggleDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
     static let title: LocalizedStringResource = "Dictate and Copy"
-    static let description = IntentDescription("Hold the Action Button once to start, release and speak, then hold again to stop and copy. Your current app stays open during CPU transcription.")
+    static let description = IntentDescription("Hold the Action Button once to start, release and speak, then hold again to stop and copy.")
     static let openAppWhenRun = false
     @available(iOS 26.0, macOS 26.0, *)
     static var supportedModes: IntentModes { .background }

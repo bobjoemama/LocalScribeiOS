@@ -80,6 +80,7 @@ struct DictationActivityAttributes {
         try check(!StartDictationShortcut.openAppWhenRun && !ToggleDictationShortcut.openAppWhenRun && !StopDictationShortcut.openAppWhenRun && !StopLiveDictationIntent.openAppWhenRun, "All recording intents keep the caller foreground")
         try check(UIPasteboard.general.writes.isEmpty, "Start never overwrites clipboard")
         try check(controller.actionButtonRecording, "Intent return retains Action Button session ownership")
+        try check(recorder.lastMixWithOtherAudio, "Action Button activation uses mixable microphone session")
         try check(retainedBridge != nil, "App owner retains bridge after intent returns")
         try await Task.sleep(for: .milliseconds(200))
         try check(controller.phase == .recording, "First toggle stays recording after perform returns")

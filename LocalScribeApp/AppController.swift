@@ -263,7 +263,7 @@ final class AppController: ObservableObject {
             // Capture does not wait for Core ML compilation/loading. Stop remains available
             // while the ordered recognition pump waits for the model.
             try Task.checkCancellation()
-            try await recorder.arm(requireExistingPermission: actionButtonRecording)
+            try await recorder.arm(requireExistingPermission: actionButtonRecording, mixWithOtherAudio: actionButtonRecording)
             guard revision == microphoneRevision, foreground || keyboardSessionActive || actionButtonRecording else {
                 if recordingID == nil { recorder.shutdown() }
                 if revision == microphoneRevision, phase == .preparing {
