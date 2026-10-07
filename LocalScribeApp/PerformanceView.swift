@@ -13,7 +13,7 @@ struct PerformanceView: View {
         Form {
             Section {
                 if controller.rawTranscript.isEmpty {
-                    Text("Finish a dictation to measure its word error rate.").foregroundStyle(.secondary)
+                    Text("Finish a dictation to measure its word error rate.").foregroundStyle(AppTheme.inkSecondary)
                 } else {
                     TextField("What you said", text: $reference, axis: .vertical)
                         .lineLimit(3...8).onChange(of: reference) { _, _ in evaluate = false }
@@ -24,64 +24,95 @@ struct PerformanceView: View {
                     Button("Calculate word error rate") { evaluate = true }
                         .disabled(reference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || reference.count > 8_000)
                     if reference.count > 8_000 {
-                        Text("Use a reference of 8,000 characters or fewer.").font(.footnote).foregroundStyle(.secondary)
+                        Text("Use a reference of 8,000 characters or fewer.").font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                     }
                     if let score, let rate = score.rate {
-                        LabeledContent("Word error rate", value: String(format: "%.1f%%", rate * 100))
-                        LabeledContent("Substitutions", value: "\(score.substitutions)")
-                        LabeledContent("Missing words", value: "\(score.deletions)")
-                        LabeledContent("Extra words", value: "\(score.insertions)")
-                        LabeledContent("Reference words", value: "\(score.referenceWordCount)")
+                        LabeledContent("Word error rate") {
+                            Text(String(format: "%.1f%%", rate * 100)).foregroundStyle(AppTheme.inkSecondary)
+                        }
+                        LabeledContent("Substitutions") {
+                            Text("\(score.substitutions)").foregroundStyle(AppTheme.inkSecondary)
+                        }
+                        LabeledContent("Missing words") {
+                            Text("\(score.deletions)").foregroundStyle(AppTheme.inkSecondary)
+                        }
+                        LabeledContent("Extra words") {
+                            Text("\(score.insertions)").foregroundStyle(AppTheme.inkSecondary)
+                        }
+                        LabeledContent("Reference words") {
+                            Text("\(score.referenceWordCount)").foregroundStyle(AppTheme.inkSecondary)
+                        }
                     }
                 }
             } header: {
-                Text("Recognition accuracy")
+                Text("Word error rate").foregroundStyle(AppTheme.inkSecondary)
             } footer: {
-                Text("Enter the words you spoke to compare them with the raw model output, before dictionary corrections. Case and punctuation are ignored.")
-            }
+                Text("Enter the words you spoke to compare them with the raw model output, before dictionary corrections. Case and punctuation are ignored.").foregroundStyle(AppTheme.inkSecondary)
+            }.listRowBackground(AppTheme.surface)
             if controller.performanceReports.isEmpty {
-                Section("Performance") {
+                Section {
                     Text("No measurements yet. Model loading and transcription results appear after a dictation.")
-                        .foregroundStyle(.secondary)
-                }
+                        .foregroundStyle(AppTheme.inkSecondary)
+                } header: { Text("Completed operations").foregroundStyle(AppTheme.inkSecondary) }.listRowBackground(AppTheme.surface)
             } else {
                 ForEach(controller.performanceReports.reversed()) { item in
-                    Section(item.model.name + " · " + stageName(item.stage)) {
-                        LabeledContent("Status", value: item.successful ? "Completed" : "Failed")
-                        LabeledContent("Elapsed time", value: String(format: "%.3f s", item.resources.elapsedSeconds))
+                    Section {
+                        LabeledContent("Status") {
+                            Text(item.successful ? "Completed" : "Failed")
+                                .foregroundStyle(item.successful ? AppTheme.success : AppTheme.error)
+                        }
+                        LabeledContent("Elapsed time") {
+                            Text(String(format: "%.3f s", item.resources.elapsedSeconds)).foregroundStyle(AppTheme.inkSecondary)
+                        }
                         if let audio = item.resources.audioSeconds {
-                            LabeledContent("Audio duration", value: String(format: "%.1f s", audio))
+                            LabeledContent("Audio duration") {
+                                Text(String(format: "%.1f s", audio)).foregroundStyle(AppTheme.inkSecondary)
+                            }
                         }
                         if let ratio = item.resources.realTimeFactor {
-                            LabeledContent("Time / audio duration", value: String(format: "%.3f", ratio))
+                            LabeledContent("Time / audio duration") {
+                                Text(String(format: "%.3f", ratio)).foregroundStyle(AppTheme.inkSecondary)
+                            }
                         }
                         if let cpu = item.resources.averageActiveCPUCores {
-                            LabeledContent("Average active CPU cores", value: String(format: "%.2f", cpu))
+                            LabeledContent("Average active CPU cores") {
+                                Text(String(format: "%.2f", cpu)).foregroundStyle(AppTheme.inkSecondary)
+                            }
                         }
                         if let peak = item.resources.sampledPeakPhysicalFootprintBytes {
-                            LabeledContent("Sampled peak memory", value: memory(peak))
+                            LabeledContent("Sampled peak memory") {
+                                Text(memory(peak)).foregroundStyle(AppTheme.inkSecondary)
+                            }
                         }
                         if let baseline = item.resources.initialPhysicalFootprintBytes {
-                            LabeledContent("Starting memory", value: memory(baseline))
+                            LabeledContent("Starting memory") {
+                                Text(memory(baseline)).foregroundStyle(AppTheme.inkSecondary)
+                            }
                         }
                         if let final = item.resources.finalPhysicalFootprintBytes {
-                            LabeledContent("Finishing memory", value: memory(final))
+                            LabeledContent("Finishing memory") {
+                                Text(memory(final)).foregroundStyle(AppTheme.inkSecondary)
+                            }
                         }
-                        LabeledContent("Thermal state", value: item.resources.initialThermalState.rawValue + " → " + item.resources.finalThermalState.rawValue)
+                        LabeledContent("Thermal state") {
+                            Text(item.resources.initialThermalState.rawValue + " → " + item.resources.finalThermalState.rawValue).foregroundStyle(AppTheme.inkSecondary)
+                        }
                         DisclosureGroup("Requested compute configuration") {
-                            Text(item.requestedBackend).font(.footnote).foregroundStyle(.secondary)
+                            Text(item.requestedBackend).font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                         }
-                    }
+                    } header: { Text(item.model.name + " · " + stageName(item.stage)).foregroundStyle(AppTheme.inkSecondary) }.listRowBackground(AppTheme.surface)
                 }
             }
             Section {
                 NavigationLink("Measurement details") { MeasurementDetailsView() }
             } footer: {
-                Text("Measurements cover the whole app and remain in this session. GPU and Neural Engine utilization require device profiling.")
-            }
+                Text("Measurements cover the whole app and remain in this session. GPU and Neural Engine utilization require device profiling.").foregroundStyle(AppTheme.inkSecondary)
+            }.listRowBackground(AppTheme.surface)
         }
+        .scribeForm()
+        .monospacedDigit()
         .onChange(of: controller.rawTranscript) { _, _ in evaluate = false }
-        .navigationTitle("Performance & accuracy").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Accuracy").navigationBarTitleDisplayMode(.inline)
     }
     private func stageName(_ stage: EnginePerformanceReport.Stage) -> String {
         switch stage {
@@ -96,19 +127,24 @@ struct PerformanceView: View {
 private struct MeasurementDetailsView: View {
     var body: some View {
         Form {
-            Section("Word error rate") {
+            Section {
                 Text("Case and punctuation are ignored. Numbers and contractions are not expanded. Published benchmarks may use different text normalization, so their scores are not directly comparable.")
-            }
-            Section("CPU and memory") {
+            } header: { Text("Word error rate").foregroundStyle(AppTheme.inkSecondary) }.listRowBackground(AppTheme.surface)
+            Section {
                 Text("CPU time and memory include the interface and measurement overhead. Peak memory is sampled every 50 milliseconds and can miss brief spikes.")
                 Text("One active CPU core means one core’s worth of CPU time during the measurement. A lower time/audio ratio means faster transcription.")
-            }
-            Section("Hardware profiling") {
+            } header: { Text("CPU and memory").foregroundStyle(AppTheme.inkSecondary) }.listRowBackground(AppTheme.surface)
+            Section {
                 Text("Use Instruments on a physical device to measure hardware utilization, power, and system memory pressure. The requested compute configuration does not prove which operations ran on the Neural Engine.")
-            }
-            Section("Model memory") {
-                Text("The selected model stays ready while this app is open. It is released when you change models, iOS requests memory, or the app goes into the background without a keyboard microphone session.")
-            }
-        }.navigationTitle("Measurement details").navigationBarTitleDisplayMode(.inline)
+            } header: { Text("Hardware profiling").foregroundStyle(AppTheme.inkSecondary) }.listRowBackground(AppTheme.surface)
+            Section {
+                Text("Keep model loaded preloads your Dictate model and retains the last-used model between dictations and when switching apps. Turn it off to release the model after dictation. Changing models replaces the loaded runtime; force quitting releases it. iOS may reclaim memory or terminate a background app. Keeping a model loaded does not keep the microphone on.")
+            } header: { Text("Model memory").foregroundStyle(AppTheme.inkSecondary) }.listRowBackground(AppTheme.surface)
+        }.scribeForm().navigationTitle("Measurement details").navigationBarTitleDisplayMode(.inline)
     }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+@MainActor
+func designPreviewMeasurementDetails() -> some View { MeasurementDetailsView() }
+#endif

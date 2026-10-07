@@ -5,23 +5,42 @@ import UIKit
 
 @main
 struct LocalScribeApplication: App {
-    @StateObject private var context = AppContext.shared
     init() {
+        #if DEBUG && targetEnvironment(simulator)
+        if DesignPreviewConfiguration.current != nil { return }
+        #endif
         // OS-run Live Activity intents need services even before a scene appears.
         _ = AppContext.shared
     }
     var body: some Scene {
         WindowGroup {
-            ZStack {
-                LocalScribeRootView(controller: context.controller, notes: context.notesController).disabled(context.benchmarkStatus != nil)
-                if let status = context.benchmarkStatus {
-                    VStack(spacing: 16) {
-                        ProgressView()
-                        Text(status).font(.headline)
-                        Text(context.developerRunDescription).font(.caption)
-                    }
-                    .padding(28).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+            #if DEBUG && targetEnvironment(simulator)
+            if let preview = DesignPreviewConfiguration.current {
+                DesignPreviewRootView(configuration: preview)
+            } else {
+                LocalScribeApplicationContent()
+            }
+            #else
+            LocalScribeApplicationContent()
+            #endif
+        }
+    }
+}
+
+private struct LocalScribeApplicationContent: View {
+    @StateObject private var context = AppContext.shared
+
+    var body: some View {
+        ZStack {
+            LocalScribeRootView(controller: context.controller, notes: context.notesController)
+                .disabled(context.benchmarkStatus != nil)
+            if let status = context.benchmarkStatus {
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text(status).font(.headline)
+                    Text(context.developerRunDescription).font(.caption)
                 }
+                .padding(28).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
             }
         }
     }

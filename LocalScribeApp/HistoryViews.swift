@@ -28,23 +28,25 @@ struct NativeHistoryView: View {
             List {
                 if controller.unreadableSavedData.contains(.history) {
                     Section {
-                        Text("Your saved history could not be opened.")
+                        Text("Your saved history could not be opened.").foregroundStyle(AppTheme.error)
                         if let openSavedData { Button("Manage saved data", action: openSavedData) }
-                    }
+                    }.listRowBackground(AppTheme.errorSoft)
                 }
                 ForEach(days) { day in
                     Section {
                         ForEach(day.entries) { entry in
-                            historyRow(entry)
+                            historyRow(entry).listRowBackground(AppTheme.surface)
                         }
                     } header: {
-                        Text(dayLabel(day.date))
+                        Text(dayLabel(day.date)).foregroundStyle(AppTheme.inkSecondary)
                     }
                 }
             }
+            .listStyle(.insetGrouped)
+            .scribeForm()
             .overlay {
                 if controller.history.isEmpty && !controller.unreadableSavedData.contains(.history) {
-                    ContentUnavailableView("No saved transcripts", systemImage: "clock", description: Text("Dictations appear here when history is enabled."))
+                    ContentUnavailableView("No transcripts yet", systemImage: "clock", description: Text("Finished dictations are saved here while history is on.").foregroundStyle(AppTheme.inkSecondary))
                 } else if visible.isEmpty && !controller.unreadableSavedData.contains(.history) {
                     ContentUnavailableView.search(text: search)
                 }
@@ -54,6 +56,7 @@ struct NativeHistoryView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        NavigationLink("Usage", destination: HistoryUsageView(controller: controller))
                         ShareLink(item: exportText(visible)) {
                             Label(search.isEmpty ? "Export history" : "Export search results", systemImage: "square.and.arrow.up")
                         }.disabled(visible.isEmpty)
@@ -104,9 +107,9 @@ struct NativeHistoryView: View {
     private func historyRow(_ entry: TranscriptEntry) -> some View {
         Button { selectedEntry = entry } label: {
             VStack(alignment: .leading, spacing: 6) {
-                Text(entry.text).foregroundStyle(.primary).lineLimit(3).multilineTextAlignment(.leading)
+                Text(entry.text).foregroundStyle(AppTheme.ink).lineLimit(3).multilineTextAlignment(.leading)
                 Text("\(entry.createdAt.formatted(date: .omitted, time: .shortened)) · \(entry.model.name) · \(historyDuration(entry.duration))")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }.padding(.vertical, 4).frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -124,7 +127,7 @@ struct NativeHistoryView: View {
                 .disabled(!controller.canEditHistory)
         }
         .swipeActions(edge: .leading, allowsFullSwipe: false) {
-            Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = entry.text }.tint(.accentColor)
+            Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = entry.text }.tint(AppTheme.accent)
         }
     }
 
@@ -169,12 +172,22 @@ private struct HistoryTranscriptEditor: View {
         NavigationStack {
             VStack(spacing: 0) {
                 TextEditor(text: $draft).focused($editing).disabled(!canSave)
+                    .font(.body).lineSpacing(4)
+                    .scrollContentBackground(.hidden)
+                    .scrollDismissesKeyboard(.interactively)
+                    .foregroundStyle(AppTheme.ink)
+                    .background(AppTheme.surface)
                     .padding(12).accessibilityLabel("Saved transcript")
+                Text("\(entry.model.name) · \(entry.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 12)
                 if !canSave {
                     Text("History editing is unavailable right now.")
-                        .font(.footnote).foregroundStyle(.secondary).padding()
+                        .font(.footnote).foregroundStyle(AppTheme.inkSecondary).padding()
                 }
             }
+            .background(AppTheme.surface)
+            .tint(AppTheme.accent)
             .navigationTitle("Transcript").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -186,6 +199,10 @@ private struct HistoryTranscriptEditor: View {
                         do { try save(draft); dismiss() }
                         catch { failure = error.localizedDescription }
                     }.disabled(!canSave || !changed)
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { editing = false }
                 }
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = draft }
@@ -217,12 +234,22 @@ struct HistoryUsageView: View {
     }
     var body: some View {
         List {
-            LabeledContent("Saved transcripts", value: controller.history.count.formatted())
-            LabeledContent("Words in saved text", value: words.formatted())
-            LabeledContent("Recorded duration", value: historyDuration(duration))
+            LabeledContent("Saved transcripts") {
+                Text(controller.history.count.formatted()).foregroundStyle(AppTheme.inkSecondary)
+            }.listRowBackground(AppTheme.surface)
+            LabeledContent("Words in saved text") {
+                Text(words.formatted()).foregroundStyle(AppTheme.inkSecondary)
+            }.listRowBackground(AppTheme.surface)
+            LabeledContent("Recorded duration") {
+                Text(historyDuration(duration)).foregroundStyle(AppTheme.inkSecondary)
+            }.listRowBackground(AppTheme.surface)
             Text("Totals reflect saved history, including edits. Deleted transcripts and dictations made with history off are not counted.")
-                .font(.footnote).foregroundStyle(.secondary)
-        }.navigationTitle("Usage")
+                .font(.footnote).foregroundStyle(AppTheme.inkSecondary).listRowBackground(AppTheme.surface)
+        }
+        .listStyle(.insetGrouped)
+        .scribeForm()
+        .monospacedDigit()
+        .navigationTitle("Usage")
     }
 }
 
@@ -234,3 +261,23 @@ private func historyDuration(_ seconds: TimeInterval) -> String {
     formatter.zeroFormattingBehavior = .dropLeading
     return formatter.string(from: safe) ?? "0s"
 }
+
+#if DEBUG && targetEnvironment(simulator)
+private extension HistoryTranscriptEditor {
+    init(designPreviewEntry entry: TranscriptEntry, dialog: DesignPreviewConfiguration.Dialog?) {
+        self.init(entry: entry, canSave: true, save: { _ in })
+        if dialog == .discard {
+            _draft = State(initialValue: entry.text + " Include the dates.")
+            _confirmingDiscard = State(initialValue: true)
+        } else if dialog == .saveError {
+            _draft = State(initialValue: entry.text + " Include the dates.")
+            _failure = State(initialValue: "Design preview: could not save this transcript. Your edits remain here.")
+        }
+    }
+}
+
+@MainActor
+func designPreviewHistoryEditor(entry: TranscriptEntry, dialog: DesignPreviewConfiguration.Dialog?) -> some View {
+    HistoryTranscriptEditor(designPreviewEntry: entry, dialog: dialog)
+}
+#endif

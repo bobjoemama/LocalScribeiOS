@@ -20,9 +20,9 @@ struct DictionaryView: View {
         List {
             if !controller.canEditDictionary {
                 Section {
-                    Text("Some saved replacements could not be opened.")
+                    Text(personalizationUnavailableMessage(controller)).foregroundStyle(AppTheme.error)
                     if let openSavedData { Button("Manage saved data", action: openSavedData) }
-                }
+                }.listRowBackground(AppTheme.errorSoft)
             }
             Section {
                 ForEach(rules) { rule in
@@ -32,6 +32,7 @@ struct DictionaryView: View {
                         PersonalizationRow(title: rule.heard, output: rule.replacement, isEnabled: rule.isEnabled)
                     }
                     .buttonStyle(.plain)
+                    .listRowBackground(AppTheme.surface)
                     .accessibilityHint(controller.canEditDictionary ? "Edit correction" : "Editing is unavailable")
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button("Delete", role: .destructive) { deleting = rule }
@@ -47,12 +48,14 @@ struct DictionaryView: View {
                     }
                 }
             } footer: {
-                Text("Replaces whole spoken phrases, without regard to capitalization.")
+                Text("Replaces a whole spoken phrase, ignoring capitalization. This changes recognized text; it does not retrain the model.").foregroundStyle(AppTheme.inkSecondary)
             }
         }
+        .listStyle(.insetGrouped)
+        .scribeForm()
         .overlay {
             if rules.isEmpty && controller.canEditDictionary {
-                ContentUnavailableView(search.isEmpty ? "No corrections" : "No results", systemImage: search.isEmpty ? "text.book.closed" : "magnifyingglass", description: Text(search.isEmpty ? "Add how a word or phrase should be written." : "Try another word or phrase."))
+                ContentUnavailableView(search.isEmpty ? "No corrections" : "No results", systemImage: search.isEmpty ? "text.book.closed" : "magnifyingglass", description: Text(search.isEmpty ? "Add how a word or phrase should be written." : "Try another word or phrase.").foregroundStyle(AppTheme.inkSecondary))
             }
         }
         .navigationTitle("Dictionary")
@@ -110,9 +113,9 @@ struct SnippetsView: View {
         List {
             if !controller.canEditSnippets {
                 Section {
-                    Text("Some saved replacements could not be opened.")
+                    Text(personalizationUnavailableMessage(controller)).foregroundStyle(AppTheme.error)
                     if let openSavedData { Button("Manage saved data", action: openSavedData) }
-                }
+                }.listRowBackground(AppTheme.errorSoft)
             }
             Section {
                 ForEach(snippets) { snippet in
@@ -122,6 +125,7 @@ struct SnippetsView: View {
                         PersonalizationRow(title: snippet.trigger, output: snippet.expansion, isEnabled: snippet.isEnabled)
                     }
                     .buttonStyle(.plain)
+                    .listRowBackground(AppTheme.surface)
                     .accessibilityHint(controller.canEditSnippets ? "Edit snippet" : "Editing is unavailable")
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button("Delete", role: .destructive) { deleting = snippet }
@@ -139,12 +143,14 @@ struct SnippetsView: View {
                     }
                 }
             } footer: {
-                Text("Expands a whole spoken phrase into saved text, without regard to capitalization. Line breaks are preserved.")
+                Text("Expands a whole spoken phrase into saved text, without regard to capitalization. Line breaks are preserved.").foregroundStyle(AppTheme.inkSecondary)
             }
         }
+        .listStyle(.insetGrouped)
+        .scribeForm()
         .overlay {
             if snippets.isEmpty && controller.canEditSnippets {
-                ContentUnavailableView(search.isEmpty ? "No snippets" : "No results", systemImage: search.isEmpty ? "text.alignleft" : "magnifyingglass", description: Text(search.isEmpty ? "Save text to insert with a spoken phrase." : "Try another word or phrase."))
+                ContentUnavailableView(search.isEmpty ? "No snippets" : "No results", systemImage: search.isEmpty ? "text.alignleft" : "magnifyingglass", description: Text(search.isEmpty ? "Save text to insert with a spoken phrase." : "Try another word or phrase.").foregroundStyle(AppTheme.inkSecondary))
             }
         }
         .navigationTitle("Snippets")
@@ -191,9 +197,12 @@ private struct PersonalizationRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title).foregroundStyle(isEnabled ? .primary : .secondary)
-            Text(output).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-            if !isEnabled { Text("Disabled").font(.caption).foregroundStyle(.secondary) }
+            Text(title).font(.body).foregroundStyle(isEnabled ? AppTheme.ink : AppTheme.inkSecondary)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "arrow.right").font(.caption)
+                Text(output).font(.subheadline).lineLimit(2)
+            }.foregroundStyle(AppTheme.inkSecondary)
+            if !isEnabled { Text("Off").font(.footnote).foregroundStyle(AppTheme.inkSecondary) }
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
     }
@@ -261,34 +270,42 @@ private struct PersonalizationEditor: View {
             Form {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(isSnippet ? "Spoken phrase" : "Say").font(.subheadline).foregroundStyle(.secondary)
+                        Text("Say").font(.subheadline).foregroundStyle(AppTheme.inkSecondary)
                         TextField("Word or phrase", text: $trigger, axis: .vertical)
                             .lineLimit(1...3).textInputAutocapitalization(.never).autocorrectionDisabled()
                             .focused($focus, equals: .trigger)
-                            .accessibilityLabel(isSnippet ? "Spoken phrase" : "Say")
+                            .accessibilityLabel("Say")
                     }
                     if isSnippet {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Text").font(.subheadline).foregroundStyle(.secondary)
-                            TextEditor(text: $output).font(.body).frame(minHeight: 180)
+                            Text("Insert").font(.subheadline).foregroundStyle(AppTheme.inkSecondary)
+                            TextEditor(text: $output).font(.body).lineSpacing(4).frame(minHeight: 180)
+                                .scrollContentBackground(.hidden).background(AppTheme.surface)
+                                .foregroundStyle(AppTheme.ink)
                                 .textInputAutocapitalization(.never).autocorrectionDisabled()
-                                .focused($focus, equals: .output).accessibilityLabel("Snippet text")
+                                .focused($focus, equals: .output).accessibilityLabel("Insert")
                         }
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Replace with").font(.subheadline).foregroundStyle(.secondary)
+                            Text("Replace with").font(.subheadline).foregroundStyle(AppTheme.inkSecondary)
                             TextField("Written form", text: $output, axis: .vertical)
                                 .lineLimit(1...5).textInputAutocapitalization(.never).autocorrectionDisabled()
                                 .focused($focus, equals: .output).accessibilityLabel("Replace with")
                         }
                     }
-                    Toggle("Enabled", isOn: $enabled)
+                    Toggle("Enabled", isOn: $enabled).tint(.green)
+                } footer: {
+                    Text(isSnippet
+                         ? "Inserts saved text for a whole spoken phrase, ignoring capitalization. Line breaks are preserved."
+                         : "Replaces a whole spoken phrase, ignoring capitalization. This changes recognized text; it does not retrain the model.").foregroundStyle(AppTheme.inkSecondary)
                 }
+                .listRowBackground(AppTheme.surface)
                 .disabled(!canEdit)
                 if !canEdit {
-                    Section { Text("Editing is currently unavailable. Your draft is kept here.").foregroundStyle(.secondary) }
+                    Section { Text("Editing is currently unavailable. Your draft is kept here.").foregroundStyle(AppTheme.error) }.listRowBackground(AppTheme.errorSoft)
                 }
             }
+            .scribeForm()
             .navigationTitle(isSnippet ? (isNew ? "New snippet" : "Edit snippet") : (isNew ? "New correction" : "Edit correction"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -328,3 +345,40 @@ private struct PersonalizationEditor: View {
         } catch { errorMessage = error.localizedDescription }
     }
 }
+
+@MainActor
+private func personalizationUnavailableMessage(_ controller: AppController) -> String {
+    let dictionaryUnavailable = controller.unreadableSavedData.contains(.dictionary)
+    let snippetsUnavailable = controller.unreadableSavedData.contains(.snippets)
+    let name = dictionaryUnavailable && snippetsUnavailable ? "Dictionary and snippets"
+        : dictionaryUnavailable ? "Dictionary" : "Snippets"
+    return "\(name) could not be opened. Dictionary and snippets are edited together; existing saved data is preserved."
+}
+
+#if DEBUG && targetEnvironment(simulator)
+private extension PersonalizationEditor {
+    init(designPreviewController controller: AppController, request: PersonalizationEditorRequest,
+         dialog: DesignPreviewConfiguration.Dialog?) {
+        self.init(controller: controller, request: request, onSaved: {})
+        if dialog == .discard {
+            _output = State(initialValue: "Revised synthetic draft")
+            _confirmingDiscard = State(initialValue: true)
+        } else if dialog == .saveError {
+            _output = State(initialValue: "Revised synthetic draft")
+            _errorMessage = State(initialValue: "Design preview: could not save. Your draft remains here; try again.")
+        }
+    }
+}
+
+@MainActor
+func designPreviewPersonalizationEditor(controller: AppController, rule: DictionaryRule?,
+    dialog: DesignPreviewConfiguration.Dialog?) -> some View {
+    PersonalizationEditor(designPreviewController: controller, request: .correction(rule), dialog: dialog)
+}
+
+@MainActor
+func designPreviewSnippetEditor(controller: AppController, snippet: SpokenSnippet?,
+    dialog: DesignPreviewConfiguration.Dialog?) -> some View {
+    PersonalizationEditor(designPreviewController: controller, request: .snippet(snippet), dialog: dialog)
+}
+#endif

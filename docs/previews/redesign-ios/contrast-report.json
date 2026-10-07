@@ -1,0 +1,1047 @@
+{
+  "contrast": [
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "Ink",
+      "background": "Canvas",
+      "kind": "reading",
+      "ratio": 15.573670120760188,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "Ink",
+      "background": "Surface",
+      "kind": "reading",
+      "ratio": 17.568119307105512,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "Ink",
+      "background": "SurfaceInset",
+      "kind": "reading",
+      "ratio": 14.499009876113991,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "Ink",
+      "background": "SurfaceRaised",
+      "kind": "reading",
+      "ratio": 17.568119307105512,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "InkSecondary",
+      "background": "Canvas",
+      "kind": "reading",
+      "ratio": 4.985302565379216,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "InkSecondary",
+      "background": "Surface",
+      "kind": "reading",
+      "ratio": 5.623747618350487,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "InkSecondary",
+      "background": "SurfaceInset",
+      "kind": "reading",
+      "ratio": 4.641292037802675,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "InkSecondary",
+      "background": "SurfaceRaised",
+      "kind": "reading",
+      "ratio": 5.623747618350487,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "OnAccent",
+      "background": "AccentColor",
+      "kind": "reading",
+      "ratio": 17.568119307105512,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "OnRecording",
+      "background": "Recording",
+      "kind": "reading",
+      "ratio": 4.8696200518056845,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "Success",
+      "background": "SuccessSoft",
+      "kind": "reading",
+      "ratio": 4.625363744730921,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "Warning",
+      "background": "WarningSoft",
+      "kind": "reading",
+      "ratio": 4.585184845506513,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "Error",
+      "background": "ErrorSoft",
+      "kind": "reading",
+      "ratio": 5.607340883780092,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "ControlBorder",
+      "background": "Canvas",
+      "kind": "graphics",
+      "ratio": 3.5678857491892453,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "ControlBorder",
+      "background": "Surface",
+      "kind": "graphics",
+      "ratio": 4.024808669365766,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "ControlBorder",
+      "background": "SurfaceInset",
+      "kind": "graphics",
+      "ratio": 3.3216839905567572,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "ControlBorder",
+      "background": "SurfaceRaised",
+      "kind": "graphics",
+      "ratio": 4.024808669365766,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "ChartCPU",
+      "background": "SurfaceInset",
+      "kind": "graphics",
+      "ratio": 14.499009876113991,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "light",
+      "foreground": "ChartMemory",
+      "background": "SurfaceInset",
+      "kind": "graphics",
+      "ratio": 4.115345622283359,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "Ink",
+      "background": "Canvas",
+      "kind": "reading",
+      "ratio": 16.450584375096838,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "Ink",
+      "background": "Surface",
+      "kind": "reading",
+      "ratio": 15.058740198577915,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "Ink",
+      "background": "SurfaceInset",
+      "kind": "reading",
+      "ratio": 13.164229434875345,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "Ink",
+      "background": "SurfaceRaised",
+      "kind": "reading",
+      "ratio": 13.854410078804921,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "InkSecondary",
+      "background": "Canvas",
+      "kind": "reading",
+      "ratio": 7.3968322615343505,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "InkSecondary",
+      "background": "Surface",
+      "kind": "reading",
+      "ratio": 6.7710041649052135,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "InkSecondary",
+      "background": "SurfaceInset",
+      "kind": "reading",
+      "ratio": 5.919157323646922,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "InkSecondary",
+      "background": "SurfaceRaised",
+      "kind": "reading",
+      "ratio": 6.229489791898511,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "OnAccent",
+      "background": "AccentColor",
+      "kind": "reading",
+      "ratio": 16.450584375096838,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "OnRecording",
+      "background": "Recording",
+      "kind": "reading",
+      "ratio": 6.195254247069,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "Success",
+      "background": "SuccessSoft",
+      "kind": "reading",
+      "ratio": 6.313401982844072,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "Warning",
+      "background": "WarningSoft",
+      "kind": "reading",
+      "ratio": 6.794108026295895,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "Error",
+      "background": "ErrorSoft",
+      "kind": "reading",
+      "ratio": 4.913690676519542,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "ControlBorder",
+      "background": "Canvas",
+      "kind": "graphics",
+      "ratio": 4.58239268281444,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "ControlBorder",
+      "background": "Surface",
+      "kind": "graphics",
+      "ratio": 4.194687515346147,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "ControlBorder",
+      "background": "SurfaceInset",
+      "kind": "graphics",
+      "ratio": 3.666962052033982,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "ControlBorder",
+      "background": "SurfaceRaised",
+      "kind": "graphics",
+      "ratio": 3.859215327689694,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "ChartCPU",
+      "background": "SurfaceInset",
+      "kind": "graphics",
+      "ratio": 13.164229434875345,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "iPhone",
+      "appearance": "dark",
+      "foreground": "ChartMemory",
+      "background": "SurfaceInset",
+      "kind": "graphics",
+      "ratio": 5.4741248555199675,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "Ink",
+      "background": "Canvas",
+      "kind": "reading",
+      "ratio": 15.573670120760188,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "Ink",
+      "background": "Surface",
+      "kind": "reading",
+      "ratio": 17.568119307105512,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "Ink",
+      "background": "SurfaceInset",
+      "kind": "reading",
+      "ratio": 14.499009876113991,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "Ink",
+      "background": "SurfaceRaised",
+      "kind": "reading",
+      "ratio": 17.568119307105512,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "InkSecondary",
+      "background": "Canvas",
+      "kind": "reading",
+      "ratio": 4.985302565379216,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "InkSecondary",
+      "background": "Surface",
+      "kind": "reading",
+      "ratio": 5.623747618350487,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "InkSecondary",
+      "background": "SurfaceInset",
+      "kind": "reading",
+      "ratio": 4.641292037802675,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "InkSecondary",
+      "background": "SurfaceRaised",
+      "kind": "reading",
+      "ratio": 5.623747618350487,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "OnAccent",
+      "background": "AccentColor",
+      "kind": "reading",
+      "ratio": 17.568119307105512,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "OnRecording",
+      "background": "Recording",
+      "kind": "reading",
+      "ratio": 4.8696200518056845,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "Success",
+      "background": "SuccessSoft",
+      "kind": "reading",
+      "ratio": 4.625363744730921,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "Warning",
+      "background": "WarningSoft",
+      "kind": "reading",
+      "ratio": 4.585184845506513,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "Error",
+      "background": "ErrorSoft",
+      "kind": "reading",
+      "ratio": 5.607340883780092,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "ControlBorder",
+      "background": "Canvas",
+      "kind": "graphics",
+      "ratio": 3.5678857491892453,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "ControlBorder",
+      "background": "Surface",
+      "kind": "graphics",
+      "ratio": 4.024808669365766,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "ControlBorder",
+      "background": "SurfaceInset",
+      "kind": "graphics",
+      "ratio": 3.3216839905567572,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "ControlBorder",
+      "background": "SurfaceRaised",
+      "kind": "graphics",
+      "ratio": 4.024808669365766,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "Focus",
+      "background": "Canvas",
+      "kind": "graphics",
+      "ratio": 15.573670120760188,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "Focus",
+      "background": "Surface",
+      "kind": "graphics",
+      "ratio": 17.568119307105512,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "Focus",
+      "background": "SurfaceInset",
+      "kind": "graphics",
+      "ratio": 14.499009876113991,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "light",
+      "foreground": "Focus",
+      "background": "SurfaceRaised",
+      "kind": "graphics",
+      "ratio": 17.568119307105512,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "Ink",
+      "background": "Canvas",
+      "kind": "reading",
+      "ratio": 16.450584375096838,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "Ink",
+      "background": "Surface",
+      "kind": "reading",
+      "ratio": 15.058740198577915,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "Ink",
+      "background": "SurfaceInset",
+      "kind": "reading",
+      "ratio": 13.164229434875345,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "Ink",
+      "background": "SurfaceRaised",
+      "kind": "reading",
+      "ratio": 13.854410078804921,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "InkSecondary",
+      "background": "Canvas",
+      "kind": "reading",
+      "ratio": 7.3968322615343505,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "InkSecondary",
+      "background": "Surface",
+      "kind": "reading",
+      "ratio": 6.7710041649052135,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "InkSecondary",
+      "background": "SurfaceInset",
+      "kind": "reading",
+      "ratio": 5.919157323646922,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "InkSecondary",
+      "background": "SurfaceRaised",
+      "kind": "reading",
+      "ratio": 6.229489791898511,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "OnAccent",
+      "background": "AccentColor",
+      "kind": "reading",
+      "ratio": 16.450584375096838,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "OnRecording",
+      "background": "Recording",
+      "kind": "reading",
+      "ratio": 6.195254247069,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "Success",
+      "background": "SuccessSoft",
+      "kind": "reading",
+      "ratio": 6.313401982844072,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "Warning",
+      "background": "WarningSoft",
+      "kind": "reading",
+      "ratio": 6.794108026295895,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "Error",
+      "background": "ErrorSoft",
+      "kind": "reading",
+      "ratio": 4.913690676519542,
+      "minimum": 4.5,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "ControlBorder",
+      "background": "Canvas",
+      "kind": "graphics",
+      "ratio": 4.58239268281444,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "ControlBorder",
+      "background": "Surface",
+      "kind": "graphics",
+      "ratio": 4.194687515346147,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "ControlBorder",
+      "background": "SurfaceInset",
+      "kind": "graphics",
+      "ratio": 3.666962052033982,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "ControlBorder",
+      "background": "SurfaceRaised",
+      "kind": "graphics",
+      "ratio": 3.859215327689694,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "Focus",
+      "background": "Canvas",
+      "kind": "graphics",
+      "ratio": 16.450584375096838,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "Focus",
+      "background": "Surface",
+      "kind": "graphics",
+      "ratio": 15.058740198577915,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "Focus",
+      "background": "SurfaceInset",
+      "kind": "graphics",
+      "ratio": 13.164229434875345,
+      "minimum": 3.0,
+      "passed": true
+    },
+    {
+      "platform": "Mac",
+      "appearance": "dark",
+      "foreground": "Focus",
+      "background": "SurfaceRaised",
+      "kind": "graphics",
+      "ratio": 13.854410078804921,
+      "minimum": 3.0,
+      "passed": true
+    }
+  ],
+  "shared_palette": [
+    {
+      "appearance": "light",
+      "role": "Canvas",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "Surface",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "SurfaceInset",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "SurfaceRaised",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "Ink",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "InkSecondary",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "InkTertiary",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "Separator",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "SeparatorStrong",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "ControlBorder",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "AccentColor",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "OnAccent",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "Recording",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "OnRecording",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "RecordingSoft",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "Success",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "SuccessSoft",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "Warning",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "WarningSoft",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "Error",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "ErrorSoft",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "ChartCPU",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "ChartMemory",
+      "passed": true
+    },
+    {
+      "appearance": "light",
+      "role": "ChartGPU",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "Canvas",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "Surface",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "SurfaceInset",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "SurfaceRaised",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "Ink",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "InkSecondary",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "InkTertiary",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "Separator",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "SeparatorStrong",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "ControlBorder",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "AccentColor",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "OnAccent",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "Recording",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "OnRecording",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "RecordingSoft",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "Success",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "SuccessSoft",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "Warning",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "WarningSoft",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "Error",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "ErrorSoft",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "ChartCPU",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "ChartMemory",
+      "passed": true
+    },
+    {
+      "appearance": "dark",
+      "role": "ChartGPU",
+      "passed": true
+    }
+  ],
+  "passed": true
+}

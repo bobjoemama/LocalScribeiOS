@@ -4,6 +4,8 @@ Native SwiftUI dictation with speech recognition on your device. Includes a UIKi
 
 Requires iOS 18 or later. The default is Parakeet Realtime through exact-version FluidAudio 0.17.5, configured for CPU-only Core ML streaming. Phonon-2 remains available for formatted dictation with CPU + Neural Engine execution. Recognition loads verified local files; missing models produce an error rather than a network fallback. The nine-profile catalog includes five exact-weight Phonon-2 encoders, Ultra, Redux, Parakeet Realtime EOU and Moonshine Small Streaming through Moonshine Swift 0.1.5. Dense Phonon LUT6 uses CPU/Neural Engine; dense LUT3 uses a GPU encoder in the foreground. Moonshine uses its native CPU runtime. Current research, exact sizes, stack alternatives and evidence limits: [model/runtime comparison](docs/MODEL_RESEARCH.md).
 
+Current interface and verification: [October 7 redesign](docs/UI_REDESIGN.md).
+
 ## Use
 
 1. Open Models and download a model, or choose Download all. Bulk downloads preserve the selected model; installed files use storage, and only the selected runtime is prepared. Keep the app open during setup. First Core ML preparation may take substantially longer than later cached loads.
@@ -34,7 +36,7 @@ Public Mach readings can be denied; failed readings stay unavailable. **Performa
 
 The companion's **Trace report** tab uses installed Apple Instruments/xctrace to export a selected recording window into a small JSON report. Import it through **Developer profiling → Import Instruments report** for recorded Neural Engine/GPU active time and duty cycle. These are offline, trace-wide measurements; no capacity utilization or occupied-core count is inferred. See [trace processing](Tools/MetricsTrace/README.md) for supported tables and limits, and [the collector review](Tools/MetricsCompanion/DEPENDENCY_REVIEW.md) for the restricted connection and package audit.
 
-Completed loading/transcription measurements and word-error-rate comparison remain under **Accuracy & completed operations**. See Apple’s [app memory allowance](https://developer.apple.com/documentation/os/os_proc_available_memory), [memory-pressure events](https://developer.apple.com/documentation/dispatch/dispatchsourcememorypressure), and [process CPU accounting](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/getrusage.2.html).
+Completed loading/transcription measurements and word-error-rate comparison remain under **Accuracy**. See Apple’s [app memory allowance](https://developer.apple.com/documentation/os/os_proc_available_memory), [memory-pressure events](https://developer.apple.com/documentation/dispatch/dispatchsourcememorypressure), and [process CPU accounting](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/getrusage.2.html).
 
 ## Dictionary, snippets and notes
 

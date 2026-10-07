@@ -30,18 +30,20 @@ struct SavedDataView: View {
                     }
                 }.disabled(!available)
                 ForEach(SavedDataCollection.allCases) { collection in
-                    Button("Reset \(collection.rawValue)…", role: .destructive) { requestedReset = collection }
-                        .disabled(!available)
-                    if controller.unreadableSavedData.contains(collection)
-                        || (collection == .notes && notes.errorMessage != nil)
-                    {
-                        Text("\(collection.title) could not be opened or saved.").foregroundStyle(.secondary)
+                    LabeledContent(collection.title) {
+                        Text(collectionStatus(collection))
+                            .foregroundStyle(collectionNeedsAttention(collection) ? AppTheme.error : AppTheme.success)
                     }
+                    Button("Reset \(collection.title)…", role: .destructive) { requestedReset = collection }
+                        .disabled(!available)
                 }
             } footer: {
                 Text(
                     "Retry after unlocking if a file could not be opened. Reset saves a protected recovery copy before clearing the selected collection. Models and settings stay unchanged."
-                )
+                ).foregroundStyle(AppTheme.inkSecondary)
+            }.listRowBackground(AppTheme.surface)
+            if busy {
+                Section { ProgressView("Updating saved data…") }.listRowBackground(AppTheme.surface)
             }
             if !recoveryCopies.isEmpty {
                 Section {
@@ -49,13 +51,14 @@ struct SavedDataView: View {
                         ShareLink(item: file) { Label(copyLabel(file), systemImage: "square.and.arrow.up") }
                     }
                 } header: {
-                    Text("Recovery copies")
+                    Text("Recovery copies").foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("Copies contain saved text. Choose where to export them.")
-                }
+                    Text("Copies contain saved text. Choose where to export them.").foregroundStyle(AppTheme.inkSecondary)
+                }.listRowBackground(AppTheme.surface)
             }
-            if let status { Section { Text(status).textSelection(.enabled) } }
+            if let status { Section { Text(status).textSelection(.enabled) }.listRowBackground(AppTheme.surface) }
         }
+        .scribeForm()
         .navigationTitle("Saved data")
         .navigationBarTitleDisplayMode(.inline)
         .task { loadCopies() }
@@ -77,6 +80,19 @@ struct SavedDataView: View {
                     : "Clears \(requestedReset?.rawValue ?? "the selected collection"), including unreadable entries. The previous saved file is kept as a protected recovery copy."
             )
         }
+    }
+
+    private func collectionNeedsAttention(_ collection: SavedDataCollection) -> Bool {
+        controller.unreadableSavedData.contains(collection) || (collection == .notes && notes.errorMessage != nil)
+    }
+
+    private func collectionStatus(_ collection: SavedDataCollection) -> String {
+        if collection == .notes {
+            if notes.isLoading { return "Opening…" }
+            if notes.errorMessage != nil { return "Needs attention" }
+            if notes.hasUnsavedChanges { return "Unsaved changes" }
+        }
+        return controller.unreadableSavedData.contains(collection) ? "Unreadable" : "Available"
     }
 
     private func reset(_ collection: SavedDataCollection) async {
@@ -107,3 +123,19 @@ struct SavedDataView: View {
         return "\(title) · \(Date(timeIntervalSince1970: timestamp).formatted(date: .abbreviated, time: .shortened))"
     }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+private extension SavedDataView {
+    init(designPreviewController controller: AppController, notes: NotesController,
+         dialog: DesignPreviewConfiguration.Dialog?) {
+        self.init(controller: controller, notes: notes)
+        if dialog == .reset { _requestedReset = State(initialValue: .history) }
+    }
+}
+
+@MainActor
+func designPreviewSavedData(controller: AppController, notes: NotesController,
+    dialog: DesignPreviewConfiguration.Dialog?) -> some View {
+    SavedDataView(designPreviewController: controller, notes: notes, dialog: dialog)
+}
+#endif

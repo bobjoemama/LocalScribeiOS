@@ -20,6 +20,8 @@ struct DictationTranscriptTailCheck {
         let wordTail = DictationTranscriptTail.make(from: words.joined(separator: " "))
         require(wordTail == words.suffix(65).joined(separator: " "), "Unpunctuated recognition keeps latest 65 words")
         require(DictationTranscriptTail.make(from: "hello\nworld") == "hello world", "Unpunctuated line breaks preserve words")
+        require(DictationTranscriptTail.make(from: "First.\nSecond.\n\nThird.\tFourth. ") == "Second. Third. Fourth.", "Blank paragraphs do not consume a sentence slot")
+        require(DictationTranscriptTail.make(from: "Dr.\n\nLee arrived. We began. It worked.") == "Dr. Lee arrived. We began. It worked.", "Blank paragraphs preserve pending abbreviation text")
         let unicodeTail = DictationTranscriptTail.make(from: String(repeating: "👩🏽‍💻e\u{301}", count: 200) + " latest")
         require(unicodeTail.utf8.count <= DictationTranscriptTail.maximumUTF8Bytes, "UTF8 payload remains bounded")
         require(unicodeTail.hasSuffix(" latest") && !unicodeTail.contains("�"), "Unicode tail keeps latest text without malformed characters")

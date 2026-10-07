@@ -5,32 +5,31 @@ import UniformTypeIdentifiers
 import UIKit
 
 struct LivePerformanceStrip: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var monitor: LivePerformanceMonitor
     let open: () -> Void
 
     var body: some View {
         Button(action: open) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 16) {
-                    metric("CPU", value: LiveMetricFormat.cpu(monitor.snapshot?.cpuPercent))
-                    metric("Memory", value: LiveMetricFormat.memory(monitor.snapshot?.physicalFootprintBytes))
-                    Spacer(minLength: 0)
-                    pressure
-                    Image(systemName: "chevron.right").font(.caption2)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        metric("CPU", value: LiveMetricFormat.cpu(monitor.snapshot?.cpuPercent))
-                        Spacer()
-                        metric("Memory", value: LiveMetricFormat.memory(monitor.snapshot?.physicalFootprintBytes))
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            metric("CPU", value: LiveMetricFormat.cpu(monitor.snapshot?.cpuPercent))
+                            metric("Memory", value: LiveMetricFormat.memory(monitor.snapshot?.physicalFootprintBytes))
+                            pressure
+                        }
+                        Spacer(minLength: 0)
                         Image(systemName: "chevron.right").font(.caption2)
                     }
-                    pressure
+                } else {
+                    compactMetrics
                 }
             }
-            .font(.caption).monospacedDigit()
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            .font(.footnote).monospacedDigit()
+            .padding(.vertical, 12)
+            .foregroundStyle(AppTheme.ink)
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -39,10 +38,38 @@ struct LivePerformanceStrip: View {
         .accessibilityHint("Shows live resource usage and recent graphs")
     }
 
+    private var compactMetrics: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                metric("CPU", value: LiveMetricFormat.cpu(monitor.snapshot?.cpuPercent))
+                metric("Memory", value: LiveMetricFormat.memory(monitor.snapshot?.physicalFootprintBytes))
+                Spacer(minLength: 0)
+                pressure
+                Image(systemName: "chevron.right").font(.caption2)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    metric("CPU", value: LiveMetricFormat.cpu(monitor.snapshot?.cpuPercent))
+                    Spacer()
+                    metric("Memory", value: LiveMetricFormat.memory(monitor.snapshot?.physicalFootprintBytes))
+                    Image(systemName: "chevron.right").font(.caption2)
+                }
+                pressure
+            }
+        }
+    }
+
+
     private func metric(_ label: String, value: String) -> some View {
-        HStack(spacing: 5) {
-            Text(label).foregroundStyle(.secondary)
-            Text(value).fontWeight(.medium)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 5) {
+                Text(label).foregroundStyle(AppTheme.inkSecondary).fixedSize()
+                Text(value).fontWeight(.medium).fixedSize()
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label).foregroundStyle(AppTheme.inkSecondary).fixedSize(horizontal: false, vertical: true)
+                Text(value).fontWeight(.medium).fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -51,10 +78,9 @@ struct LivePerformanceStrip: View {
             if monitor.snapshot?.memoryPressure == .warning || monitor.snapshot?.memoryPressure == .critical {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(LiveMetricFormat.pressureColor(monitor.snapshot?.memoryPressure))
-                Text(LiveMetricFormat.pressure(monitor.snapshot?.memoryPressure)).foregroundStyle(.secondary)
+                Text(LiveMetricFormat.pressure(monitor.snapshot?.memoryPressure)).foregroundStyle(LiveMetricFormat.pressureColor(monitor.snapshot?.memoryPressure)).fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("Headroom").foregroundStyle(.secondary)
-                Text(LiveMetricFormat.memory(monitor.snapshot?.availableMemoryBytes)).fontWeight(.medium)
+                metric("Headroom", value: LiveMetricFormat.memory(monitor.snapshot?.availableMemoryBytes))
             }
         }
     }
@@ -82,90 +108,134 @@ struct LivePerformanceView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Status", value: state)
-                LabeledContent("Loaded model", value: controller.preparedModel?.name ?? "None")
+                LabeledContent("Status") {
+                    Text(state).foregroundStyle(AppTheme.inkSecondary)
+                }
+                LabeledContent("Loaded model") {
+                    Text(controller.preparedModel?.name ?? "None").foregroundStyle(AppTheme.inkSecondary)
+                }
             } footer: {
-                Text("Updates every second while LocalScribe is open, including when idle.")
-            }
+                Text("Updates every second while LocalScribe is open, including when idle.").foregroundStyle(AppTheme.inkSecondary)
+            }.listRowBackground(AppTheme.surface)
             Section {
-                LabeledContent("App memory", value: LiveMetricFormat.memory(monitor.snapshot?.physicalFootprintBytes))
+                LabeledContent("App memory") {
+                    Text(LiveMetricFormat.memory(monitor.snapshot?.physicalFootprintBytes)).foregroundStyle(AppTheme.inkSecondary)
+                }
                 historyChart(memory: true)
-                LabeledContent("Peak since launch", value: LiveMetricFormat.memory(monitor.snapshot?.lifetimePeakPhysicalFootprintBytes))
-                LabeledContent("App headroom", value: LiveMetricFormat.memory(monitor.snapshot?.availableMemoryBytes))
+                LabeledContent("Peak since launch") {
+                    Text(LiveMetricFormat.memory(monitor.snapshot?.lifetimePeakPhysicalFootprintBytes)).foregroundStyle(AppTheme.inkSecondary)
+                }
+                LabeledContent("App headroom") {
+                    Text(LiveMetricFormat.memory(monitor.snapshot?.availableMemoryBytes)).foregroundStyle(AppTheme.inkSecondary)
+                }
                 LabeledContent("Memory-pressure alerts") {
                     Text(LiveMetricFormat.pressure(monitor.snapshot?.memoryPressure))
                         .foregroundStyle(LiveMetricFormat.pressureColor(monitor.snapshot?.memoryPressure))
                 }
             } header: {
-                Text("Memory")
+                Text("Memory").foregroundStyle(AppTheme.inkSecondary)
             } footer: {
-                Text("Headroom is iOS’s current allocation allowance for this app. Pressure alerts show the last event received from iOS. No alerts received does not establish normal system pressure.")
-            }
+                Text("Headroom is iOS’s current allocation allowance for this app. Pressure alerts show the last event received from iOS. No alerts received does not establish normal system pressure.").foregroundStyle(AppTheme.inkSecondary)
+            }.listRowBackground(AppTheme.surface)
             Section {
-                LabeledContent("App CPU", value: LiveMetricFormat.cpu(monitor.snapshot?.cpuPercent))
+                LabeledContent("App CPU") {
+                    Text(LiveMetricFormat.cpu(monitor.snapshot?.cpuPercent)).foregroundStyle(AppTheme.inkSecondary)
+                }
                 historyChart(memory: false)
-                LabeledContent("Core equivalents", value: monitor.snapshot?.cpuPercent.map { String(format: "%.2f", $0 / 100) } ?? "—")
-                LabeledContent("Available CPU cores", value: monitor.snapshot.map { "\($0.activeProcessorCount) of \($0.processorCount)" } ?? "—")
+                LabeledContent("Core equivalents") {
+                    Text(monitor.snapshot?.cpuPercent.map { String(format: "%.2f", $0 / 100) } ?? "—").foregroundStyle(AppTheme.inkSecondary)
+                }
+                LabeledContent("Available CPU cores") {
+                    Text(monitor.snapshot.map { "\($0.activeProcessorCount) of \($0.processorCount)" } ?? "—").foregroundStyle(AppTheme.inkSecondary)
+                }
                 if let cores = monitor.snapshot?.systemCPUCoresPercent {
                     DisclosureGroup("System CPU per core") {
                         ForEach(Array(cores.enumerated()), id: \.offset) { index, value in
                             HStack {
                                 Text("Core \(index + 1)")
-                                if let value { ProgressView(value: value, total: 100).tint(.blue) }
+                                if let value { ProgressView(value: value, total: 100).tint(AppTheme.chartCPU) }
                                 Spacer(minLength: 12)
-                                Text(LiveMetricFormat.cpu(value)).monospacedDigit()
+                                Text(LiveMetricFormat.cpu(value)).monospacedDigit().foregroundStyle(AppTheme.inkSecondary)
                             }
                         }
                     }
                 }
             } header: {
-                Text("CPU")
+                Text("CPU").foregroundStyle(AppTheme.inkSecondary)
             } footer: {
-                Text("100% is one core’s worth of work. Multicore usage can exceed 100%. This measures CPU time, not which physical cores run each task.")
-            }
+                Text("100% is one core’s worth of work. Multicore usage can exceed 100%. This measures CPU time, not which physical cores run each task.").foregroundStyle(AppTheme.inkSecondary)
+            }.listRowBackground(AppTheme.surface)
             if hasGPUCounters { gpuCounters }
             if let memory = monitor.snapshot?.systemMemory {
                 Section {
                     DisclosureGroup("System memory") {
-                        LabeledContent("Free pages", value: LiveMetricFormat.memory(memory.freeBytes))
-                        LabeledContent("Active", value: LiveMetricFormat.memory(memory.activeBytes))
-                        LabeledContent("Inactive", value: LiveMetricFormat.memory(memory.inactiveBytes))
-                        LabeledContent("Wired", value: LiveMetricFormat.memory(memory.wiredBytes))
-                        LabeledContent("Compressed", value: LiveMetricFormat.memory(memory.compressedBytes))
-                        LabeledContent("Purgeable", value: LiveMetricFormat.memory(memory.purgeableBytes))
-                        LabeledContent("Speculative", value: LiveMetricFormat.memory(memory.speculativeBytes))
+                        LabeledContent("Free pages") {
+                            Text(LiveMetricFormat.memory(memory.freeBytes)).foregroundStyle(AppTheme.inkSecondary)
+                        }
+                        LabeledContent("Active") {
+                            Text(LiveMetricFormat.memory(memory.activeBytes)).foregroundStyle(AppTheme.inkSecondary)
+                        }
+                        LabeledContent("Inactive") {
+                            Text(LiveMetricFormat.memory(memory.inactiveBytes)).foregroundStyle(AppTheme.inkSecondary)
+                        }
+                        LabeledContent("Wired") {
+                            Text(LiveMetricFormat.memory(memory.wiredBytes)).foregroundStyle(AppTheme.inkSecondary)
+                        }
+                        LabeledContent("Compressed") {
+                            Text(LiveMetricFormat.memory(memory.compressedBytes)).foregroundStyle(AppTheme.inkSecondary)
+                        }
+                        LabeledContent("Purgeable") {
+                            Text(LiveMetricFormat.memory(memory.purgeableBytes)).foregroundStyle(AppTheme.inkSecondary)
+                        }
+                        LabeledContent("Speculative") {
+                            Text(LiveMetricFormat.memory(memory.speculativeBytes)).foregroundStyle(AppTheme.inkSecondary)
+                        }
                     }
                 } footer: {
-                    Text("OS page counters cover the device. Categories overlap and do not measure memory pressure.")
-                }
-            }
-            Section("Device") {
-                LabeledContent("Physical memory", value: LiveMetricFormat.memory(monitor.snapshot?.devicePhysicalMemoryBytes))
-                LabeledContent("Thermal state", value: monitor.snapshot?.thermalState.rawValue.capitalized ?? "—")
-                LabeledContent("Low Power Mode", value: monitor.snapshot.map { $0.isLowPowerModeEnabled ? "On" : "Off" } ?? "—")
-                if let model = controller.preparedModel {
-                    LabeledContent("Configured processors", value: runtime(model))
-                }
+                    Text("OS page counters cover the device. Categories overlap and do not measure memory pressure.").foregroundStyle(AppTheme.inkSecondary)
+                }.listRowBackground(AppTheme.surface)
             }
             Section {
-                NavigationLink("Accuracy & completed operations") { PerformanceView(controller: controller) }
+                LabeledContent("Physical memory") {
+                    Text(LiveMetricFormat.memory(monitor.snapshot?.devicePhysicalMemoryBytes)).foregroundStyle(AppTheme.inkSecondary)
+                }
+                LabeledContent("Thermal state") {
+                    Text(monitor.snapshot?.thermalState.rawValue.capitalized ?? "—").foregroundStyle(AppTheme.inkSecondary)
+                }
+                LabeledContent("Low Power Mode") {
+                    Text(monitor.snapshot.map { $0.isLowPowerModeEnabled ? "On" : "Off" } ?? "—").foregroundStyle(AppTheme.inkSecondary)
+                }
+                if let model = controller.preparedModel {
+                    LabeledContent("Configured processors") {
+                        Text(runtime(model)).foregroundStyle(AppTheme.inkSecondary)
+                    }
+                }
+            } header: { Text("Device").foregroundStyle(AppTheme.inkSecondary) }.listRowBackground(AppTheme.surface)
+            Section {
+                NavigationLink("Accuracy") { PerformanceView(controller: controller) }
                 NavigationLink("Developer profiling") { developerProfiling }
             } footer: {
-                Text("Usage covers the whole app, including its interface and loaded runtime. Charts show up to 60 recent samples and reset after leaving the foreground.")
-            }
+                Text("Usage covers the whole app, including its interface and loaded runtime. Charts show up to 60 recent samples and reset after leaving the foreground.").foregroundStyle(AppTheme.inkSecondary)
+            }.listRowBackground(AppTheme.surface)
         }
+        .scribeForm()
+        .monospacedDigit()
         .navigationTitle("Performance").navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-            if controller.phase == .recording {
+            if controller.phase == .preparing || controller.phase == .recording {
                 HStack {
-                    Label("Recording", systemImage: "mic.fill").foregroundStyle(.red)
+                    Circle().fill(AppTheme.recording).frame(width: 7, height: 7).accessibilityHidden(true)
+                    Text(controller.phase == .preparing ? "Starting…" : "Recording \(recordingDuration)")
+                        .font(.subheadline).monospacedDigit()
                     Spacer()
                     Button("Stop") {
                         Task {
-                            if controller.actionButtonRecording { await controller.stopActionButtonRecording() }
+                            if controller.phase == .preparing { await controller.cancelPreparation() }
+                            else if controller.actionButtonRecording { await controller.stopActionButtonRecording() }
                             else { await controller.stopRecording() }
                         }
-                    }.buttonStyle(.borderedProminent).tint(.red)
+                    }.buttonStyle(.borderedProminent).controlSize(.large).tint(AppTheme.recording)
+                        .foregroundStyle(AppTheme.onRecording).frame(minHeight: 44)
                 }
                 .padding().background(.regularMaterial)
             }
@@ -178,6 +248,8 @@ struct LivePerformanceView: View {
             developerConnection
             profilingSection
         }
+        .scribeForm()
+        .monospacedDigit()
         .navigationTitle("Developer profiling").navigationBarTitleDisplayMode(.inline)
         .fileImporter(isPresented: $showingReportImporter, allowedContentTypes: [.json]) { result in
             do { try profilingReports.load(result.get()) }
@@ -191,22 +263,30 @@ struct LivePerformanceView: View {
     private var gpuCounters: some View {
         Section {
             if let value = developerMetrics.latestSample?.gpuDevicePercent {
-                LabeledContent("GPU usage", value: LiveMetricFormat.cpu(value))
+                LabeledContent("GPU usage") {
+                    Text(LiveMetricFormat.cpu(value)).foregroundStyle(AppTheme.inkSecondary)
+                }
             }
             if let value = developerMetrics.latestSample?.gpuRendererPercent {
-                LabeledContent("Renderer", value: LiveMetricFormat.cpu(value))
+                LabeledContent("Renderer") {
+                    Text(LiveMetricFormat.cpu(value)).foregroundStyle(AppTheme.inkSecondary)
+                }
             }
             if let value = developerMetrics.latestSample?.gpuTilerPercent {
-                LabeledContent("Tiler", value: LiveMetricFormat.cpu(value))
+                LabeledContent("Tiler") {
+                    Text(LiveMetricFormat.cpu(value)).foregroundStyle(AppTheme.inkSecondary)
+                }
             }
             if let value = developerMetrics.latestSample?.displayFPS {
-                LabeledContent("Display frame rate", value: String(format: "%.0f fps", value))
+                LabeledContent("Display frame rate") {
+                    Text(String(format: "%.0f fps", value)).foregroundStyle(AppTheme.inkSecondary)
+                }
             }
         } header: {
-            Text("System GPU")
+            Text("System GPU").foregroundStyle(AppTheme.inkSecondary)
         } footer: {
-            Text("Measured through the Mac developer connection. These counters cover the device, not just LocalScribe. iOS does not expose occupied GPU cores or live Neural Engine utilization to this app.")
-        }
+            Text("Device-wide, via Mac. These counters cover the device, not just LocalScribe. iOS does not expose occupied GPU cores or live Neural Engine utilization to this app.").foregroundStyle(AppTheme.inkSecondary)
+        }.listRowBackground(AppTheme.surface)
     }
 
     private var hasGPUCounters: Bool {
@@ -217,12 +297,17 @@ struct LivePerformanceView: View {
 
     private var developerConnection: some View {
         Section {
-            LabeledContent("Mac connection", value: developerMetrics.status.rawValue.capitalized)
+            LabeledContent("Mac connection") {
+                HStack(spacing: 6) {
+                    Circle().fill(connectionColor).frame(width: 6, height: 6).accessibilityHidden(true)
+                    Text(developerMetrics.status.rawValue.capitalized).foregroundStyle(AppTheme.inkSecondary)
+                }
+            }
             if developerMetrics.status == .stopped || developerMetrics.status == .failed {
                 Button("Enable USB metrics") { developerMetrics.start(); codeCopied = false }
             } else {
                 if let code = developerMetrics.pairingCode {
-                    Button(codeCopied ? "Connection code copied" : "Copy connection code") {
+                    Button(codeCopied ? "Copied · clipboard expires in 2 min" : "Copy connection code") {
                         UIPasteboard.general.setItems([["public.utf8-plain-text": code]], options: [
                             .expirationDate: Date().addingTimeInterval(120)
                         ])
@@ -232,27 +317,51 @@ struct LivePerformanceView: View {
                 Button("End Mac connection", role: .destructive) { developerMetrics.stop(); codeCopied = false }
             }
         } footer: {
-            Text("Optional GPU measurements require a Mac. CPU, memory and thermal readings work on this phone alone. To connect, use USB, open LocalScribe Metrics on your Mac and enter the connection code. Leaving this app ends the connection.")
-        }
+            Text("Optional GPU measurements require a Mac. CPU, memory and thermal readings work on this phone alone. To connect, use USB, open LocalScribe Metrics on your Mac and enter the connection code. Leaving this app ends the connection.").foregroundStyle(AppTheme.inkSecondary)
+        }.listRowBackground(AppTheme.surface)
     }
 
     private var profilingSection: some View {
         Section {
             Button("Import Instruments report") { showingReportImporter = true }
             if let report = profilingReports.report {
-                LabeledContent("Recording window", value: String(format: "%.1f–%.1f s", report.windowStartMs / 1000, (report.windowStartMs + report.durationMs) / 1000))
+                LabeledContent("Recording window") {
+                    Text(String(format: "%.1f–%.1f s", report.windowStartMs / 1000, (report.windowStartMs + report.durationMs) / 1000)).foregroundStyle(AppTheme.inkSecondary)
+                }
                 if let ane = report.ane {
-                    LabeledContent("Neural Engine active time", value: String(format: "%.1f ms", ane.activeMs))
-                    LabeledContent("Neural Engine duty cycle", value: LiveMetricFormat.cpu(ane.dutyCyclePercent))
+                    LabeledContent("Neural Engine active time") {
+                        Text(String(format: "%.1f ms", ane.activeMs)).foregroundStyle(AppTheme.inkSecondary)
+                    }
+                    LabeledContent("Neural Engine duty cycle") {
+                        Text(LiveMetricFormat.cpu(ane.dutyCyclePercent)).foregroundStyle(AppTheme.inkSecondary)
+                    }
                 }
                 if let gpu = report.gpu {
-                    LabeledContent("GPU active time", value: String(format: "%.1f ms", gpu.activeMs))
-                    LabeledContent("GPU duty cycle", value: LiveMetricFormat.cpu(gpu.dutyCyclePercent))
+                    LabeledContent("GPU active time") {
+                        Text(String(format: "%.1f ms", gpu.activeMs)).foregroundStyle(AppTheme.inkSecondary)
+                    }
+                    LabeledContent("GPU duty cycle") {
+                        Text(LiveMetricFormat.cpu(gpu.dutyCyclePercent)).foregroundStyle(AppTheme.inkSecondary)
+                    }
                 }
                 Button("Remove report", role: .destructive) { profilingReports.clear() }
             }
-        } header: { Text("Instruments report") } footer: {
-            Text("Export a report from the Mac’s LocalScribe Metrics app, then choose its JSON file here. Results cover the chosen trace window and are kept in this app session. Duty cycle measures time active, not processor-capacity utilization or live app-specific activity.")
+        } header: { Text("Instruments report").foregroundStyle(AppTheme.inkSecondary) } footer: {
+            Text("Export a report from the Mac’s LocalScribe Metrics app, then choose its JSON file here. Results cover the chosen trace window and are kept in this app session. Duty cycle measures time active, not processor-capacity utilization or live app-specific activity.").foregroundStyle(AppTheme.inkSecondary)
+        }.listRowBackground(AppTheme.surface)
+    }
+
+    private var recordingDuration: String {
+        let seconds = Int(max(0, controller.elapsed))
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private var connectionColor: Color {
+        switch developerMetrics.status {
+        case .connected: AppTheme.success
+        case .starting, .waiting, .stale: AppTheme.warning
+        case .failed: AppTheme.error
+        case .stopped: AppTheme.inkSecondary
         }
     }
 
@@ -272,11 +381,20 @@ struct LivePerformanceView: View {
         if points.count > 1 {
             Chart(points) { point in
                 LineMark(x: .value("Time", point.time), y: .value(memory ? "MiB" : "CPU %", point.value))
-                    .foregroundStyle(memory ? Color.purple : Color.blue)
+                    .foregroundStyle(memory ? AppTheme.chartMemory : AppTheme.chartCPU)
             }
             .chartYScale(domain: .automatic(includesZero: true))
             .chartXAxis(.hidden)
-            .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
+            .chartYAxis {
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in
+                    AxisGridLine().foregroundStyle(AppTheme.separatorStrong)
+                    AxisTick().foregroundStyle(AppTheme.separatorStrong)
+                    AxisValueLabel().foregroundStyle(AppTheme.inkSecondary)
+                }
+            }
+            .chartPlotStyle { plot in
+                plot.background(AppTheme.surfaceInset)
+            }
             .frame(height: 90)
             .accessibilityLabel(memory ? "Recent app memory in mebibytes" : "Recent app CPU percent, one core equals 100 percent")
         }
@@ -306,10 +424,16 @@ enum LiveMetricFormat {
     }
     static func pressureColor(_ value: LiveMemoryPressure?) -> Color {
         switch value {
-        case .normal: .green
-        case .warning: .orange
-        case .critical: .red
-        case .unknown, nil: .secondary
+        case .normal: AppTheme.success
+        case .warning: AppTheme.warning
+        case .critical: AppTheme.error
+        case .unknown, nil: AppTheme.inkSecondary
         }
     }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+extension LivePerformanceView {
+    func designPreviewDeveloperProfiling() -> some View { developerProfiling }
+}
+#endif

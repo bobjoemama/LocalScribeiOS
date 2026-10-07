@@ -16,7 +16,11 @@ enum DictationTranscriptTail {
         var prefix = ""
         candidate.enumerateSubstrings(in: candidate.startIndex..<candidate.endIndex, options: .bySentences) { text, _, _, _ in
             guard let text else { return }
-            let current = prefix + text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let fragment = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Foundation may enumerate a blank paragraph as a sentence. It
+            // must not evict spoken text from the three-sentence preview.
+            guard !fragment.isEmpty else { return }
+            let current = prefix + fragment
             // Foundation can split common English titles such as "Dr." into
             // their own sentence. Keep the title with the name that follows it.
             let lastWord = current.split(whereSeparator: \.isWhitespace).last.map { $0.lowercased() } ?? ""

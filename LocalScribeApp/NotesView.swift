@@ -22,50 +22,56 @@ struct NotesView: View {
 
     private var matchingNotes: [NoteEntry] { controller.matching(search) }
     private var days: [Date] {
-        Set(matchingNotes.map { Calendar.current.startOfDay(for: $0.updatedAt) }).sorted(by: >)
+        Set(matchingNotes.map { Calendar.autoupdatingCurrent.startOfDay(for: $0.updatedAt) }).sorted(by: >)
     }
 
     var body: some View {
         List {
             if controller.errorMessage != nil { NotesSaveError(controller: controller, dictation: dictation) }
             if controller.isLoading {
-                ProgressView("Opening notes…")
+                ProgressView("Opening notes…").listRowBackground(AppTheme.surface)
             } else if matchingNotes.isEmpty {
                 ContentUnavailableView(search.isEmpty ? "No notes" : "No matching notes",
                     systemImage: search.isEmpty ? "note.text" : "magnifyingglass",
-                    description: Text(search.isEmpty ? "Create a note, then type or dictate. Your notes stay on this iPhone." : "Try another word from a title or note."))
+                    description: Text(search.isEmpty ? "Create a note, then type or dictate. Your notes stay on this iPhone." : "Try another word from a title or note.").foregroundStyle(AppTheme.inkSecondary))
                     .listRowBackground(Color.clear)
             } else {
                 ForEach(days, id: \.self) { day in
                     Section {
-                        ForEach(matchingNotes.filter { Calendar.current.isDate($0.updatedAt, inSameDayAs: day) }) { note in
+                        ForEach(matchingNotes.filter { Calendar.autoupdatingCurrent.isDate($0.updatedAt, inSameDayAs: day) }) { note in
                             NavigationLink {
                                 NoteEditor(controller: controller, dictation: dictation, noteID: note.id)
                             } label: {
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(note.title).font(.headline).lineLimit(2)
+                                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                        Text(note.title).font(.body.weight(.semibold)).foregroundStyle(AppTheme.ink).lineLimit(2)
+                                        Spacer(minLength: 0)
+                                        Text(note.updatedAt, style: .time).font(.footnote).monospacedDigit()
+                                            .foregroundStyle(AppTheme.inkSecondary)
+                                    }
                                     if !note.preview.isEmpty {
-                                        Text(note.preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-                                    } else {
-                                        Text(note.updatedAt, style: .time).font(.caption).foregroundStyle(.secondary)
+                                        Text(note.preview).font(.subheadline).foregroundStyle(AppTheme.inkSecondary).lineLimit(2)
                                     }
                                 }.padding(.vertical, 5)
                             }
+                            .listRowBackground(AppTheme.surface)
                             .swipeActions(allowsFullSwipe: false) {
                                 Button("Delete", role: .destructive) { deletingID = note.id }
-                                ShareLink(item: note.text) { Label("Share", systemImage: "square.and.arrow.up") }.tint(.indigo)
-                                Button { UIPasteboard.general.string = note.text } label: { Label("Copy", systemImage: "document.on.document") }.tint(.gray)
+                                ShareLink(item: note.text) { Label("Share", systemImage: "square.and.arrow.up") }.tint(AppTheme.accent)
+                                Button { UIPasteboard.general.string = note.text } label: { Label("Copy", systemImage: "doc.on.doc") }.tint(AppTheme.inkSecondary)
                             }
                             .contextMenu {
-                                Button { UIPasteboard.general.string = note.text } label: { Label("Copy", systemImage: "document.on.document") }
+                                Button { UIPasteboard.general.string = note.text } label: { Label("Copy", systemImage: "doc.on.doc") }
                                 ShareLink(item: note.text) { Label("Share", systemImage: "square.and.arrow.up") }
                                 Button("Delete", systemImage: "trash", role: .destructive) { deletingID = note.id }
                             }
                         }
-                    } header: { Text(day, format: .dateTime.month(.wide).day().year()) }
+                    } header: { Text(noteDayLabel(day)).foregroundStyle(AppTheme.inkSecondary) }
                 }
             }
         }
+        .listStyle(.insetGrouped)
+        .scribeForm()
         .navigationTitle("Notes")
         .searchable(text: $search, prompt: "Search notes")
         .toolbar {
@@ -93,6 +99,13 @@ struct NotesView: View {
             if phase == .active, controller.hasUnsavedChanges { Task { await controller.retrySave() } }
         }
     }
+
+    private func noteDayLabel(_ date: Date) -> String {
+        let calendar = Calendar.autoupdatingCurrent
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(date: .complete, time: .omitted)
+    }
 }
 
 private struct NotesSaveError: View {
@@ -101,12 +114,12 @@ private struct NotesSaveError: View {
     var body: some View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Notes couldn’t be saved", systemImage: "exclamationmark.triangle").font(.headline)
-                Text(controller.errorMessage ?? "").font(.subheadline).foregroundStyle(.secondary)
+                Label("Notes couldn’t be saved", systemImage: "exclamationmark.triangle").font(.body.weight(.semibold)).foregroundStyle(AppTheme.error)
+                Text(controller.errorMessage ?? "").font(.subheadline).foregroundStyle(AppTheme.inkSecondary)
                 Button("Retry saving") { Task { await controller.retrySave() } }.disabled(controller.isSaving || controller.isLoading)
                 NavigationLink("Manage saved data") { SavedDataView(controller: dictation, notes: controller) }
             }.padding(.vertical, 6)
-        }
+        }.listRowBackground(AppTheme.errorSoft)
     }
 }
 
@@ -135,35 +148,54 @@ private struct NoteEditor: View {
             && dictation.downloadingModel == nil && dictation.installedModels.contains(dictation.selectedModel) && !recording.isStarting
     }
 
+    private var dictationStatus: String {
+        if recording.isStarting { return "Starting dictation…" }
+        if recording.ownsRecording {
+            if let status = dictation.modelStatus { return status }
+            return dictation.phase == .recording ? "Recording" : "Finishing dictation…"
+        }
+        return dictation.selectedModel.name
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if controller.errorMessage != nil {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(controller.errorMessage ?? "").font(.footnote).foregroundStyle(.secondary)
+                    Text(controller.errorMessage ?? "").font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                     NavigationLink("Manage saved data") { SavedDataView(controller: dictation, notes: controller) }
                     Button("Retry saving") { Task { await controller.retrySave() } }
                         .disabled(controller.isSaving || controller.isLoading)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding()
-                Divider()
+                    .background(AppTheme.errorSoft)
+                Divider().overlay(AppTheme.separator)
             }
             TextEditor(text: text).focused($editing)
-                .font(.body).padding(.horizontal, 14).padding(.vertical, 12)
+                .font(.body).lineSpacing(4)
+                .scrollContentBackground(.hidden).scrollDismissesKeyboard(.interactively)
+                .foregroundStyle(AppTheme.ink)
+                .padding(.horizontal, 14).padding(.vertical, 12)
                 .accessibilityLabel("Note text")
             if recording.ownsRecording, !dictation.partialText.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Dictating").font(.caption).foregroundStyle(.secondary)
-                    Text(DictationTranscriptTail.make(from: dictation.partialText)).font(.body)
+                    Text("Recording").font(.footnote).foregroundStyle(AppTheme.inkSecondary)
+                    // TextEditor cannot display a non-editable attributed segment.
+                    // Keep the current live tail separate until the owned result is final.
+                    Text(DictationTranscriptTail.make(from: dictation.partialText)).font(.body).lineSpacing(4)
+                        .foregroundStyle(AppTheme.ink)
                         .lineLimit(5).truncationMode(.head).textSelection(.enabled)
+                        .accessibilityAddTraits(.updatesFrequently)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding()
+                    .background(AppTheme.surfaceInset)
             }
         }
-        .background(Color(uiColor: .systemBackground))
+        .background(AppTheme.surface)
+        .tint(AppTheme.accent)
         .navigationTitle(note?.title ?? "Note")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button { UIPasteboard.general.string = note?.text ?? "" } label: { Label("Copy", systemImage: "document.on.document") }
+                    Button { UIPasteboard.general.string = note?.text ?? "" } label: { Label("Copy", systemImage: "doc.on.doc") }
                     ShareLink(item: note?.text ?? "") { Label("Share", systemImage: "square.and.arrow.up") }
                     Button("Delete note", systemImage: "trash", role: .destructive) { confirmDelete = true }.disabled(recording.ownsRecording || recording.isStarting)
                 } label: { Label("Note actions", systemImage: "ellipsis.circle") }
@@ -175,18 +207,23 @@ private struct NoteEditor: View {
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(recording.ownsRecording ? (dictation.phase == .recording ? "Listening…" : "Finishing dictation…") : dictation.selectedModel.name).font(.subheadline)
-                    Text(controller.isSaving ? "Saving…" : controller.hasUnsavedChanges ? "Unsaved changes" : controller.isSaved(noteID) ? "Saved on this iPhone" : "New note").font(.caption).foregroundStyle(.secondary)
+                    Text(dictationStatus).font(.subheadline)
+                    Text(controller.errorMessage != nil ? "Save failed" : controller.isSaving ? "Saving…" : controller.hasUnsavedChanges ? "Unsaved changes" : controller.isSaved(noteID) ? "Saved" : "New note")
+                        .font(.footnote).foregroundStyle(controller.errorMessage != nil ? AppTheme.error : AppTheme.inkSecondary)
                 }
                 Spacer(minLength: 4)
-                if recording.ownsRecording {
-                    Button { Task { await recording.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
-                        .buttonStyle(.borderedProminent).tint(.red).disabled(dictation.phase != .recording)
-                } else if recording.isStarting {
-                    ProgressView().accessibilityLabel("Starting dictation")
+                if recording.ownsRecording || recording.isStarting {
+                    if dictation.phase == .transcribing {
+                        ProgressView().accessibilityLabel("Finishing dictation")
+                    } else {
+                        Button { Task { await recording.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
+                            .buttonStyle(.borderedProminent).controlSize(.large).tint(AppTheme.recording)
+                            .foregroundStyle(AppTheme.onRecording)
+                            .frame(minHeight: 44)
+                    }
                 } else {
                     Button { editing = false; Task { await recording.start() } } label: { Label("Dictate", systemImage: "mic.fill") }
-                        .buttonStyle(.borderedProminent).disabled(!canRecord)
+                        .buttonStyle(.borderedProminent).controlSize(.large).foregroundStyle(AppTheme.onAccent).frame(minHeight: 44).disabled(!canRecord)
                 }
             }.padding().background(.regularMaterial)
         }
@@ -220,6 +257,7 @@ private final class NoteDictationSession: ObservableObject {
     private let noteID: UUID
     private var leavingTask: Task<Void, Never>?
     private var completionObservation: AnyCancellable?
+    private var cancelStartRequested = false
     var ownsRecording: Bool { ownedID != nil }
 
     init(notes: NotesController, dictation: AppController, noteID: UUID) {
@@ -237,12 +275,25 @@ private final class NoteDictationSession: ObservableObject {
         guard !isStarting, ownedID == nil, notes.note(noteID) != nil,
               dictation.phase == .idle, !dictation.keyboardSessionActive, !dictation.actionButtonRecording else { return }
         isStarting = true
+        cancelStartRequested = false
         await dictation.startRecording()
-        ownedID = dictation.currentRecordingID
         isStarting = false
+        // Cancellation invalidates the pending startup before it owns a UUID.
+        // Another owner can record while that old permission await finishes.
+        // Never adopt the controller's current session after a canceled start.
+        if !cancelStartRequested {
+            ownedID = dictation.currentRecordingID
+        }
         if !isVisible { finishWhenLeaving() }
     }
     func stop() async {
+        if isStarting {
+            cancelStartRequested = true
+            if dictation.phase == .preparing, !dictation.keyboardSessionActive, !dictation.actionButtonRecording {
+                await dictation.cancelPreparation()
+            }
+            return
+        }
         guard let id = ownedID else { return }
         if dictation.currentRecordingID == id, dictation.phase == .recording {
             await dictation.stopRecording()
@@ -275,3 +326,19 @@ private final class NoteDictationSession: ObservableObject {
         }
     }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+private extension NoteEditor {
+    init(designPreviewController controller: NotesController, dictation: AppController,
+        noteID: UUID, dialog: DesignPreviewConfiguration.Dialog?) {
+        self.init(controller: controller, dictation: dictation, noteID: noteID)
+        if dialog == .delete { _confirmDelete = State(initialValue: true) }
+    }
+}
+
+@MainActor
+func designPreviewNoteEditor(controller: NotesController, dictation: AppController,
+    noteID: UUID, dialog: DesignPreviewConfiguration.Dialog?) -> some View {
+    NoteEditor(designPreviewController: controller, dictation: dictation, noteID: noteID, dialog: dialog)
+}
+#endif

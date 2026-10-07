@@ -108,6 +108,70 @@ final class AppController: ObservableObject {
     var verificationCaptureSnapshot: CaptureBufferSnapshot { recorder.captureSnapshot }
     #endif
 
+    #if DEBUG && targetEnvironment(simulator)
+    /// Frozen screenshot state only. No recording identifier, audio, inference,
+    /// timer or activity is created; hardware metrics remain genuine sampler data.
+    func applyDesignPreviewState(_ state: DesignPreviewConfiguration.State) {
+        guard verificationMode else { return }
+        recordingID = nil
+        completedRecordingID = nil
+        recordingStartedAt = nil
+        captureModel = nil
+        actionButtonRecording = false
+        keyboardSessionExpiresAt = nil
+        selectedModel = .parakeetRealtimeEOU
+        installedModels = DesignPreviewConfiguration.installedModels
+        preparedModel = .parakeetRealtimeEOU
+        transcript = ""
+        rawTranscript = ""
+        partialText = ""
+        errorMessage = nil
+        modelStatus = nil
+        level = 0
+        elapsed = 0
+        downloadingModel = nil
+        failedDownloadModel = nil
+        downloadProgress = 0
+        downloadCompletedCount = 0
+        downloadTotalCount = 0
+        downloadCancelled = false
+        phase = .idle
+        switch state {
+        case .idle: break
+        case .recording:
+            phase = .recording
+            partialText = DesignPreviewConfiguration.liveTranscript
+            level = 0.62
+            elapsed = 42
+        case .preparing:
+            selectedModel = .parakeetPhonon
+            preparedModel = nil
+            phase = .preparing
+            modelStatus = "Loading Phonon-2…"
+            elapsed = 4
+        case .transcribing:
+            phase = .transcribing
+            partialText = DesignPreviewConfiguration.liveTranscript
+            elapsed = 42
+        case .done:
+            transcript = DesignPreviewConfiguration.transcript
+            rawTranscript = transcript
+        case .error:
+            transcript = DesignPreviewConfiguration.transcript
+            rawTranscript = transcript
+            errorMessage = "Design preview: the microphone was interrupted. Captured text remains available."
+        case .modelsDownloading:
+            downloadingModel = .parakeetPhononG4
+            downloadProgress = 0.62
+            downloadCompletedCount = 2
+            downloadTotalCount = 5
+        case .modelsFailed:
+            failedDownloadModel = .parakeetPhononG4
+            errorMessage = "Design preview: download failed. Check your connection and try again."
+        }
+    }
+    #endif
+
     init(engine: any LocalTranscriptionEngine, defaults: UserDefaults = .standard, historyURL: URL? = nil, verificationMode: Bool = false) {
         self.engine = engine
         self.defaults = defaults
