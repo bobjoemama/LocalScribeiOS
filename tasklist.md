@@ -132,3 +132,19 @@ Implemented the user-supplied Fable brief with bounded iPhone/Mac subagent owner
 The focused checks passed, including 55 Swift core tests, 21 new Notes-session ownership regressions and the existing controller/recorder/shortcut/keyboard suites. A new regression reproduced and fixed late canceled Note startup claiming a newer Action Button recording. Mac focused suites and 16 isolated native scenarios produced 140 light/dark screenshots at both requested window sizes. The exact suite results and implementation inventory are in [UI_REDESIGN.md](docs/UI_REDESIGN.md); overlapping test counts are not summed. The brief's claimed paste-confirmation bug was disproved: CGEvent posting is not target consumption, so the safe copied backup remains. Optional keyboard timer/pill drag and unavailable Mac per-file cancellation remain documented deferrals.
 
 The optimized signed iPhone/simulator builds passed, with all three targets at 0.7.0/build 10, strict signatures and preserved shortcut metadata. Device Hub installed the app wirelessly and confirmed 0.7.0. The signed Mac dev.21 is installed; actual idle Quit ended all nine prior app/helper/worker processes, then startup and Control–Space registration passed with Canary-Qwen and 53 readable history entries preserved. Metrics companion 1.1/build 2 is installed with its original icon and identity. The Mac source gate passed 1,575 tests with two existing skips, dependency/toolchain audits, lint and typecheck. Cross-platform colors passed 80 contrast and 48 equality checks. Current capture coverage is recorded in docs/UI_REDESIGN.md. Mac source is pushed in [PR #36](https://github.com/bobjoemama/LocalScribe/pull/36). The iPhone source update is committed and pushed to main. No physical recording, Action Button/background clipboard, keyboard insertion, Dynamic Island or suspension/force-quit replay was performed. Current synthetic simulator captures are in docs/previews/redesign-ios; the October 4 captures are historical. Keep model loaded defaults On, pressure alerts remain events, and no missing GPU/ANE metrics are fabricated.
+
+## Distribution and installation documentation
+
+Both source updates are pushed: iPhone main and Mac PR #36 (not merged).
+Both READMEs now lead with actual availability and concise installation/use;
+iPhone developer recipes moved to docs/DEVELOPMENT.md and all-target signing,
+App Group, TestFlight and registered-device alternatives are in docs/INSTALLATION.md.
+
+A Release archive of iOS 0.7.0/build 10 passed for the app and both extensions,
+with strict signatures and DEBUG runners/previews excluded. It uses existing
+development profiles; no Apple Distribution export/upload, TestFlight invitation
+or general-install IPA has been created. A signed dev.21 Mac DMG/ZIP was built
+and artifact-verified locally; no notarization ticket/public dev.21 release exists.
+The documented notary credential profile is missing. Public distribution remains
+a separate Apple-account/release step; no certificates were revoked or created
+and no installed app/device was restarted during this documentation pass.
