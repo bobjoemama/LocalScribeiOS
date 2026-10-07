@@ -4,7 +4,7 @@ An open-source alternative to Wispr Flow. Speech recognition runs on your iPhone
 
 ## Install
 
-A public TestFlight beta is being prepared; an invitation link is not available yet. For now, [build and install from source](docs/INSTALLATION.md#install-from-source) with a Mac, Xcode 27+ and Apple signing access. The guide covers the app, keyboard and Live Activity extension.
+The signed **0.7.0/build 10** beta has been uploaded to Apple. Processing, external beta review and a public invitation are pending. For now, [build and install from source](docs/INSTALLATION.md#install-from-source) with a Mac, Xcode 27+ and Apple signing access. The guide covers the app, keyboard and Live Activity extension.
 
 ## Use
 
@@ -16,6 +16,6 @@ Choose Phonon-2 for formatted text; Realtime produces English without punctuatio
 
 Optional: [set up the keyboard](docs/INSTALLATION.md#keyboard) for dictation in other apps, or [configure the Action Button](docs/INSTALLATION.md#action-button). Background shortcut behavior still needs physical verification; ordinary Dictate remains the foreground fallback.
 
-Recognition stays local. Model downloads contact Hugging Face; audio is not saved. Text leaves through your copy, share, export or insertion actions. [Privacy details](docs/DEVELOPMENT.md#privacy-and-storage).
+Recognition stays local. Model downloads contact Hugging Face; audio is not saved. Text leaves through your copy, share, export or insertion actions. [Privacy details](docs/PRIVACY.md).
 
 [Apache-2.0](LICENSE) · [Model/runtime licenses](NOTICE.md) · [Development](docs/DEVELOPMENT.md) · [Model research](docs/MODEL_RESEARCH.md)
