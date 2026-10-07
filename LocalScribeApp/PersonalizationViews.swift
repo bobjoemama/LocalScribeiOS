@@ -313,13 +313,15 @@ private struct PersonalizationEditor: View {
                     Button("Cancel") { if hasChanges { confirmingDiscard = true } else { dismiss() } }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save).disabled(!canEdit || !validDraft)
+                    Button("Save", action: save).disabled(!canEdit || !validDraft || !hasChanges)
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Done") { focus = nil }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: canEdit) { _, allowed in if !allowed { focus = nil } }
             .interactiveDismissDisabled(hasChanges)
             .confirmationDialog("Discard unsaved changes?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
                 Button("Discard changes", role: .destructive) { dismiss() }
@@ -332,6 +334,8 @@ private struct PersonalizationEditor: View {
     }
 
     private func save() {
+        guard canEdit, validDraft, hasChanges else { return }
+        focus = nil
         errorMessage = nil
         do {
             switch request.entry {

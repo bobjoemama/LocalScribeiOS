@@ -9,6 +9,8 @@ struct SettingsView: View {
     let openModels: () -> Void
     @State private var requestedRetention: Int?
     @State private var retentionError: String?
+    @State private var updatingKeyboardSession = false
+    @State private var keyboardSessionError: String?
     @AppStorage("appearance") private var appearance = "system"
 
     var body: some View {
@@ -32,6 +34,7 @@ struct SettingsView: View {
                 Section {
                     Toggle("Keep transcript history", isOn: $controller.saveHistory).tint(.green)
                     Picker("Auto-delete history", selection: Binding(get: { controller.historyRetentionDays }, set: { days in
+                        guard days != controller.historyRetentionDays else { return }
                         if days == 0 {
                             do { try controller.setHistoryRetention(days: 0) } catch { retentionError = error.localizedDescription }
                         } else { requestedRetention = days }
@@ -65,12 +68,21 @@ struct SettingsView: View {
                             Text(value == 1 ? "1 minute" : "\(value) minutes").tag(value)
                         }
                     }.disabled(controller.keyboardSessionActive)
-                    Button(controller.keyboardSessionActive ? "End session" : "Enable microphone") {
+                    Button(updatingKeyboardSession ? "Updating session…" : controller.keyboardSessionActive ? "End session" : "Enable microphone") {
+                        guard !updatingKeyboardSession else { return }
+                        let endingSession = controller.keyboardSessionActive
+                        updatingKeyboardSession = true
+                        keyboardSessionError = nil
                         Task {
-                            if controller.keyboardSessionActive { await controller.finishKeyboardSession() }
+                            defer { updatingKeyboardSession = false }
+                            if endingSession { await controller.finishKeyboardSession() }
                             else { await controller.enableKeyboardSession() }
+                            keyboardSessionError = controller.errorMessage
                         }
-                    }.disabled(controller.isBusy || controller.downloadingModel != nil || (controller.phase == .recording && !controller.keyboardSessionActive))
+                    }.disabled(updatingKeyboardSession || controller.isBusy || controller.downloadingModel != nil || (controller.phase == .recording && !controller.keyboardSessionActive))
+                    if let error = keyboardSessionError {
+                        Text(error).font(.footnote).foregroundStyle(AppTheme.error)
+                    }
                     NavigationLink("Setup instructions") { KeyboardSetupView() }
                 } header: {
                     Text("Keyboard").foregroundStyle(AppTheme.inkSecondary)

@@ -4,10 +4,11 @@ import LocalScribeCore
 struct ModelsView: View {
     @ObservedObject var controller: AppController
     @State private var detailModel: SpeechModel?
+    @State private var startingDownload = false
     @Environment(\.dismiss) private var dismiss
     private var missingModels: [SpeechModel] { SpeechModel.allCases.filter { !controller.installedModels.contains($0) } }
     private var canChangeModels: Bool { controller.phase == .idle && !controller.keyboardSessionActive }
-    private var canStartDownload: Bool { canChangeModels && controller.downloadingModel == nil }
+    private var canStartDownload: Bool { canChangeModels && controller.downloadingModel == nil && !startingDownload }
 
     var body: some View {
         NavigationStack {
@@ -61,10 +62,20 @@ struct ModelsView: View {
     }
 
     private var downloadAllButton: some View {
-        Button("Download") { Task { await controller.downloadAllMissingModels() } }
+        Button(startingDownload ? "Starting…" : "Download") { startDownload() }
             .buttonStyle(.borderless).frame(minHeight: 44)
             .disabled(missingModels.isEmpty || !canStartDownload)
             .accessibilityLabel("Download all missing models")
+    }
+
+    private func startDownload(_ model: SpeechModel? = nil) {
+        guard canStartDownload else { return }
+        startingDownload = true
+        Task {
+            defer { startingDownload = false }
+            if let model { await controller.download(model) }
+            else { await controller.downloadAllMissingModels() }
+        }
     }
 
     private func catalogSection(_ title: String, models: [SpeechModel]) -> some View {
@@ -106,7 +117,7 @@ struct ModelsView: View {
                 }
             } else if failed {
                 Text(controller.errorMessage ?? "Download failed").font(.footnote).foregroundStyle(AppTheme.error)
-                Button("Retry") { Task { await controller.download(model) } }
+                Button("Retry") { startDownload(model) }
                     .buttonStyle(.borderless).frame(minHeight: 44).disabled(!canStartDownload)
                     .accessibilityLabel("Retry downloading \(model.name)")
             } else if selected && installed {
@@ -114,7 +125,7 @@ struct ModelsView: View {
             } else {
                 Button(installed ? "Use" : "Download") {
                     if installed { controller.selectedModel = model }
-                    else { Task { await controller.download(model) } }
+                    else { startDownload(model) }
                 }
                 .buttonStyle(.borderless).frame(minHeight: 44)
                 .disabled(!canStartDownload)

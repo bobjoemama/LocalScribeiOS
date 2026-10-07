@@ -18,8 +18,10 @@ struct SavedDataView: View {
         Form {
             Section {
                 Button("Retry opening saved data") {
+                    guard available else { return }
+                    busy = true
+                    status = nil
                     Task {
-                        busy = true
                         defer { busy = false }
                         do {
                             let failures = try controller.retrySavedData()
@@ -68,8 +70,10 @@ struct SavedDataView: View {
             titleVisibility: .visible
         ) {
             Button("Reset \(requestedReset?.rawValue ?? "saved data")", role: .destructive) {
-                guard let collection = requestedReset else { return }
+                guard available, let collection = requestedReset else { return }
                 requestedReset = nil
+                busy = true
+                status = nil
                 Task { await reset(collection) }
             }
             Button("Cancel", role: .cancel) { requestedReset = nil }
@@ -96,8 +100,6 @@ struct SavedDataView: View {
     }
 
     private func reset(_ collection: SavedDataCollection) async {
-        guard available else { return }
-        busy = true
         defer { busy = false }
         do {
             if collection == .notes {

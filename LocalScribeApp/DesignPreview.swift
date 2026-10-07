@@ -211,7 +211,7 @@ private struct DesignPreviewDestinationView: View {
         switch destination {
         case .historyEditor:
             designPreviewHistoryEditor(entry: controller.history.first ?? TranscriptEntry(
-                text: DesignPreviewConfiguration.transcript, model: .parakeetRealtimeEOU, duration: 18), dialog: dialog)
+                text: DesignPreviewConfiguration.transcript, model: .parakeetRealtimeEOU, duration: 18), controller: controller, dialog: dialog)
         case .dictionaryEditor, .dictionaryNew:
             designPreviewPersonalizationEditor(controller: controller,
                 rule: destination == .dictionaryNew ? nil : controller.dictionary.first, dialog: dialog)

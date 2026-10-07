@@ -17,8 +17,8 @@ struct DictateView: View {
     @Environment(\.scenePhase) private var scenePhase
     private var ready: Bool { controller.installedModels.contains(controller.selectedModel) }
     private var recording: Bool { controller.phase == .recording }
-    private var active: Bool { recording || controller.phase == .transcribing }
-    private var textToCopy: String { active ? controller.partialText : controller.transcript }
+    private var active: Bool { controller.phase != .idle }
+    private var textToCopy: String { recording || controller.phase == .transcribing ? controller.partialText : controller.transcript }
     private var canSelectModel: Bool {
         controller.phase == .idle && controller.downloadingModel == nil && !controller.keyboardSessionActive
     }
@@ -45,7 +45,7 @@ struct DictateView: View {
             .toolbar {
                 if !active, !controller.transcript.isEmpty {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button { saveNote(controller.transcript) } label: { Image(systemName: "square.and.pencil") }
+                        Button { editing = false; controller.saveTranscriptEdits(); saveNote(controller.transcript) } label: { Image(systemName: "square.and.pencil") }
                             .accessibilityLabel("Save as note")
                     }
                 }
@@ -57,11 +57,12 @@ struct DictateView: View {
             }
             .onAppear { refreshMicrophonePermission() }
             .onChange(of: scenePhase) { _, phase in if phase == .active { refreshMicrophonePermission() } }
-            .onChange(of: editing) { _, focused in if !focused { controller.saveTranscriptEdits() } }
+            .onChange(of: editing) { _, focused in if !focused, controller.phase == .idle { controller.saveTranscriptEdits() } }
             .onChange(of: controller.transcript) { _, _ in clearCopyFeedback() }
             .onChange(of: controller.partialText) { _, _ in clearCopyFeedback() }
             .onChange(of: controller.phase) { _, phase in
                 refreshMicrophonePermission()
+                if phase != .idle { editing = false }
                 if phase == .recording { levels = []; recoverableError = nil }
                 else if phase == .idle { levels = [] }
             }
@@ -119,8 +120,8 @@ struct DictateView: View {
 
     @ViewBuilder private var transcriptWorkspace: some View {
         if active {
-            LiveDictationTranscript(text: controller.partialText,
-                emptyMessage: recording ? "Listening…" : "Finishing transcription…")
+            LiveDictationTranscript(text: controller.phase == .preparing ? "" : controller.partialText,
+                emptyMessage: controller.phase == .preparing ? "Preparing microphone…" : recording ? "Listening…" : "Finishing transcription…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if !controller.transcript.isEmpty {
             TextEditor(text: $controller.transcript).font(.body).lineSpacing(4).focused($editing)
@@ -249,7 +250,7 @@ struct DictateView: View {
             let stopping = recording || controller.phase == .preparing
             Button {
                 editing = false
-                controller.saveTranscriptEdits()
+                if controller.phase == .idle { controller.saveTranscriptEdits() }
                 recoverableError = nil
                 if controller.phase == .preparing { Task { await controller.cancelPreparation() } }
                 else if recording { Task { await controller.stopRecording() } }

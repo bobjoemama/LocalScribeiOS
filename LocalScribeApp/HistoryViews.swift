@@ -69,7 +69,7 @@ struct NativeHistoryView: View {
                 }
             }
             .sheet(item: $selectedEntry) { entry in
-                HistoryTranscriptEditor(entry: entry, canSave: controller.canEditHistory) { text in
+                HistoryTranscriptEditor(entry: entry, controller: controller) { text in
                     try controller.replaceHistory(id: entry.id, text: text)
                     // Reveal the saved edit even if it no longer matches this search.
                     search = ""
@@ -155,7 +155,7 @@ struct NativeHistoryView: View {
 
 private struct HistoryTranscriptEditor: View {
     let entry: TranscriptEntry
-    let canSave: Bool
+    @ObservedObject var controller: AppController
     let save: (String) throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var draft: String
@@ -163,11 +163,12 @@ private struct HistoryTranscriptEditor: View {
     @State private var confirmingDiscard = false
     @FocusState private var editing: Bool
 
-    init(entry: TranscriptEntry, canSave: Bool, save: @escaping (String) throws -> Void) {
-        self.entry = entry; self.canSave = canSave; self.save = save
+    init(entry: TranscriptEntry, controller: AppController, save: @escaping (String) throws -> Void) {
+        self.entry = entry; self.controller = controller; self.save = save
         _draft = State(initialValue: entry.text)
     }
     private var changed: Bool { draft != entry.text }
+    private var canSave: Bool { controller.canEditHistory && controller.history.contains { $0.id == entry.id } }
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -195,6 +196,8 @@ private struct HistoryTranscriptEditor: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        guard canSave, changed else { return }
+                        editing = false
                         failure = nil
                         do { try save(draft); dismiss() }
                         catch { failure = error.localizedDescription }
@@ -205,11 +208,12 @@ private struct HistoryTranscriptEditor: View {
                     Button("Done") { editing = false }
                 }
                 ToolbarItemGroup(placement: .bottomBar) {
-                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = draft }
+                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = draft }.disabled(draft.isEmpty)
                     Spacer()
-                    ShareLink(item: draft) { Label("Share", systemImage: "square.and.arrow.up") }
+                    ShareLink(item: draft) { Label("Share", systemImage: "square.and.arrow.up") }.disabled(draft.isEmpty)
                 }
             }
+            .onChange(of: canSave) { _, allowed in if !allowed { editing = false } }
             .interactiveDismissDisabled(changed)
             .confirmationDialog("Discard unsaved changes?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
                 Button("Discard changes", role: .destructive) { dismiss() }
@@ -264,8 +268,8 @@ private func historyDuration(_ seconds: TimeInterval) -> String {
 
 #if DEBUG && targetEnvironment(simulator)
 private extension HistoryTranscriptEditor {
-    init(designPreviewEntry entry: TranscriptEntry, dialog: DesignPreviewConfiguration.Dialog?) {
-        self.init(entry: entry, canSave: true, save: { _ in })
+    init(designPreviewEntry entry: TranscriptEntry, controller: AppController, dialog: DesignPreviewConfiguration.Dialog?) {
+        self.init(entry: entry, controller: controller, save: { _ in })
         if dialog == .discard {
             _draft = State(initialValue: entry.text + " Include the dates.")
             _confirmingDiscard = State(initialValue: true)
@@ -277,7 +281,7 @@ private extension HistoryTranscriptEditor {
 }
 
 @MainActor
-func designPreviewHistoryEditor(entry: TranscriptEntry, dialog: DesignPreviewConfiguration.Dialog?) -> some View {
-    HistoryTranscriptEditor(designPreviewEntry: entry, dialog: dialog)
+func designPreviewHistoryEditor(entry: TranscriptEntry, controller: AppController, dialog: DesignPreviewConfiguration.Dialog?) -> some View {
+    HistoryTranscriptEditor(designPreviewEntry: entry, controller: controller, dialog: dialog)
 }
 #endif
