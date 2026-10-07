@@ -5,7 +5,11 @@ import UIKit
 
 @main
 struct LocalScribeApplication: App {
-    @StateObject private var context = AppContext()
+    @StateObject private var context = AppContext.shared
+    init() {
+        // OS-run Live Activity intents need services even before a scene appears.
+        _ = AppContext.shared
+    }
     var body: some Scene {
         WindowGroup {
             ZStack {
@@ -25,7 +29,8 @@ struct LocalScribeApplication: App {
 
 /// SwiftUI retains one object owning both sides of the app-to-keyboard bridge.
 @MainActor
-private final class AppContext: ObservableObject {
+final class AppContext: ObservableObject {
+    static let shared = AppContext()
     let controller: AppController
     let notesController = NotesController()
     let keyboardCoordinator: KeyboardSessionCoordinator
@@ -33,7 +38,7 @@ private final class AppContext: ObservableObject {
     @Published private(set) var benchmarkStatus: String?
     @Published private(set) var developerRunDescription = "Local device benchmark · microphone is off"
     private var benchmarkTask: Task<Void, Never>?
-    init() {
+    private init() {
         let arguments = ProcessInfo.processInfo.arguments
         let engine: any LocalTranscriptionEngine
         var startupError: String?

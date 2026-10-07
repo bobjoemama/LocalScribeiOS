@@ -3,6 +3,9 @@ import Foundation
 import LocalScribeCore
 import UniformTypeIdentifiers
 
+protocol LiveActivityIntent: AppIntent {}
+@MainActor enum AppContext { static let shared = 0 }
+
 @MainActor final class UIPasteboard {
     enum OptionsKey: Hashable { case localOnly }
     static let general = UIPasteboard()
@@ -41,12 +44,12 @@ struct DictationActivityAttributes {
 @main struct ActionShortcutCheck {
     enum Failure: Error { case check(String) }
     @MainActor static var checks = 0
+    @MainActor static var startedHandlerContinuation: CheckedContinuation<Void, Never>?
     @MainActor static func check(_ condition: @autoclosure () -> Bool, _ message: String) throws {
         guard condition() else { throw Failure.check(message) }
         checks += 1
     }
-    @MainActor static func fixture() async -> AppController {
-        let engine = LifecycleEngine()
+    @MainActor static func fixture(engine: LifecycleEngine = LifecycleEngine()) async -> AppController {
         await engine.releasePreparation()
         let defaults = UserDefaults(suiteName: "ShortcutCheck-\(UUID())")!
         defaults.set(false, forKey: "saveHistory")
@@ -62,12 +65,20 @@ struct DictationActivityAttributes {
         DictationActionRuntime.handler = nil
         let coldIntent = Task { try await ToggleDictationShortcut().perform() }
         try await Task.sleep(for: .milliseconds(150))
-        let controller = await fixture()
+        let engine = LifecycleEngine()
+        let controller = await fixture(engine: engine)
+        controller.selectedModel = .parakeetPhonon
+        controller.setForeground(false)
+        UIApplication.shared.applicationState = .background
         let recorder = AudioRecorder.latest!
         var owner: DictationActionBridge? = DictationActionBridge(controller: controller)
         weak var retainedBridge = owner
-        _ = try await coldIntent.value
+        let startResult = try await coldIntent.value
+        try check(startResult.value == "", "Start exposes empty output without touching clipboard")
         try check(controller.phase == .recording && recorder.recording, "Cold registration starts capture before successful intent result")
+        try check(controller.selectedModel == .parakeetPhonon && controller.selectedBackgroundModel == .parakeetRealtimeEOU, "Background shortcut keeps Dictate model selection independent")
+        try check(!StartDictationShortcut.openAppWhenRun && !ToggleDictationShortcut.openAppWhenRun && !StopDictationShortcut.openAppWhenRun && !StopLiveDictationIntent.openAppWhenRun, "All recording intents keep the caller foreground")
+        try check(UIPasteboard.general.writes.isEmpty, "Start never overwrites clipboard")
         try check(controller.actionButtonRecording, "Intent return retains Action Button session ownership")
         try check(retainedBridge != nil, "App owner retains bridge after intent returns")
         try await Task.sleep(for: .milliseconds(200))
@@ -76,7 +87,8 @@ struct DictationActivityAttributes {
         controller.setForeground(false)
         try check(recorder.recording && controller.phase == .recording, "Returning to caller does not stop app-owned microphone")
         recorder.feed(32_000)
-        _ = try await ToggleDictationShortcut().perform()
+        let stopResult = try await ToggleDictationShortcut().perform()
+        try check(stopResult.value == "Captured words.", "Stop exposes the final transcript for a Shortcuts Copy action")
         try check(controller.phase == .idle && !recorder.recording, "Next toggle stops same session")
         try check(UIPasteboard.general.writes.count == 1, "Stop copies owned transcript exactly once")
         try check(!DictationLiveActivity.regressedToRecording, "Stop never resets Activity processing to recording when partial text clears")
@@ -85,6 +97,75 @@ struct DictationActivityAttributes {
         do { _ = try await StopLiveDictationIntent(sessionID: UUID()).perform(); throw Failure.check("Stale stop must fail") }
         catch DictationActionError.noSession { checks += 1 }
         try check(UIPasteboard.general.writes.count == 1, "Stale Stop never copies again")
+        _ = try await StartDictationShortcut().perform()
+        let cancelSession = DictationActionRuntime.sessionIdentifier?()!
+        recorder.feed(32_000)
+        controller.saveHistory = true
+        await engine.holdFinalization()
+        let canceledStop = Task { try await StopDictationShortcut().perform() }
+        while !(await engine.finalizationIsHeld()) { try await Task.sleep(for: .milliseconds(10)) }
+        let writesBeforeCancellation = UIPasteboard.general.writes.count
+        canceledStop.cancel()
+        while controller.phase != .idle { try await Task.sleep(for: .milliseconds(10)) }
+        try check(!recorder.recording && !controller.actionButtonRecording, "Canceled finalization stops microphone and releases Action ownership")
+        await engine.releaseFinalization()
+        do { _ = try await canceledStop.value; throw Failure.check("Canceled Stop must fail") }
+        catch is CancellationError { checks += 1 }
+        try check(controller.transcript.isEmpty && controller.history.isEmpty, "Canceled finalization never commits late text or history")
+        try check(UIPasteboard.general.writes.count == writesBeforeCancellation, "Canceled finalization never writes clipboard")
+        _ = try await StartDictationShortcut().perform()
+        await DictationActionRuntime.cancel(sessionID: cancelSession!)
+        try check(controller.phase == .recording && recorder.recording, "Stale cancellation cannot end a later Action session")
+        let canceledStaleStop = Task { try await DictationActionRuntime.perform(.stop(sessionID: cancelSession!)) }
+        canceledStaleStop.cancel()
+        do { _ = try await canceledStaleStop.value; throw Failure.check("Canceled stale Stop must fail") }
+        catch is CancellationError { checks += 1 }
+        try await Task.sleep(for: .milliseconds(20))
+        try check(controller.phase == .recording && recorder.recording, "Canceling a stale explicit Stop never cancels the current session")
+        let currentSession = DictationActionRuntime.sessionIdentifier?()!
+        await DictationActionRuntime.cancel(sessionID: currentSession!)
+        try check(controller.phase == .idle && !recorder.recording, "Matching explicit cancellation ends recording")
+        let actualHandler = DictationActionRuntime.handler!
+        DictationActionRuntime.handler = { action in
+            let result = try await actualHandler(action)
+            if case .startSession = action {
+                await withCheckedContinuation { startedHandlerContinuation = $0 }
+            }
+            return result
+        }
+        let canceledStart = Task { try await StartDictationShortcut().perform() }
+        while startedHandlerContinuation == nil { try await Task.sleep(for: .milliseconds(10)) }
+        try check(controller.phase == .recording && recorder.recording, "Start cancellation fixture suspends after real capture begins")
+        canceledStart.cancel()
+        while controller.phase != .idle { try await Task.sleep(for: .milliseconds(10)) }
+        startedHandlerContinuation?.resume()
+        startedHandlerContinuation = nil
+        do { _ = try await canceledStart.value; throw Failure.check("Canceled Start must fail") }
+        catch is CancellationError { checks += 1 }
+        try check(!recorder.recording && !controller.actionButtonRecording && controller.transcript.isEmpty, "Start cancellation after its handler returns retires only its newly started microphone")
+        try check(UIPasteboard.general.writes.count == writesBeforeCancellation && controller.history.isEmpty, "Canceled Start saves no history and leaves clipboard unchanged")
+        DictationActionRuntime.handler = actualHandler
+        controller.saveHistory = false
+        _ = try await StartDictationShortcut().perform()
+        recorder.feed(96_000)
+        let completionProgress = Progress(totalUnitCount: 1)
+        let progressText = try await DictationActionRuntime.perform(.stop(sessionID: nil, progress: completionProgress))
+        try check(progressText == "Captured words." && completionProgress.totalUnitCount >= 3 && completionProgress.completedUnitCount == completionProgress.totalUnitCount, "Preparation, drained audio chunks, finalization and completed storage advance real progress")
+        let blockedEngine = LifecycleEngine()
+        await blockedEngine.disableCPUBackground()
+        let blockedController = await fixture(engine: blockedEngine)
+        await blockedController.startActionButtonRecording()
+        try check(blockedController.phase == .idle && !blockedController.actionButtonRecording, "Runtime denial prevents CPU-named model from background execution")
+        controller.selectedBackgroundModel = .parakeetPhonon
+        do { _ = try await StartDictationShortcut().perform(); throw Failure.check("Accelerated background model must fail") }
+        catch DictationActionError.failed { checks += 1 }
+        try check(controller.phase == .idle && !recorder.recording, "Unsupported background model never starts microphone")
+        controller.selectedBackgroundModel = .parakeetRealtimeEOU
+        recorder.microphonePermissionGranted = false
+        do { _ = try await StartDictationShortcut().perform(); throw Failure.check("Unconfigured microphone must fail") }
+        catch DictationActionError.failed { checks += 1 }
+        try check(!recorder.recording, "Background start never prompts or records without prior permission")
+        recorder.microphonePermissionGranted = true
         DictationLiveActivity.authorized = false
         do { _ = try await StartDictationShortcut().perform(); throw Failure.check("Disabled activity must fail") }
         catch DictationActionError.failed { checks += 1 }
@@ -94,10 +175,12 @@ struct DictationActivityAttributes {
         AudioRecorder.samplesOnBeginCapture = 8_000
         controller.saveHistory = true
         let writesBeforeFailedStart = UIPasteboard.general.writes.count
+        let transcriptBeforeFailedStart = controller.transcript
+        let armCallsBeforeFailedStart = recorder.armCalls
         do { _ = try await StartDictationShortcut().perform(); throw Failure.check("Activity creation failure must fail") }
         catch DictationActionError.failed { checks += 1 }
-        try check(controller.phase == .idle && !recorder.recording, "Activity creation failure stops capture before successful shortcut return")
-        try check(controller.transcript.isEmpty && controller.history.isEmpty, "Failed Activity creation discards captured audio rather than finalizing or saving it")
+        try check(controller.phase == .idle && !recorder.recording && recorder.armCalls == armCallsBeforeFailedStart, "Activity creation failure never activates microphone")
+        try check(controller.transcript == transcriptBeforeFailedStart && controller.history.isEmpty, "Failed Activity creation preserves existing text and saves no new recording")
         try check(UIPasteboard.general.writes.count == writesBeforeFailedStart, "Failed shortcut start never replaces the clipboard")
         AudioRecorder.samplesOnBeginCapture = 0
         owner = nil

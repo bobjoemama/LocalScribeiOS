@@ -48,10 +48,14 @@ final class AudioRecorder {
         })
     }
 
-    func arm() async throws {
+    var microphonePermissionGranted: Bool { AVAudioApplication.shared.recordPermission == .granted }
+
+    func arm(requireExistingPermission: Bool = false) async throws {
         if engine.isRunning { return }
         let revision = activationRevision
-        let allowed = await AVAudioApplication.requestRecordPermission()
+        let allowed: Bool
+        if requireExistingPermission { allowed = microphonePermissionGranted }
+        else { allowed = await AVAudioApplication.requestRecordPermission() }
         // Permission can outlive Cancel/backgrounding. Fence before touching the
         // audio session or input tap, rather than repairing a stale activation later.
         guard revision == activationRevision else { throw CancellationError() }

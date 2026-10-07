@@ -6,7 +6,6 @@ import UIKit
 
 struct LivePerformanceStrip: View {
     @EnvironmentObject private var monitor: LivePerformanceMonitor
-    @EnvironmentObject private var developerMetrics: DeveloperMetricsReceiver
     let open: () -> Void
 
     var body: some View {
@@ -36,7 +35,7 @@ struct LivePerformanceStrip: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Performance. CPU \(LiveMetricFormat.cpu(monitor.snapshot?.cpuPercent)), memory \(LiveMetricFormat.memory(monitor.snapshot?.physicalFootprintBytes)). Memory pressure \(LiveMetricFormat.pressure(monitor.snapshot?.memoryPressure)).")
+        .accessibilityLabel("Performance. CPU \(LiveMetricFormat.cpu(monitor.snapshot?.cpuPercent)), memory \(LiveMetricFormat.memory(monitor.snapshot?.physicalFootprintBytes)), allocation headroom \(LiveMetricFormat.memory(monitor.snapshot?.availableMemoryBytes)). Memory-pressure alerts: \(LiveMetricFormat.pressure(monitor.snapshot?.memoryPressure)).")
         .accessibilityHint("Shows live resource usage and recent graphs")
     }
 
@@ -49,8 +48,14 @@ struct LivePerformanceStrip: View {
 
     private var pressure: some View {
         HStack(spacing: 4) {
-            Circle().fill(LiveMetricFormat.pressureColor(monitor.snapshot?.memoryPressure)).frame(width: 5, height: 5)
-            Text("Pressure: " + LiveMetricFormat.pressure(monitor.snapshot?.memoryPressure)).foregroundStyle(.secondary)
+            if monitor.snapshot?.memoryPressure == .warning || monitor.snapshot?.memoryPressure == .critical {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(LiveMetricFormat.pressureColor(monitor.snapshot?.memoryPressure))
+                Text(LiveMetricFormat.pressure(monitor.snapshot?.memoryPressure)).foregroundStyle(.secondary)
+            } else {
+                Text("Headroom").foregroundStyle(.secondary)
+                Text(LiveMetricFormat.memory(monitor.snapshot?.availableMemoryBytes)).fontWeight(.medium)
+            }
         }
     }
 }
@@ -87,14 +92,14 @@ struct LivePerformanceView: View {
                 historyChart(memory: true)
                 LabeledContent("Peak since launch", value: LiveMetricFormat.memory(monitor.snapshot?.lifetimePeakPhysicalFootprintBytes))
                 LabeledContent("App headroom", value: LiveMetricFormat.memory(monitor.snapshot?.availableMemoryBytes))
-                LabeledContent("Memory pressure") {
+                LabeledContent("Memory-pressure alerts") {
                     Text(LiveMetricFormat.pressure(monitor.snapshot?.memoryPressure))
                         .foregroundStyle(LiveMetricFormat.pressureColor(monitor.snapshot?.memoryPressure))
                 }
             } header: {
                 Text("Memory")
             } footer: {
-                Text("Headroom is iOS’s current allowance for this app, not free device RAM. Pressure shows the last system event; “Not reported” means no event has arrived.")
+                Text("Headroom is iOS’s current allocation allowance for this app. Pressure alerts show the last event received from iOS. No alerts received does not establish normal system pressure.")
             }
             Section {
                 LabeledContent("App CPU", value: LiveMetricFormat.cpu(monitor.snapshot?.cpuPercent))
@@ -118,23 +123,7 @@ struct LivePerformanceView: View {
             } footer: {
                 Text("100% is one core’s worth of work. Multicore usage can exceed 100%. This measures CPU time, not which physical cores run each task.")
             }
-            Section {
-                LabeledContent("System GPU usage", value: developerValue(developerMetrics.latestSample?.gpuDevicePercent))
-                LabeledContent("GPU renderer", value: developerValue(developerMetrics.latestSample?.gpuRendererPercent))
-                LabeledContent("GPU tiler", value: developerValue(developerMetrics.latestSample?.gpuTilerPercent))
-                LabeledContent("Display frame rate", value: developerMetrics.latestSample?.displayFPS.map { String(format: "%.0f fps", $0) } ?? "Not reported")
-                LabeledContent("GPU cores in use", value: "Not available")
-                LabeledContent("Live Neural Engine usage", value: "Profile with Instruments")
-                if let model = controller.preparedModel {
-                    LabeledContent("Runtime configuration", value: runtime(model))
-                }
-            } header: {
-                Text("GPU & Neural Engine")
-            } footer: {
-                Text("GPU counters come from the paired Mac’s developer connection and describe the device. Missing counters stay unreported. Runtime configuration does not measure processor activity.")
-            }
-            developerConnection
-            profilingSection
+            if hasGPUCounters { gpuCounters }
             if let memory = monitor.snapshot?.systemMemory {
                 Section {
                     DisclosureGroup("System memory") {
@@ -154,21 +143,18 @@ struct LivePerformanceView: View {
                 LabeledContent("Physical memory", value: LiveMetricFormat.memory(monitor.snapshot?.devicePhysicalMemoryBytes))
                 LabeledContent("Thermal state", value: monitor.snapshot?.thermalState.rawValue.capitalized ?? "—")
                 LabeledContent("Low Power Mode", value: monitor.snapshot.map { $0.isLowPowerModeEnabled ? "On" : "Off" } ?? "—")
+                if let model = controller.preparedModel {
+                    LabeledContent("Configured processors", value: runtime(model))
+                }
             }
             Section {
                 NavigationLink("Accuracy & completed operations") { PerformanceView(controller: controller) }
+                NavigationLink("Developer profiling") { developerProfiling }
             } footer: {
                 Text("Usage covers the whole app, including its interface and loaded runtime. Charts show up to 60 recent samples and reset after leaving the foreground.")
             }
         }
         .navigationTitle("Performance").navigationBarTitleDisplayMode(.inline)
-        .fileImporter(isPresented: $showingReportImporter, allowedContentTypes: [.json]) { result in
-            do { try profilingReports.load(result.get()) }
-            catch { reportError = "This is not a supported Instruments metrics report. Export it with LocalScribe Metrics on your Mac." }
-        }
-        .alert("Report could not be opened", isPresented: Binding(get: { reportError != nil }, set: { if !$0 { reportError = nil } })) {
-            Button("OK") { reportError = nil }
-        } message: { Text(reportError ?? "") }
         .safeAreaInset(edge: .bottom) {
             if controller.phase == .recording {
                 HStack {
@@ -186,9 +172,47 @@ struct LivePerformanceView: View {
         }
     }
 
-    private func developerValue(_ value: Double?) -> String {
-        guard let value else { return developerMetrics.status == .stopped ? "Connect to Mac" : "Not reported" }
-        return LiveMetricFormat.cpu(value)
+    private var developerProfiling: some View {
+        Form {
+            if hasGPUCounters { gpuCounters }
+            developerConnection
+            profilingSection
+        }
+        .navigationTitle("Developer profiling").navigationBarTitleDisplayMode(.inline)
+        .fileImporter(isPresented: $showingReportImporter, allowedContentTypes: [.json]) { result in
+            do { try profilingReports.load(result.get()) }
+            catch { reportError = "This is not a supported Instruments metrics report. Export it with LocalScribe Metrics on your Mac." }
+        }
+        .alert("Report could not be opened", isPresented: Binding(get: { reportError != nil }, set: { if !$0 { reportError = nil } })) {
+            Button("OK") { reportError = nil }
+        } message: { Text(reportError ?? "") }
+    }
+
+    private var gpuCounters: some View {
+        Section {
+            if let value = developerMetrics.latestSample?.gpuDevicePercent {
+                LabeledContent("GPU usage", value: LiveMetricFormat.cpu(value))
+            }
+            if let value = developerMetrics.latestSample?.gpuRendererPercent {
+                LabeledContent("Renderer", value: LiveMetricFormat.cpu(value))
+            }
+            if let value = developerMetrics.latestSample?.gpuTilerPercent {
+                LabeledContent("Tiler", value: LiveMetricFormat.cpu(value))
+            }
+            if let value = developerMetrics.latestSample?.displayFPS {
+                LabeledContent("Display frame rate", value: String(format: "%.0f fps", value))
+            }
+        } header: {
+            Text("System GPU")
+        } footer: {
+            Text("Measured through the Mac developer connection. These counters cover the device, not just LocalScribe. iOS does not expose occupied GPU cores or live Neural Engine utilization to this app.")
+        }
+    }
+
+    private var hasGPUCounters: Bool {
+        guard let sample = developerMetrics.latestSample else { return false }
+        return sample.gpuDevicePercent != nil || sample.gpuRendererPercent != nil
+            || sample.gpuTilerPercent != nil || sample.displayFPS != nil
     }
 
     private var developerConnection: some View {
@@ -208,7 +232,7 @@ struct LivePerformanceView: View {
                 Button("End Mac connection", role: .destructive) { developerMetrics.stop(); codeCopied = false }
             }
         } footer: {
-            Text("Connect the iPhone by USB, open LocalScribe Metrics on your Mac, paste the connection code and select Start. Keep this app open. The connection ends when you leave the foreground.")
+            Text("Optional GPU measurements require a Mac. CPU, memory and thermal readings work on this phone alone. To connect, use USB, open LocalScribe Metrics on your Mac and enter the connection code. Leaving this app ends the connection.")
         }
     }
 
@@ -274,10 +298,10 @@ enum LiveMetricFormat {
     static func cpu(_ percent: Double?) -> String { percent.map { String(format: "%.1f%%", $0) } ?? "—" }
     static func pressure(_ value: LiveMemoryPressure?) -> String {
         switch value {
-        case .normal: "Normal"
-        case .warning: "Warning"
-        case .critical: "Critical"
-        case .unknown, nil: "Not reported"
+        case .normal: "Normal event"
+        case .warning: "Warning event"
+        case .critical: "Critical event"
+        case .unknown, nil: "No alerts received"
         }
     }
     static func pressureColor(_ value: LiveMemoryPressure?) -> Color {

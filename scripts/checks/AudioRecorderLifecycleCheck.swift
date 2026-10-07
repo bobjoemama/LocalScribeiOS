@@ -4,7 +4,12 @@ import LocalScribeCore
 
 // Exercise the production AudioRecorder with deterministic permission/session/engine
 // boundaries. Real AVAudioFormat and AVAudioConverter are retained; no mic is opened.
+struct FixtureAudioApplication {
+    enum Permission { case granted, denied }
+    var recordPermission = Permission.granted
+}
 @MainActor enum AVAudioApplication {
+    static var shared = FixtureAudioApplication()
     static var continuation: CheckedContinuation<Bool, Never>?
     static var holdPermission = false
     static func requestRecordPermission() async -> Bool {
@@ -77,6 +82,13 @@ enum FixtureFailure: Error { case expected, failed(String) }
         let session = AVAudioSession.sharedInstance()
         let recorder = AudioRecorder()
         let engine = AVAudioEngine.engines.last!
+        AVAudioApplication.shared.recordPermission = .denied
+        AVAudioApplication.holdPermission = true
+        do { try await recorder.arm(requireExistingPermission: true); throw FixtureFailure.failed("Background arm should reject missing grant") }
+        catch RecordingError.microphoneDenied {}
+        try check(AVAudioApplication.continuation == nil && !session.active, "Background arm never asks for microphone permission")
+        AVAudioApplication.shared.recordPermission = .granted
+        AVAudioApplication.holdPermission = false
         session.failPreferredInput = true
         do { try await recorder.arm(); throw FixtureFailure.failed("Expected input-selection failure") }
         catch FixtureFailure.expected {}

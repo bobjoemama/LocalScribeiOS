@@ -523,7 +523,7 @@ private struct SettingsView: View {
                         .disabled(controller.phase != .idle || controller.keyboardSessionActive)
                 }
                 Section {
-                    NavigationLink("Action Button & shortcuts") { ActionButtonSetupView() }
+                    NavigationLink("Action Button & shortcuts") { ActionButtonSetupView(controller: controller) }
                 }
                 Section {
                     Picker("Appearance", selection: $appearance) {
@@ -559,29 +559,39 @@ private struct SettingsView: View {
 }
 
 private struct ActionButtonSetupView: View {
+    @ObservedObject var controller: AppController
     var body: some View {
         Form {
             Section {
+                Picker("Background model", selection: $controller.selectedBackgroundModel) {
+                    ForEach([SpeechModel.parakeetRealtimeEOU, .moonshineSmall], id: \.self) { model in
+                        Text(model.name).tag(model)
+                    }
+                }.disabled(controller.phase != .idle || controller.keyboardSessionActive)
+            } footer: {
+                Text("These CPU runtimes can transcribe while another app is open. This choice is separate from the model on Dictate.")
+            }
+            Section {
                 Text("1. Open iPhone Settings → Action Button → Shortcut → Choose a Shortcut.")
                 Text("2. Choose LocalScribe → Dictate and Copy.")
-                Text("3. Hold once to open LocalScribe and record. Release and speak, then hold again to stop and copy.")
+                Text("3. Hold once to record, release and speak, then hold again to stop and copy. Paste in your current app.")
                 ShortcutsLink().shortcutsLinkStyle(.automatic)
             } header: {
                 Text("Action Button")
             } footer: {
-                Text("Releasing the button does not stop recording. LocalScribe opens when you start or stop; paste the finished text in any app.")
+                Text("Allow microphone access in LocalScribe once before using the shortcut. Releasing the button does not stop recording.")
             }
             Section {
                 Text("The Dynamic Island shows a recording timer while the microphone is active.")
-                Text("Touch and hold the Dynamic Island to see the live preview and Stop button. Stopping opens LocalScribe to finish and copy. Transcript text is never shown on the Lock Screen.")
+                Text("Touch and hold the Dynamic Island to see the live preview and Stop button. Transcript text is never shown on the Lock Screen.")
             } header: {
                 Text("Live Activity")
             } footer: {
                 Text("Action Button recording requires Live Activities. Enable them in iPhone Settings → Apps → LocalScribe. You can still record directly in Dictate when they are off.")
             }
             Section("Local transcription") {
-                Text("Realtime runs on the CPU and continues recognition during background recording while iOS permits audio capture. Models that use the GPU or Neural Engine pause recognition until you return to LocalScribe.")
-                Text("There is no fixed recording limit. If recognition cannot keep up and the audio queue fills, recording stops and reports the missing audio. Open LocalScribe to finish and copy.")
+                Text("GPU and Neural Engine models remain available on Dictate. Action Button recordings use the selected background model.")
+                Text("There is no fixed recording duration. If recognition cannot keep up, recording stops and reports the problem instead of silently dropping audio.")
             }
         }.navigationTitle("Action Button").navigationBarTitleDisplayMode(.inline)
     }

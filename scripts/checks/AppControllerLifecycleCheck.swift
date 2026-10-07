@@ -29,6 +29,7 @@ struct FixtureCaptureSnapshot {
 }
 @MainActor final class AudioRecorder {
     static var latest: AudioRecorder?
+    var microphonePermissionGranted = true
     var preferBuiltInMicrophone = false
     var hapticFeedbackEnabled = false
     var onLevel: ((Float) -> Void)?
@@ -42,8 +43,10 @@ struct FixtureCaptureSnapshot {
     var pending: [Float] = []
     var recording = false
     var armed = false
+    var armCalls = 0
     init() { Self.latest = self }
-    func arm() async throws {
+    func arm(requireExistingPermission: Bool = false) async throws {
+        armCalls += 1
         if Self.holdNextArm {
             Self.holdNextArm = false
             await withCheckedContinuation { armContinuation = $0 }
@@ -120,7 +123,15 @@ actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRep
         admittedSamples += samples.count; largestAppend = max(largestAppend, samples.count)
         callback?(.init(confirmedText: "Captured", volatileText: "words"))
     }
-    func finishStreaming() async throws -> String { "Captured words." }
+    var holdFinish = false
+    var finishContinuation: CheckedContinuation<Void, Never>?
+    func holdFinalization() { holdFinish = true }
+    func finalizationIsHeld() -> Bool { finishContinuation != nil }
+    func releaseFinalization() { holdFinish = false; finishContinuation?.resume(); finishContinuation = nil }
+    func finishStreaming() async throws -> String {
+        if holdFinish { await withCheckedContinuation { finishContinuation = $0 } }
+        return "Captured words."
+    }
     func cancelStreaming() async { oldCallback = callback; callback = nil }
     func transcribe(samples: [Float]) async throws -> String { "Unused offline API" }
     func unload() async { unloadCalls += 1 }
@@ -265,30 +276,11 @@ extension SharedKeyboardStore {
         let actionEngine = LifecycleEngine()
         await actionEngine.releasePreparation()
         let actionController = await fixture(actionEngine)
-        let actionRecorder = AudioRecorder.latest!
+        actionController.selectedBackgroundModel = .parakeetPhonon
         await actionController.startActionButtonRecording()
-        try check(actionController.actionButtonRecording && actionController.phase == .recording, "Shortcut explicitly owns microphone recording")
-        actionRecorder.feed(16_000)
-        try await eventually { await actionEngine.counts().3 == 16_000 }
-        actionController.setForeground(false)
-        try await Task.sleep(for: .milliseconds(200))
-        let backgroundSamples = await actionEngine.counts().3
-        actionRecorder.feed(32_000)
-        try await Task.sleep(for: .milliseconds(250))
-        try check(actionController.phase == .recording && actionRecorder.recording, "Action recording continues background capture")
-        let pausedSamples = await actionEngine.counts().3
-        try check(pausedSamples == backgroundSamples, "Action recording submits no new background inference")
-        let actionStopping = Task { await actionController.stopActionButtonRecording() }
-        try await eventually { actionController.phase == .transcribing }
-        try check(!actionRecorder.recording, "Action Stop ends the microphone before foreground recognition resumes")
-        try await Task.sleep(for: .milliseconds(150))
-        let finishingPausedSamples = await actionEngine.counts().3
-        try check(finishingPausedSamples == backgroundSamples, "Action finalization waits for foreground before submitting queued speech")
-        actionController.setForeground(true)
-        await actionStopping.value
-        let finishedActionSamples = await actionEngine.counts().3
-        try check(finishedActionSamples == 48_000, "Foreground Action Stop drains all buffered speech in order")
-        try check(actionController.transcript == "Captured words." && !actionController.actionButtonRecording, "Action completion preserves text and releases ownership")
+        try check(actionController.phase == .idle && !actionController.actionButtonRecording, "Background Action rejects accelerated model before capture")
+        let rejectedBeginCount = await actionEngine.counts().1
+        try check(rejectedBeginCount == 0, "Rejected Action model never starts recognition")
 
         let automationEngine = LifecycleEngine()
         let automation = AppController(engine: automationEngine, verificationMode: true)
@@ -323,15 +315,7 @@ extension SharedKeyboardStore {
         let restrictedController = await fixture(restrictedEngine, model: .parakeetRealtimeEOU)
         let restrictedRecorder = AudioRecorder.latest!
         await restrictedController.startActionButtonRecording()
-        restrictedRecorder.feed(16_000)
-        try await eventually { await restrictedEngine.counts().3 == 16_000 }
-        restrictedController.setForeground(false)
-        restrictedRecorder.feed(16_000)
-        try await Task.sleep(for: .milliseconds(250))
-        let restrictedCount = await restrictedEngine.counts().3
-        try check(restrictedCount == 16_000, "Realtime name alone grants no background inference when its engine reports false")
-        restrictedController.setForeground(true)
-        await restrictedController.stopActionButtonRecording()
+        try check(restrictedController.phase == .idle && !restrictedRecorder.recording, "CPU model name grants no background permission when runtime denies it")
 
         let pendingEngine = LifecycleEngine()
         await pendingEngine.releasePreparation()
@@ -343,7 +327,8 @@ extension SharedKeyboardStore {
         pendingController.setForeground(false)
         pendingRecorder.armContinuation?.resume()
         await pendingStart.value
-        try check(pendingController.phase == .idle && !pendingController.actionButtonRecording && !pendingRecorder.recording, "Shortcut never activates a pending permission microphone after leaving foreground")
+        try check(pendingController.phase == .recording && pendingController.actionButtonRecording && pendingRecorder.recording, "Preauthorized Action start remains valid when caller stays foreground")
+        await pendingController.cancelRecording()
         let downloadEngine = LifecycleEngine()
         await downloadEngine.releasePreparation()
         let downloads = await fixture(downloadEngine)
