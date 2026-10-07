@@ -135,7 +135,7 @@ The optimized signed iPhone/simulator builds passed, with all three targets at 0
 
 ## Distribution and installation documentation
 
-Both source updates are pushed: iPhone main and Mac PR #36 (not merged).
+Both repositories now have the current source and concise READMEs on main. Mac PR #36 was normally merged after local and hosted checks passed; the local Mac source tree matches origin/main.
 Both READMEs now lead with actual availability and concise installation/use;
 iPhone developer recipes moved to docs/DEVELOPMENT.md and all-target signing,
 App Group, TestFlight and registered-device alternatives are in docs/INSTALLATION.md.
