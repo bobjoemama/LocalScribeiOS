@@ -15,7 +15,15 @@ Phonon-2, Ultra and Redux use overlapping recognition windows; the first update 
 
 Ordinary typing works without Full Access. Full Access is needed to write local shared-container commands, not to send audio to a service. The keyboard never reads or saves surrounding host text. Automatic insertion is bound to the original document and disarmed when the editing context changes; otherwise use Insert dictation. Results expire after 30 seconds. A delivery receipt prevents replay but a crash between receipt and host insertion can lose automatic delivery; the app retains the transcript.
 
-Settings contains local performance and word error rate (WER) measurements. WER compares a supplied reference with raw recognition before dictionary corrections, normalizing case and punctuation. CPU and memory reports cover the whole app process. Requested Core ML compute units do not establish actual execution placement. GPU/Neural Engine utilization, energy and system-wide memory pressure require device profiling; this UI does not manufacture those measurements.
+Word error rate (WER) compares a supplied reference with raw recognition before dictionary corrections, normalizing case and punctuation. Requested Core ML compute units do not establish actual execution placement.
+
+## Live performance
+
+Dictate shows live CPU, app memory and the last reported memory-pressure state, whether recording or idle. Tap the readout, or open **Settings → Performance**, for recent CPU/memory graphs, memory headroom, peak footprint, CPU core equivalents/count, thermal state and Low Power Mode. You can stop an active recording from the performance screen.
+
+Updates run once per second in the foreground and stop when the app becomes inactive. The last 60 samples stay in memory only and reset on return. CPU 100% means one core’s worth of execution, not the entire device. Headroom comes from iOS’s current app allocation allowance; it is not free device RAM. Pressure starts as **Not reported** until an OS event arrives. Live GPU/Neural Engine utilization and occupied GPU cores are unavailable through the public APIs of these runtimes and are labeled accordingly; requested compute configuration is separate from measured activity.
+
+Completed loading/transcription measurements and word-error-rate comparison remain under **Accuracy & completed operations**. See Apple’s [app memory allowance](https://developer.apple.com/documentation/os/os_proc_available_memory), [memory-pressure events](https://developer.apple.com/documentation/dispatch/dispatchsourcememorypressure), and [process CPU accounting](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/getrusage.2.html).
 
 ## Dictionary, snippets and notes
 

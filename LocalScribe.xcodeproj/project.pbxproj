@@ -1,64 +1,589 @@
 // !$*UTF8*$!
 {
- archiveVersion = 1; classes = {}; objectVersion = 77;
- objects = {
- 020D920C741AAE2795AAA476 = { isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (BCD1A22E391E0074FA25C709, B4A716A9C273804D8AE54693,); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
- 05B3ABF2579A5EB66403CD78 = { isa = PBXFileReference; lastKnownFileType = text.json; path = Resources/model-integrity.json; sourceTree = "<group>"; };
- 0A3E27B8CA818264D75C8D81 = { isa = PBXGroup; children = (763D774377779C412BB71F6F, ABA3E4FA965159A2B78E6E8F, 76A4701181DB9253A447C9E9,); name = Products; sourceTree = "<group>"; };
- 0B0C687DF8B6B8DC790B519C = { isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; }; name = Release; };
- 0E89820860C342F2C7EC694D = { isa = PBXFileReference; lastKnownFileType = folder; path = Resources/benchmark; sourceTree = "<group>"; };
- 16CEE5F7108429C717FC7E3B = { isa = PBXBuildFile; fileRef = 05B3ABF2579A5EB66403CD78; };
- 1B104479E55E37CF8A63CBDF = { isa = XCBuildConfiguration; buildSettings = {SDKROOT = "iphoneos"; IPHONEOS_DEPLOYMENT_TARGET = "18.0"; SWIFT_VERSION = "6.0"; TARGETED_DEVICE_FAMILY = "1,2"; CODE_SIGN_STYLE = "Automatic"; PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = "NO"; INFOPLIST_FILE = "Configuration/App-Info.plist"; PRODUCT_BUNDLE_IDENTIFIER = "com.devesh.localscribe.ios"; CURRENT_PROJECT_VERSION = "4"; MARKETING_VERSION = "0.3.0"; SWIFT_STRICT_CONCURRENCY = "complete"; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; SWIFT_OPTIMIZATION_LEVEL = "-O"; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; CODE_SIGN_ENTITLEMENTS = "Configuration/App.entitlements"; ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon";}; name = Release; };
- 1C01625E136BDF044937DD8E = { isa = PBXTargetDependency; target = 86A838FE5EDBD92D4572B4DE; targetProxy = 46DD5C3011618C51430B555A; };
- 1C9C81A3EB99331871D4A58B = { isa = XCBuildConfiguration; buildSettings = {SDKROOT = "iphoneos"; IPHONEOS_DEPLOYMENT_TARGET = "18.0"; SWIFT_VERSION = "6.0"; TARGETED_DEVICE_FAMILY = "1,2"; CODE_SIGN_STYLE = "Automatic"; PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = "NO"; INFOPLIST_FILE = "Configuration/Keyboard-Info.plist"; PRODUCT_BUNDLE_IDENTIFIER = "com.devesh.localscribe.ios.keyboard"; CURRENT_PROJECT_VERSION = "4"; MARKETING_VERSION = "0.3.0"; SWIFT_STRICT_CONCURRENCY = "complete"; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; DEBUG_INFORMATION_FORMAT = "dwarf"; CODE_SIGN_ENTITLEMENTS = "Configuration/Keyboard.entitlements"; APPLICATION_EXTENSION_API_ONLY = "YES"; SKIP_INSTALL = "YES"; SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";}; name = Debug; };
- 1E30AE226A526096E4EEA554 = { isa = PBXNativeTarget; buildConfigurationList = BD11ACBA40108C467D2CD754; buildPhases = (C3BB3EF56A84FEEE69AB722E, 58FEF7AE08143DB2D4BE7F42, 8778B89E0B1CB3035594E099,); buildRules = (); dependencies = (); fileSystemSynchronizedGroups = (4DD32A7BA102000B50B3A808, BE104B892D3537A332AA856E,); name = LocalScribeKeyboard; packageProductDependencies = (); productName = LocalScribeKeyboard; productReference = ABA3E4FA965159A2B78E6E8F; productType = "com.apple.product-type.app-extension"; };
- 22D724CE2CC6B5D6F6EFBDBE = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
- 244210E48437B6556980A702 = { isa = PBXProject; attributes = { BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 2700; TargetAttributes = { AC44A5EE06496B21A17CA082 = { CreatedOnToolsVersion = 27.0; SystemCapabilities = { com.apple.ApplicationGroups.iOS = {enabled = 1;}; }; }; 1E30AE226A526096E4EEA554 = { CreatedOnToolsVersion = 27.0; SystemCapabilities = { com.apple.ApplicationGroups.iOS = {enabled = 1;}; }; }; 86A838FE5EDBD92D4572B4DE = { CreatedOnToolsVersion = 27.0; }; }; }; buildConfigurationList = 4AA05EC3301949773ED0AC0A; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base,); mainGroup = 4813494D137E1631BBA301D5; minimizedProjectReferenceProxies = 1; packageReferences = (2B0C6D186034DE5338BC64BD, 9AEAC9FDBBE44BA06684DEA6, 276FEA58726990D85240AC70,); preferredProjectObjectVersion = 77; productRefGroup = 0A3E27B8CA818264D75C8D81; projectDirPath = ""; projectRoot = ""; targets = (AC44A5EE06496B21A17CA082, 1E30AE226A526096E4EEA554, 86A838FE5EDBD92D4572B4DE,); };
- 276FEA58726990D85240AC70 = { isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/moonshine-ai/moonshine-swift.git"; requirement = { kind = exactVersion; version = 0.1.5; }; };
- 2B0C6D186034DE5338BC64BD = { isa = XCLocalSwiftPackageReference; relativePath = .; };
- 3CA6F5371F0689AD9F420383 = { isa = PBXBuildFile; productRef = E05240DD7BB538032F27CE3E; };
- 46DD5C3011618C51430B555A = { isa = PBXContainerItemProxy; containerPortal = 244210E48437B6556980A702; proxyType = 1; remoteGlobalIDString = 86A838FE5EDBD92D4572B4DE; remoteInfo = LocalScribeActivityWidget; };
- 4813494D137E1631BBA301D5 = { isa = PBXGroup; children = (D3D673C29A4BF30B38013DAA, 4DD32A7BA102000B50B3A808, BE104B892D3537A332AA856E, 815DF40A14BFA5102DDA29D1, 982E9823BDE967329DE0B4BD, 05B3ABF2579A5EB66403CD78, 0E89820860C342F2C7EC694D, A708DF92C9E46229E8F1CD50, 0A3E27B8CA818264D75C8D81,); sourceTree = "<group>"; };
- 4AA05EC3301949773ED0AC0A = { isa = XCConfigurationList; buildConfigurations = (73EBF6644258C120893E685D, 0B0C687DF8B6B8DC790B519C,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
- 4DD32A7BA102000B50B3A808 = { isa = PBXFileSystemSynchronizedRootGroup; path = LocalScribeKeyboard; sourceTree = "<group>"; };
- 4F8848F9F161BEE9C4751385 = { isa = PBXTargetDependency; target = 1E30AE226A526096E4EEA554; targetProxy = CE0E7C61AF2E9228E224F571; };
- 58FEF7AE08143DB2D4BE7F42 = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
- 663AA610A4EC2822AC73308A = { isa = XCSwiftPackageProductDependency; package = 9AEAC9FDBBE44BA06684DEA6; productName = FluidAudio; };
- 671B466153DB183FE9E409BE = { isa = XCConfigurationList; buildConfigurations = (B00CCDD09424E369308D67FA, 1B104479E55E37CF8A63CBDF,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
- 73B75A37698D92659A180FC5 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
- 73EBF6644258C120893E685D = { isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; }; name = Debug; };
- 763D774377779C412BB71F6F = { isa = PBXFileReference; explicitFileType = wrapper.application; path = LocalScribe.app; sourceTree = BUILT_PRODUCTS_DIR; };
- 76A4701181DB9253A447C9E9 = { isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = LocalScribeActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
- 80240119E14C45A8301CA425 = { isa = XCConfigurationList; buildConfigurations = (9AD757328FBA0087E54990FE, D20A933185A2F18535D467E0,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
- 815DF40A14BFA5102DDA29D1 = { isa = PBXFileSystemSynchronizedRootGroup; path = SharedActivity; sourceTree = "<group>"; };
- 86A838FE5EDBD92D4572B4DE = { isa = PBXNativeTarget; buildConfigurationList = 80240119E14C45A8301CA425; buildPhases = (22D724CE2CC6B5D6F6EFBDBE, BF4D34BF683C906CF34F6E55, 73B75A37698D92659A180FC5,); buildRules = (); dependencies = (); fileSystemSynchronizedGroups = (982E9823BDE967329DE0B4BD, 815DF40A14BFA5102DDA29D1,); name = LocalScribeActivityWidget; packageProductDependencies = (); productName = LocalScribeActivityWidget; productReference = 76A4701181DB9253A447C9E9; productType = "com.apple.product-type.app-extension"; };
- 8778B89E0B1CB3035594E099 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
- 91024282FFD499F5807DB5BC = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (D8548042BF4146FC550FDCF3, F0B472AC82841E0D1206272F, 3CA6F5371F0689AD9F420383,); runOnlyForDeploymentPostprocessing = 0; };
- 982E9823BDE967329DE0B4BD = { isa = PBXFileSystemSynchronizedRootGroup; path = LocalScribeActivityWidget; sourceTree = "<group>"; };
- 9AD757328FBA0087E54990FE = { isa = XCBuildConfiguration; buildSettings = {SDKROOT = "iphoneos"; IPHONEOS_DEPLOYMENT_TARGET = "18.0"; SWIFT_VERSION = "6.0"; TARGETED_DEVICE_FAMILY = "1,2"; CODE_SIGN_STYLE = "Automatic"; PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = "NO"; INFOPLIST_FILE = "Configuration/ActivityWidget-Info.plist"; PRODUCT_BUNDLE_IDENTIFIER = "com.devesh.localscribe.ios.activity"; CURRENT_PROJECT_VERSION = "4"; MARKETING_VERSION = "0.3.0"; SWIFT_STRICT_CONCURRENCY = "complete"; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; DEBUG_INFORMATION_FORMAT = "dwarf"; APPLICATION_EXTENSION_API_ONLY = "YES"; SKIP_INSTALL = "YES"; SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";}; name = Debug; };
- 9AEAC9FDBBE44BA06684DEA6 = { isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/FluidInference/FluidAudio.git"; requirement = { kind = exactVersion; version = 0.17.5; }; };
- A708DF92C9E46229E8F1CD50 = { isa = PBXFileReference; lastKnownFileType = folder; path = Resources/legal; sourceTree = "<group>"; };
- ABA3E4FA965159A2B78E6E8F = { isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = LocalScribeKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
- AC44A5EE06496B21A17CA082 = { isa = PBXNativeTarget; buildConfigurationList = 671B466153DB183FE9E409BE; buildPhases = (D8AFF257B45D0C513672EC45, 91024282FFD499F5807DB5BC, DC549ACCB7C726C62ECFD4E2, 020D920C741AAE2795AAA476,); buildRules = (); dependencies = (4F8848F9F161BEE9C4751385, 1C01625E136BDF044937DD8E,); fileSystemSynchronizedGroups = (D3D673C29A4BF30B38013DAA, BE104B892D3537A332AA856E, 815DF40A14BFA5102DDA29D1,); name = LocalScribe; packageProductDependencies = (F4B42394554D8DA9A52BF2ED, 663AA610A4EC2822AC73308A, E05240DD7BB538032F27CE3E,); productName = LocalScribe; productReference = 763D774377779C412BB71F6F; productType = "com.apple.product-type.application"; };
- B00CCDD09424E369308D67FA = { isa = XCBuildConfiguration; buildSettings = {SDKROOT = "iphoneos"; IPHONEOS_DEPLOYMENT_TARGET = "18.0"; SWIFT_VERSION = "6.0"; TARGETED_DEVICE_FAMILY = "1,2"; CODE_SIGN_STYLE = "Automatic"; PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = "NO"; INFOPLIST_FILE = "Configuration/App-Info.plist"; PRODUCT_BUNDLE_IDENTIFIER = "com.devesh.localscribe.ios"; CURRENT_PROJECT_VERSION = "4"; MARKETING_VERSION = "0.3.0"; SWIFT_STRICT_CONCURRENCY = "complete"; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; DEBUG_INFORMATION_FORMAT = "dwarf"; CODE_SIGN_ENTITLEMENTS = "Configuration/App.entitlements"; ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon"; SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";}; name = Debug; };
- B4A716A9C273804D8AE54693 = { isa = PBXBuildFile; fileRef = 76A4701181DB9253A447C9E9; settings = { ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
- BCD1A22E391E0074FA25C709 = { isa = PBXBuildFile; fileRef = ABA3E4FA965159A2B78E6E8F; settings = { ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
- BD11ACBA40108C467D2CD754 = { isa = XCConfigurationList; buildConfigurations = (1C9C81A3EB99331871D4A58B, E1E5F48F8CC53D0EB8E458CC,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
- BE104B892D3537A332AA856E = { isa = PBXFileSystemSynchronizedRootGroup; path = SharedKeyboard; sourceTree = "<group>"; };
- BF4D34BF683C906CF34F6E55 = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
- C366706106140C420F457903 = { isa = PBXBuildFile; fileRef = A708DF92C9E46229E8F1CD50; };
- C3BB3EF56A84FEEE69AB722E = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
- CE0E7C61AF2E9228E224F571 = { isa = PBXContainerItemProxy; containerPortal = 244210E48437B6556980A702; proxyType = 1; remoteGlobalIDString = 1E30AE226A526096E4EEA554; remoteInfo = LocalScribeKeyboard; };
- D20A933185A2F18535D467E0 = { isa = XCBuildConfiguration; buildSettings = {SDKROOT = "iphoneos"; IPHONEOS_DEPLOYMENT_TARGET = "18.0"; SWIFT_VERSION = "6.0"; TARGETED_DEVICE_FAMILY = "1,2"; CODE_SIGN_STYLE = "Automatic"; PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = "NO"; INFOPLIST_FILE = "Configuration/ActivityWidget-Info.plist"; PRODUCT_BUNDLE_IDENTIFIER = "com.devesh.localscribe.ios.activity"; CURRENT_PROJECT_VERSION = "4"; MARKETING_VERSION = "0.3.0"; SWIFT_STRICT_CONCURRENCY = "complete"; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"; SWIFT_OPTIMIZATION_LEVEL = "-O"; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; APPLICATION_EXTENSION_API_ONLY = "YES"; SKIP_INSTALL = "YES";}; name = Release; };
- D3D673C29A4BF30B38013DAA = { isa = PBXFileSystemSynchronizedRootGroup; path = LocalScribeApp; sourceTree = "<group>"; };
- D8548042BF4146FC550FDCF3 = { isa = PBXBuildFile; productRef = F4B42394554D8DA9A52BF2ED; };
- D8AFF257B45D0C513672EC45 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
- DC549ACCB7C726C62ECFD4E2 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (16CEE5F7108429C717FC7E3B, E65E7E021DEF93851C0559D8, C366706106140C420F457903,); runOnlyForDeploymentPostprocessing = 0; };
- E05240DD7BB538032F27CE3E = { isa = XCSwiftPackageProductDependency; package = 276FEA58726990D85240AC70; productName = MoonshineVoice; };
- E1E5F48F8CC53D0EB8E458CC = { isa = XCBuildConfiguration; buildSettings = {SDKROOT = "iphoneos"; IPHONEOS_DEPLOYMENT_TARGET = "18.0"; SWIFT_VERSION = "6.0"; TARGETED_DEVICE_FAMILY = "1,2"; CODE_SIGN_STYLE = "Automatic"; PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = "NO"; INFOPLIST_FILE = "Configuration/Keyboard-Info.plist"; PRODUCT_BUNDLE_IDENTIFIER = "com.devesh.localscribe.ios.keyboard"; CURRENT_PROJECT_VERSION = "4"; MARKETING_VERSION = "0.3.0"; SWIFT_STRICT_CONCURRENCY = "complete"; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"; SWIFT_OPTIMIZATION_LEVEL = "-O"; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; CODE_SIGN_ENTITLEMENTS = "Configuration/Keyboard.entitlements"; APPLICATION_EXTENSION_API_ONLY = "YES"; SKIP_INSTALL = "YES";}; name = Release; };
- E65E7E021DEF93851C0559D8 = { isa = PBXBuildFile; fileRef = 0E89820860C342F2C7EC694D; };
- F0B472AC82841E0D1206272F = { isa = PBXBuildFile; productRef = 663AA610A4EC2822AC73308A; };
- F4B42394554D8DA9A52BF2ED = { isa = XCSwiftPackageProductDependency; package = 2B0C6D186034DE5338BC64BD; productName = LocalScribeCore; };
- };
- rootObject = 244210E48437B6556980A702;
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 71;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		16CEE5F7108429C717FC7E3B /* Resources/model-integrity.json in Resources */ = {isa = PBXBuildFile; fileRef = 05B3ABF2579A5EB66403CD78 /* Resources/model-integrity.json */; };
+		3CA6F5371F0689AD9F420383 /* MoonshineVoice in Frameworks */ = {isa = PBXBuildFile; productRef = E05240DD7BB538032F27CE3E /* MoonshineVoice */; };
+		B4A716A9C273804D8AE54693 /* LocalScribeActivityWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 76A4701181DB9253A447C9E9 /* LocalScribeActivityWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		BCD1A22E391E0074FA25C709 /* LocalScribeKeyboard.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = ABA3E4FA965159A2B78E6E8F /* LocalScribeKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C366706106140C420F457903 /* Resources/legal in Resources */ = {isa = PBXBuildFile; fileRef = A708DF92C9E46229E8F1CD50 /* Resources/legal */; };
+		D8548042BF4146FC550FDCF3 /* LocalScribeCore in Frameworks */ = {isa = PBXBuildFile; productRef = F4B42394554D8DA9A52BF2ED /* LocalScribeCore */; };
+		E65E7E021DEF93851C0559D8 /* Resources/benchmark in Resources */ = {isa = PBXBuildFile; fileRef = 0E89820860C342F2C7EC694D /* Resources/benchmark */; };
+		F0B472AC82841E0D1206272F /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 663AA610A4EC2822AC73308A /* FluidAudio */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		46DD5C3011618C51430B555A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 244210E48437B6556980A702 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 86A838FE5EDBD92D4572B4DE;
+			remoteInfo = LocalScribeActivityWidget;
+		};
+		CE0E7C61AF2E9228E224F571 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 244210E48437B6556980A702 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1E30AE226A526096E4EEA554;
+			remoteInfo = LocalScribeKeyboard;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		020D920C741AAE2795AAA476 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				BCD1A22E391E0074FA25C709 /* LocalScribeKeyboard.appex in Embed App Extensions */,
+				B4A716A9C273804D8AE54693 /* LocalScribeActivityWidget.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		05B3ABF2579A5EB66403CD78 /* Resources/model-integrity.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "Resources/model-integrity.json"; sourceTree = "<group>"; };
+		0E89820860C342F2C7EC694D /* Resources/benchmark */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/benchmark; sourceTree = "<group>"; };
+		763D774377779C412BB71F6F /* LocalScribe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = LocalScribe.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		76A4701181DB9253A447C9E9 /* LocalScribeActivityWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = LocalScribeActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A708DF92C9E46229E8F1CD50 /* Resources/legal */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/legal; sourceTree = "<group>"; };
+		ABA3E4FA965159A2B78E6E8F /* LocalScribeKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = LocalScribeKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		4DD32A7BA102000B50B3A808 /* LocalScribeKeyboard */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = LocalScribeKeyboard; sourceTree = "<group>"; };
+		815DF40A14BFA5102DDA29D1 /* SharedActivity */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = SharedActivity; sourceTree = "<group>"; };
+		982E9823BDE967329DE0B4BD /* LocalScribeActivityWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = LocalScribeActivityWidget; sourceTree = "<group>"; };
+		BE104B892D3537A332AA856E /* SharedKeyboard */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = SharedKeyboard; sourceTree = "<group>"; };
+		D3D673C29A4BF30B38013DAA /* LocalScribeApp */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = LocalScribeApp; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		58FEF7AE08143DB2D4BE7F42 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		91024282FFD499F5807DB5BC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D8548042BF4146FC550FDCF3 /* LocalScribeCore in Frameworks */,
+				F0B472AC82841E0D1206272F /* FluidAudio in Frameworks */,
+				3CA6F5371F0689AD9F420383 /* MoonshineVoice in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BF4D34BF683C906CF34F6E55 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0A3E27B8CA818264D75C8D81 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				763D774377779C412BB71F6F /* LocalScribe.app */,
+				ABA3E4FA965159A2B78E6E8F /* LocalScribeKeyboard.appex */,
+				76A4701181DB9253A447C9E9 /* LocalScribeActivityWidget.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4813494D137E1631BBA301D5 = {
+			isa = PBXGroup;
+			children = (
+				D3D673C29A4BF30B38013DAA /* LocalScribeApp */,
+				4DD32A7BA102000B50B3A808 /* LocalScribeKeyboard */,
+				BE104B892D3537A332AA856E /* SharedKeyboard */,
+				815DF40A14BFA5102DDA29D1 /* SharedActivity */,
+				982E9823BDE967329DE0B4BD /* LocalScribeActivityWidget */,
+				05B3ABF2579A5EB66403CD78 /* Resources/model-integrity.json */,
+				0E89820860C342F2C7EC694D /* Resources/benchmark */,
+				A708DF92C9E46229E8F1CD50 /* Resources/legal */,
+				0A3E27B8CA818264D75C8D81 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1E30AE226A526096E4EEA554 /* LocalScribeKeyboard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BD11ACBA40108C467D2CD754 /* Build configuration list for PBXNativeTarget "LocalScribeKeyboard" */;
+			buildPhases = (
+				C3BB3EF56A84FEEE69AB722E /* Sources */,
+				58FEF7AE08143DB2D4BE7F42 /* Frameworks */,
+				8778B89E0B1CB3035594E099 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4DD32A7BA102000B50B3A808 /* LocalScribeKeyboard */,
+				BE104B892D3537A332AA856E /* SharedKeyboard */,
+			);
+			name = LocalScribeKeyboard;
+			packageProductDependencies = (
+			);
+			productName = LocalScribeKeyboard;
+			productReference = ABA3E4FA965159A2B78E6E8F /* LocalScribeKeyboard.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		86A838FE5EDBD92D4572B4DE /* LocalScribeActivityWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 80240119E14C45A8301CA425 /* Build configuration list for PBXNativeTarget "LocalScribeActivityWidget" */;
+			buildPhases = (
+				22D724CE2CC6B5D6F6EFBDBE /* Sources */,
+				BF4D34BF683C906CF34F6E55 /* Frameworks */,
+				73B75A37698D92659A180FC5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				815DF40A14BFA5102DDA29D1 /* SharedActivity */,
+				982E9823BDE967329DE0B4BD /* LocalScribeActivityWidget */,
+			);
+			name = LocalScribeActivityWidget;
+			packageProductDependencies = (
+			);
+			productName = LocalScribeActivityWidget;
+			productReference = 76A4701181DB9253A447C9E9 /* LocalScribeActivityWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		AC44A5EE06496B21A17CA082 /* LocalScribe */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 671B466153DB183FE9E409BE /* Build configuration list for PBXNativeTarget "LocalScribe" */;
+			buildPhases = (
+				D8AFF257B45D0C513672EC45 /* Sources */,
+				91024282FFD499F5807DB5BC /* Frameworks */,
+				DC549ACCB7C726C62ECFD4E2 /* Resources */,
+				020D920C741AAE2795AAA476 /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4F8848F9F161BEE9C4751385 /* PBXTargetDependency */,
+				1C01625E136BDF044937DD8E /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				815DF40A14BFA5102DDA29D1 /* SharedActivity */,
+				BE104B892D3537A332AA856E /* SharedKeyboard */,
+				D3D673C29A4BF30B38013DAA /* LocalScribeApp */,
+			);
+			name = LocalScribe;
+			packageProductDependencies = (
+				F4B42394554D8DA9A52BF2ED /* LocalScribeCore */,
+				663AA610A4EC2822AC73308A /* FluidAudio */,
+				E05240DD7BB538032F27CE3E /* MoonshineVoice */,
+			);
+			productName = LocalScribe;
+			productReference = 763D774377779C412BB71F6F /* LocalScribe.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		244210E48437B6556980A702 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					1E30AE226A526096E4EEA554 = {
+						CreatedOnToolsVersion = 27.0;
+						SystemCapabilities = {
+							com.apple.ApplicationGroups.iOS = {
+								enabled = 1;
+							};
+						};
+					};
+					86A838FE5EDBD92D4572B4DE = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					AC44A5EE06496B21A17CA082 = {
+						CreatedOnToolsVersion = 27.0;
+						SystemCapabilities = {
+							com.apple.ApplicationGroups.iOS = {
+								enabled = 1;
+							};
+						};
+					};
+				};
+			};
+			buildConfigurationList = 4AA05EC3301949773ED0AC0A /* Build configuration list for PBXProject "LocalScribe" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 4813494D137E1631BBA301D5;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				2B0C6D186034DE5338BC64BD /* XCLocalSwiftPackageReference "." */,
+				9AEAC9FDBBE44BA06684DEA6 /* XCRemoteSwiftPackageReference "FluidAudio" */,
+				276FEA58726990D85240AC70 /* XCRemoteSwiftPackageReference "moonshine-swift" */,
+			);
+			productRefGroup = 0A3E27B8CA818264D75C8D81 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AC44A5EE06496B21A17CA082 /* LocalScribe */,
+				1E30AE226A526096E4EEA554 /* LocalScribeKeyboard */,
+				86A838FE5EDBD92D4572B4DE /* LocalScribeActivityWidget */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		73B75A37698D92659A180FC5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8778B89E0B1CB3035594E099 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DC549ACCB7C726C62ECFD4E2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				16CEE5F7108429C717FC7E3B /* Resources/model-integrity.json in Resources */,
+				E65E7E021DEF93851C0559D8 /* Resources/benchmark in Resources */,
+				C366706106140C420F457903 /* Resources/legal in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		22D724CE2CC6B5D6F6EFBDBE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C3BB3EF56A84FEEE69AB722E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D8AFF257B45D0C513672EC45 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1C01625E136BDF044937DD8E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 86A838FE5EDBD92D4572B4DE /* LocalScribeActivityWidget */;
+			targetProxy = 46DD5C3011618C51430B555A /* PBXContainerItemProxy */;
+		};
+		4F8848F9F161BEE9C4751385 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1E30AE226A526096E4EEA554 /* LocalScribeKeyboard */;
+			targetProxy = CE0E7C61AF2E9228E224F571 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		0B0C687DF8B6B8DC790B519C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+			};
+			name = Release;
+		};
+		1B104479E55E37CF8A63CBDF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Configuration/App.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 5;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Configuration/App-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.devesh.localscribe.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		1C9C81A3EB99331871D4A58B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Configuration/Keyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 5;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Configuration/Keyboard-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.devesh.localscribe.ios.keyboard;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		73EBF6644258C120893E685D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+			};
+			name = Debug;
+		};
+		9AD757328FBA0087E54990FE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 5;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Configuration/ActivityWidget-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.devesh.localscribe.ios.activity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B00CCDD09424E369308D67FA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Configuration/App.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 5;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Configuration/App-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.devesh.localscribe.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D20A933185A2F18535D467E0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 5;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Configuration/ActivityWidget-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.devesh.localscribe.ios.activity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		E1E5F48F8CC53D0EB8E458CC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Configuration/Keyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 5;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Configuration/Keyboard-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.devesh.localscribe.ios.keyboard;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4AA05EC3301949773ED0AC0A /* Build configuration list for PBXProject "LocalScribe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				73EBF6644258C120893E685D /* Debug */,
+				0B0C687DF8B6B8DC790B519C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		671B466153DB183FE9E409BE /* Build configuration list for PBXNativeTarget "LocalScribe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B00CCDD09424E369308D67FA /* Debug */,
+				1B104479E55E37CF8A63CBDF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		80240119E14C45A8301CA425 /* Build configuration list for PBXNativeTarget "LocalScribeActivityWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9AD757328FBA0087E54990FE /* Debug */,
+				D20A933185A2F18535D467E0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BD11ACBA40108C467D2CD754 /* Build configuration list for PBXNativeTarget "LocalScribeKeyboard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1C9C81A3EB99331871D4A58B /* Debug */,
+				E1E5F48F8CC53D0EB8E458CC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		2B0C6D186034DE5338BC64BD /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		276FEA58726990D85240AC70 /* XCRemoteSwiftPackageReference "moonshine-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/moonshine-ai/moonshine-swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.1.5;
+			};
+		};
+		9AEAC9FDBBE44BA06684DEA6 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.17.5;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		663AA610A4EC2822AC73308A /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9AEAC9FDBBE44BA06684DEA6 /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
+		};
+		E05240DD7BB538032F27CE3E /* MoonshineVoice */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 276FEA58726990D85240AC70 /* XCRemoteSwiftPackageReference "moonshine-swift" */;
+			productName = MoonshineVoice;
+		};
+		F4B42394554D8DA9A52BF2ED /* LocalScribeCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2B0C6D186034DE5338BC64BD /* XCLocalSwiftPackageReference "." */;
+			productName = LocalScribeCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 244210E48437B6556980A702 /* Project object */;
 }

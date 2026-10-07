@@ -9,6 +9,7 @@ struct LocalScribeRootView: View {
     @AppStorage("appearance") private var appearance = "system"
     @State private var tab = 0
     @State private var showingModels = false
+    @StateObject private var performance = LivePerformanceMonitor()
     @State private var showingSavedData = false
     @State private var createdNote: CreatedNoteRequest?
     @State private var libraryPath: [LibraryDestination] = []
@@ -67,6 +68,7 @@ struct LocalScribeRootView: View {
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { createdNote = nil } } }
             }
         }
+        .environmentObject(performance)
         .preferredColorScheme(colorScheme)
         .alert("LocalScribe", isPresented: Binding(
             get: { controller.errorMessage != nil },
@@ -77,10 +79,15 @@ struct LocalScribeRootView: View {
             Text(controller.errorMessage ?? "")
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { controller.setForeground(true) }
+            if phase == .active { controller.setForeground(true); startPerformance() }
+            else { performance.stop() }
             if phase == .background { controller.setForeground(false) }
         }
-        .onAppear { if controller.actionButtonRecording { tab = 0 } }
+        .onAppear {
+            if controller.actionButtonRecording { tab = 0 }
+            if scenePhase == .active { startPerformance() }
+        }
+        .onDisappear { performance.stop() }
         .onChange(of: controller.actionButtonRecording) { _, recording in
             if recording { tab = 0 }
         }
@@ -98,6 +105,12 @@ struct LocalScribeRootView: View {
             }
         }
     }
+    private func startPerformance() {
+        let args = ProcessInfo.processInfo.arguments
+        guard !args.contains("--benchmark-models"), !args.contains("--verify-dictation") else { return }
+        performance.start()
+    }
+
 }
 
 private struct CreatedNoteRequest: Identifiable { let id: UUID }
@@ -107,6 +120,7 @@ private struct DictateView: View {
     let openModels: () -> Void
     let saveNote: (String) -> Void
     @State private var copied = false
+    @State private var showingPerformance = false
     @FocusState private var editing: Bool
     private var ready: Bool { controller.installedModels.contains(controller.selectedModel) }
     private var recording: Bool { controller.phase == .recording }
@@ -126,12 +140,20 @@ private struct DictateView: View {
                         modelLoadingStatus(modelStatus).padding(.bottom, 4)
                     }
                 }.padding(.horizontal, 20).padding(.vertical, 8)
+                LivePerformanceStrip(open: { showingPerformance = true })
+                    .padding(.horizontal, 20).padding(.bottom, 8)
                 Divider()
                 transcriptWorkspace
             }
             .background(Color(uiColor: .systemBackground))
             .safeAreaInset(edge: .bottom, spacing: 0) { recordingControls }
             .navigationTitle("Dictate").navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showingPerformance) {
+                NavigationStack {
+                    LivePerformanceView(controller: controller)
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showingPerformance = false } } }
+                }
+            }
             .toolbar {
                 if !active, !controller.transcript.isEmpty {
                     ToolbarItem(placement: .topBarLeading) {
@@ -508,7 +530,7 @@ private struct SettingsView: View {
                 }
                 Section {
                     NavigationLink("Saved data") { SavedDataView(controller: controller, notes: notes) }
-                    NavigationLink("Performance & accuracy") { PerformanceView(controller: controller) }
+                    NavigationLink("Performance") { LivePerformanceView(controller: controller) }
                     NavigationLink("About & credits") { AboutView() }
                 } footer: {
                     Text("Recognition runs on this iPhone. No account, analytics, or cloud transcription. Recordings are held in memory, then discarded.")
