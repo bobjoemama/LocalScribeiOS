@@ -27,7 +27,7 @@ Use a Mac with Xcode 27.0 or newer, an iOS 18+ iPhone, and an Apple team able to
 5. Register/select your own shared App Group, such as `group.com.yourname.localscribe.ios`, for the **LocalScribe app and keyboard**. Replace `group.com.devesh.localscribe.ios` consistently in `Configuration/App.entitlements`, `Configuration/Keyboard.entitlements` and `KeyboardProtocol.appGroup` in `SharedKeyboard/KeyboardProtocol.swift`. The widget currently has no App Group entitlement. [Apple’s App Groups guide](https://developer.apple.com/documentation/xcode/configuring-app-groups) explains group registration and target membership. Using another team’s identifier does not grant access to its container.
 6. Keep your fork’s generator consistent: `scripts/generate_project.py` contains the original bundle identifier base. Update it before regenerating the project, or regeneration will overwrite your Xcode bundle changes. Pass `--team=YOUR_TEAM_ID` when regenerating to retain the team. Update `CFBundleURLName` in `Configuration/App-Info.plist` to your app’s identifier; the `localscribe` URL scheme is separately used by app/keyboard routing and should remain consistent with the code. Local developer commands in [Development](DEVELOPMENT.md) use the original identifier; substitute yours.
 7. Connect and trust the iPhone, select it as the run destination, and enable **Developer Mode** on the phone if Xcode requests it. Build and run. Follow any device signing/trust prompts; see Apple’s [physical-device workflow](https://developer.apple.com/documentation/xcode/running-your-app-in-simulator-or-on-a-device).
-8. Confirm LocalScribe opens, then follow [First dictation](../README.md#first-dictation). Add the keyboard separately in iPhone Settings.
+8. Confirm LocalScribe opens, then follow [First dictation](#first-dictation). Add the keyboard separately in iPhone Settings.
 
 Using a new bundle identifier installs a separate app with separate saved data. Preserve the existing identifiers/team when updating an already provisioned installation to retain its identity. Removing entitlements to bypass a signing error is not a complete keyboard installation: the app and keyboard need their shared container.
 
@@ -46,3 +46,26 @@ Apple’s TestFlight service collects crash, usage and tester feedback informati
 Ad Hoc can distribute a signed IPA without Xcode on each recipient’s Mac, but **only registered devices included in the provisioning profiles can run it**. It requires developer-program signing access, a distribution certificate and profiles for the app and embedded extensions. A development-signed `.app` or an IPA with other devices’ profiles is not a public installation method.
 
 Maintainers must register each intended device, archive the complete app in Xcode, and export using the Ad Hoc distribution method with matching team, identifiers, entitlements and device profiles. Adding a device requires updated provisioning and a newly exported build. See Apple’s [registered-device distribution guide](https://developer.apple.com/documentation/xcode/distributing-your-app-to-registered-devices) and [Ad Hoc profile requirements](https://developer.apple.com/help/account/provisioning-profiles/create-an-ad-hoc-provisioning-profile). No Ad Hoc release has been published here.
+
+## First dictation
+
+1. Open **Models**, download **Parakeet Realtime**, and keep LocalScribe open until setup finishes. It is the default fast live model. Its required files are about **224 MB**; initial preparation can take longer than later loads.
+2. In **Dictate**, choose your downloaded model and tap **Record**. Allow microphone access when prompted, then speak.
+3. Tap **Stop**, edit the finished transcript, then **Copy** or **Share** it. Live text may change before completion. The pencil action saves a transcript as a note.
+
+Realtime produces English text without punctuation or capitalization. Choose **Phonon-2** for formatted dictation; its first live update needs about five seconds of speech. Other models and their language support are listed in Models. Downloading every model is optional.
+
+## Keyboard
+
+1. Add LocalScribe in **iPhone Settings → General → Keyboard → Keyboards → Add New Keyboard**.
+2. Enable **Allow Full Access** for dictation. This permits local shared-container commands; speech recognition stays on the phone.
+3. Open LocalScribe and start a **keyboard microphone session**, then switch to your destination app and select the LocalScribe keyboard.
+4. Use the keyboard’s recording controls and insert the result. End the microphone session in LocalScribe when finished.
+
+The app owns the microphone because custom keyboards cannot record audio. An armed session keeps the iOS microphone indicator on; idle audio is discarded. The default idle timeout is five minutes and can be changed in Settings; active dictation renews it. Results expire after 30 seconds. Secure fields and apps that disallow custom keyboards use the system keyboard. Physical host-app insertion remains a verification item.
+
+## Action Button
+
+Set **iPhone Settings → Action Button → Shortcut → LocalScribe → Dictate and Copy**. Allow microphone access in LocalScribe, enable Live Activities, and choose a downloaded CPU background model in **LocalScribe Settings → Action Button**. Hold and release to start; hold and release again to finish and copy. Touch and hold Dynamic Island to view its expanded preview.
+
+Cold background recording, Dynamic Island presentation and background clipboard delivery still need physical verification. If the shortcut cannot start recording, open LocalScribe and use **Dictate → Record / Stop / Copy** as the foreground fallback.

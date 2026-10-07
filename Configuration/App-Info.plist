@@ -29,6 +29,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LocalScribeOptimizationLevel</key>
 	<string>$(SWIFT_OPTIMIZATION_LEVEL)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>LocalScribe uses your microphone only when you record or explicitly enable a keyboard session. Speech stays on your device.</string>
 	<key>NSSupportsLiveActivities</key>
