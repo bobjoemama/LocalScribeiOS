@@ -148,3 +148,13 @@ and artifact-verified locally; no notarization ticket/public dev.21 release exis
 The documented notary credential profile is missing. Public distribution remains
 a separate Apple-account/release step; no certificates were revoked or created
 and no installed app/device was restarted during this documentation pass.
+
+## Public beta preparation (October 7)
+
+User authorized signing, notarization, public Mac dev.21 publication and an external public TestFlight beta using the existing Apple team. Both READMEs were shortened again and cross-linked. iOS source is on main at 44afd22; Mac documentation/smoke changes were merged through PR #37 and its hosted source check passed. Both tracked trees are clean.
+
+The optimized iPhone 0.7.0/build 10 was rebuilt with required-reason API declarations and exempt-encryption metadata, then exported with Apple Distribution signing for the app, keyboard and Activity extension. Strict signatures pass; App Store profiles have debugging disabled, no registered-device list, and the existing identifiers/App Group. The 55 Swift core tests pass. The upload failed with App Store Connect authentication: no provider associated. No public TestFlight build or invitation exists yet; Apple sign-in and the first external beta review remain.
+
+Mac dev.21's original timestamped Forge app, DMG and ZIP are prepared with canonical SBOMs/checksums. The source gate passes 1,576 tests with two existing skips; original packaged startup/anchored shutdown, signed runtime imports, Accessibility targeting and 73 worker checks pass. Xcode's alternate Developer ID route obtained a notary ticket, but its export changed protected runtime files and failed the app's resource-integrity startup check. That export was retained as local rejected-build evidence and excluded from the distribution candidate. The original build remains intact and needs standard notarytool authentication for app/DMG submission, stapling and final public gates. No dev.21 assets were published; dev.20 remains the public installer.
+
+Apple authentication is user-operated. Zen's X/YouTube window is at the requested Yahoo account sign-in; the school window was not used. A local ignored Configure-LocalScribe-Notarization.command file supplies the account/team to Apple's secure credential prompt, with no password in the file. Installed apps, models, user data and Control–Space were preserved; no installed app restart or phone microphone test occurred.
