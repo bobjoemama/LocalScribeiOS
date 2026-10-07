@@ -10,6 +10,8 @@ struct LocalScribeRootView: View {
     @State private var tab = 0
     @State private var showingModels = false
     @StateObject private var performance = LivePerformanceMonitor()
+    @StateObject private var developerMetrics = DeveloperMetricsReceiver()
+    @StateObject private var profilingReports = ProfilingReportStore()
     @State private var showingSavedData = false
     @State private var createdNote: CreatedNoteRequest?
     @State private var libraryPath: [LibraryDestination] = []
@@ -69,6 +71,8 @@ struct LocalScribeRootView: View {
             }
         }
         .environmentObject(performance)
+        .environmentObject(developerMetrics)
+        .environmentObject(profilingReports)
         .preferredColorScheme(colorScheme)
         .alert("LocalScribe", isPresented: Binding(
             get: { controller.errorMessage != nil },
@@ -80,14 +84,14 @@ struct LocalScribeRootView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { controller.setForeground(true); startPerformance() }
-            else { performance.stop() }
+            else { performance.stop(); developerMetrics.stop() }
             if phase == .background { controller.setForeground(false) }
         }
         .onAppear {
             if controller.actionButtonRecording { tab = 0 }
             if scenePhase == .active { startPerformance() }
         }
-        .onDisappear { performance.stop() }
+        .onDisappear { performance.stop(); developerMetrics.stop() }
         .onChange(of: controller.actionButtonRecording) { _, recording in
             if recording { tab = 0 }
         }

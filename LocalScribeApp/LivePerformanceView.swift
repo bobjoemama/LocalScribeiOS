@@ -1,9 +1,12 @@
 import Charts
 import LocalScribeCore
 import SwiftUI
+import UniformTypeIdentifiers
+import UIKit
 
 struct LivePerformanceStrip: View {
     @EnvironmentObject private var monitor: LivePerformanceMonitor
+    @EnvironmentObject private var developerMetrics: DeveloperMetricsReceiver
     let open: () -> Void
 
     var body: some View {
@@ -54,7 +57,12 @@ struct LivePerformanceStrip: View {
 
 struct LivePerformanceView: View {
     @EnvironmentObject private var monitor: LivePerformanceMonitor
+    @EnvironmentObject private var developerMetrics: DeveloperMetricsReceiver
     @ObservedObject var controller: AppController
+    @EnvironmentObject private var profilingReports: ProfilingReportStore
+    @State private var showingReportImporter = false
+    @State private var reportError: String?
+    @State private var codeCopied = false
 
     private var state: String {
         if let loading = controller.modelStatus { return loading }
@@ -93,22 +101,54 @@ struct LivePerformanceView: View {
                 historyChart(memory: false)
                 LabeledContent("Core equivalents", value: monitor.snapshot?.cpuPercent.map { String(format: "%.2f", $0 / 100) } ?? "—")
                 LabeledContent("Available CPU cores", value: monitor.snapshot.map { "\($0.activeProcessorCount) of \($0.processorCount)" } ?? "—")
+                if let cores = monitor.snapshot?.systemCPUCoresPercent {
+                    DisclosureGroup("System CPU per core") {
+                        ForEach(Array(cores.enumerated()), id: \.offset) { index, value in
+                            HStack {
+                                Text("Core \(index + 1)")
+                                if let value { ProgressView(value: value, total: 100).tint(.blue) }
+                                Spacer(minLength: 12)
+                                Text(LiveMetricFormat.cpu(value)).monospacedDigit()
+                            }
+                        }
+                    }
+                }
             } header: {
                 Text("CPU")
             } footer: {
                 Text("100% is one core’s worth of work. Multicore usage can exceed 100%. This measures CPU time, not which physical cores run each task.")
             }
             Section {
-                LabeledContent("GPU usage", value: "Not available")
+                LabeledContent("System GPU usage", value: developerValue(developerMetrics.latestSample?.gpuDevicePercent))
+                LabeledContent("GPU renderer", value: developerValue(developerMetrics.latestSample?.gpuRendererPercent))
+                LabeledContent("GPU tiler", value: developerValue(developerMetrics.latestSample?.gpuTilerPercent))
+                LabeledContent("Display frame rate", value: developerMetrics.latestSample?.displayFPS.map { String(format: "%.0f fps", $0) } ?? "Not reported")
                 LabeledContent("GPU cores in use", value: "Not available")
-                LabeledContent("Neural Engine usage", value: "Not available")
+                LabeledContent("Live Neural Engine usage", value: "Profile with Instruments")
                 if let model = controller.preparedModel {
                     LabeledContent("Runtime configuration", value: runtime(model))
                 }
             } header: {
                 Text("GPU & Neural Engine")
             } footer: {
-                Text("iOS does not expose live utilization for these speech runtimes. The configured processors are not a measurement of their activity.")
+                Text("GPU counters come from the paired Mac’s developer connection and describe the device. Missing counters stay unreported. Runtime configuration does not measure processor activity.")
+            }
+            developerConnection
+            profilingSection
+            if let memory = monitor.snapshot?.systemMemory {
+                Section {
+                    DisclosureGroup("System memory") {
+                        LabeledContent("Free pages", value: LiveMetricFormat.memory(memory.freeBytes))
+                        LabeledContent("Active", value: LiveMetricFormat.memory(memory.activeBytes))
+                        LabeledContent("Inactive", value: LiveMetricFormat.memory(memory.inactiveBytes))
+                        LabeledContent("Wired", value: LiveMetricFormat.memory(memory.wiredBytes))
+                        LabeledContent("Compressed", value: LiveMetricFormat.memory(memory.compressedBytes))
+                        LabeledContent("Purgeable", value: LiveMetricFormat.memory(memory.purgeableBytes))
+                        LabeledContent("Speculative", value: LiveMetricFormat.memory(memory.speculativeBytes))
+                    }
+                } footer: {
+                    Text("OS page counters cover the device. Categories overlap and do not measure memory pressure.")
+                }
             }
             Section("Device") {
                 LabeledContent("Physical memory", value: LiveMetricFormat.memory(monitor.snapshot?.devicePhysicalMemoryBytes))
@@ -122,6 +162,13 @@ struct LivePerformanceView: View {
             }
         }
         .navigationTitle("Performance").navigationBarTitleDisplayMode(.inline)
+        .fileImporter(isPresented: $showingReportImporter, allowedContentTypes: [.json]) { result in
+            do { try profilingReports.load(result.get()) }
+            catch { reportError = "This is not a supported Instruments metrics report. Export it with LocalScribe Metrics on your Mac." }
+        }
+        .alert("Report could not be opened", isPresented: Binding(get: { reportError != nil }, set: { if !$0 { reportError = nil } })) {
+            Button("OK") { reportError = nil }
+        } message: { Text(reportError ?? "") }
         .safeAreaInset(edge: .bottom) {
             if controller.phase == .recording {
                 HStack {
@@ -136,6 +183,52 @@ struct LivePerformanceView: View {
                 }
                 .padding().background(.regularMaterial)
             }
+        }
+    }
+
+    private func developerValue(_ value: Double?) -> String {
+        guard let value else { return developerMetrics.status == .stopped ? "Connect to Mac" : "Not reported" }
+        return LiveMetricFormat.cpu(value)
+    }
+
+    private var developerConnection: some View {
+        Section {
+            LabeledContent("Mac connection", value: developerMetrics.status.rawValue.capitalized)
+            if developerMetrics.status == .stopped || developerMetrics.status == .failed {
+                Button("Enable USB metrics") { developerMetrics.start(); codeCopied = false }
+            } else {
+                if let code = developerMetrics.pairingCode {
+                    Button(codeCopied ? "Connection code copied" : "Copy connection code") {
+                        UIPasteboard.general.setItems([["public.utf8-plain-text": code]], options: [
+                            .expirationDate: Date().addingTimeInterval(120)
+                        ])
+                        codeCopied = true
+                    }
+                }
+                Button("End Mac connection", role: .destructive) { developerMetrics.stop(); codeCopied = false }
+            }
+        } footer: {
+            Text("Connect the iPhone by USB, open LocalScribe Metrics on your Mac, paste the connection code and select Start. Keep this app open. The connection ends when you leave the foreground.")
+        }
+    }
+
+    private var profilingSection: some View {
+        Section {
+            Button("Import Instruments report") { showingReportImporter = true }
+            if let report = profilingReports.report {
+                LabeledContent("Recording window", value: String(format: "%.1f–%.1f s", report.windowStartMs / 1000, (report.windowStartMs + report.durationMs) / 1000))
+                if let ane = report.ane {
+                    LabeledContent("Neural Engine active time", value: String(format: "%.1f ms", ane.activeMs))
+                    LabeledContent("Neural Engine duty cycle", value: LiveMetricFormat.cpu(ane.dutyCyclePercent))
+                }
+                if let gpu = report.gpu {
+                    LabeledContent("GPU active time", value: String(format: "%.1f ms", gpu.activeMs))
+                    LabeledContent("GPU duty cycle", value: LiveMetricFormat.cpu(gpu.dutyCyclePercent))
+                }
+                Button("Remove report", role: .destructive) { profilingReports.clear() }
+            }
+        } header: { Text("Instruments report") } footer: {
+            Text("Export a report from the Mac’s LocalScribe Metrics app, then choose its JSON file here. Results cover the chosen trace window and are kept in this app session. Duty cycle measures time active, not processor-capacity utilization or live app-specific activity.")
         }
     }
 

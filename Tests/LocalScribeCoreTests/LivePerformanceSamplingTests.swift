@@ -32,3 +32,28 @@ import Testing
     recent.append(100)
     #expect(recent.values == [100])
 }
+
+@Test func systemCPUUsesPerCoreIntervalTicks() {
+    var sampler = SystemCPUSampler()
+    let baseline = [SystemCPUTicks(user: 10, system: 20, idle: 60, nice: 10),
+                    SystemCPUTicks(user: 0, system: 0, idle: 10, nice: 0)]
+    #expect(sampler.sample(baseline)! == [nil, nil])
+    #expect(sampler.sample([SystemCPUTicks(user: 30, system: 30, idle: 110, nice: 30),
+                            SystemCPUTicks(user: 10, system: 0, idle: 10, nice: 0)])! == [50, 100])
+    #expect(sampler.sample([SystemCPUTicks(user: 30, system: 30, idle: 110, nice: 30),
+                            SystemCPUTicks(user: 10, system: 0, idle: 20, nice: 0)])! == [nil, 0])
+}
+
+@Test func systemCPUResetsOnUnavailableWrapAndTopologyChange() {
+    var sampler = SystemCPUSampler()
+    let tick = SystemCPUTicks(user: 100, system: 10, idle: 100, nice: 0)
+    _ = sampler.sample([tick])
+    #expect(sampler.sample(nil) == nil)
+    #expect(sampler.sample([tick])! == [nil])
+    let reset = SystemCPUTicks(user: 0, system: 0, idle: 0, nice: 0)
+    #expect(sampler.sample([reset])! == [nil])
+    #expect(sampler.sample([tick, tick])! == [nil, nil])
+    sampler.reset()
+    #expect(sampler.sample([tick, tick])! == [nil, nil])
+    #expect(sampler.sample([]) == nil)
+}

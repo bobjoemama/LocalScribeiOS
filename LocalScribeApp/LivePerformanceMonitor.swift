@@ -12,6 +12,8 @@ struct LivePerformanceSnapshot: Identifiable, Sendable {
     let timestamp: Date
     /// 100% means one fully occupied CPU core; multicore work may exceed 100%.
     let cpuPercent: Double?
+    let systemCPUCoresPercent: [Double?]?
+    let systemMemory: SystemMemorySnapshot?
     let physicalFootprintBytes: UInt64?
     /// Kernel high-water mark since app launch, not this display window.
     let lifetimePeakPhysicalFootprintBytes: UInt64?
@@ -32,6 +34,7 @@ final class LivePerformanceMonitor: ObservableObject {
     @Published private(set) var history: [LivePerformanceSnapshot] = []
     private var recent = RecentSamples<LivePerformanceSnapshot>(capacity: 60)
     private var cpu = ProcessCPUSampler()
+    private var systemCPU = SystemCPUSampler()
     private var samplingTask: Task<Void, Never>?
     private var pressureSource: (any DispatchSourceMemoryPressure)?
     private var pressure: LiveMemoryPressure = .unknown
@@ -42,6 +45,7 @@ final class LivePerformanceMonitor: ObservableObject {
         generation += 1
         let currentGeneration = generation
         cpu.reset()
+        systemCPU.reset()
         pressure = .unknown
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: .global(qos: .utility))
         source.setEventHandler { [weak self, weak source] in
@@ -73,6 +77,7 @@ final class LivePerformanceMonitor: ObservableObject {
         pressureSource?.cancel()
         pressureSource = nil
         cpu.reset()
+        systemCPU.reset()
         recent.reset()
         snapshot = nil
         history = []
@@ -84,6 +89,7 @@ final class LivePerformanceMonitor: ObservableObject {
         let value = LivePerformanceSnapshot(
             timestamp: raw.timestamp,
             cpuPercent: cpu.sample(monotonicSeconds: raw.monotonicSeconds, cpuSeconds: raw.cpuSeconds),
+            systemCPUCoresPercent: systemCPU.sample(raw.systemCPUTicks), systemMemory: raw.systemMemory,
             physicalFootprintBytes: raw.footprint, lifetimePeakPhysicalFootprintBytes: raw.peak,
             availableMemoryBytes: raw.availableMemory, devicePhysicalMemoryBytes: process.physicalMemory,
             activeProcessorCount: process.activeProcessorCount, processorCount: process.processorCount,
@@ -101,6 +107,8 @@ final class LivePerformanceMonitor: ObservableObject {
         let footprint: UInt64?
         let peak: UInt64?
         let availableMemory: UInt64?
+        let systemCPUTicks: [SystemCPUTicks]?
+        let systemMemory: SystemMemorySnapshot?
     }
 
     nonisolated private static func readResources() -> Resources {
@@ -128,7 +136,8 @@ final class LivePerformanceMonitor: ObservableObject {
         #endif
         return Resources(timestamp: Date(), monotonicSeconds: ProcessInfo.processInfo.systemUptime,
                          cpuSeconds: cpu, footprint: footprint, peak: peak,
-                         availableMemory: available)
+                         availableMemory: available, systemCPUTicks: SystemResourceReader.cpuTicks(),
+                         systemMemory: SystemResourceReader.memory())
     }
 
     deinit {

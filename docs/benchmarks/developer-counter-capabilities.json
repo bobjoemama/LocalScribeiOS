@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-06",
+  "collection": "Three-second USB developer-service capability probe; no microphone or app launch",
+  "tool": "pymobiledevice3 11.23.0 restricted userspace tunnel",
+  "processAttributes": [
+    "cpuUsage",
+    "physFootprint"
+  ],
+  "systemAttributes": [],
+  "availableFields": [
+    "displayFPS",
+    "gpuDevicePercent",
+    "gpuRendererPercent",
+    "gpuTilerPercent"
+  ],
+  "liveIntegration": "User confirmed GPU values updating through LocalScribe Metrics and iPhone LocalScribe after stream/UI fixes",
+  "limits": [
+    "Capability names establish returned numeric counters, not attribution to LocalScribe alone.",
+    "No ANE trace was recorded; report conversion tests use synthetic fixtures.",
+    "Per-core and VM APIs have not been checked visually on the physical phone."
+  ]
+}
