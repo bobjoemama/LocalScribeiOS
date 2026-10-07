@@ -169,4 +169,6 @@ A concise, source-checked [privacy policy](docs/PRIVACY.md) now documents saved 
 
 ## Current iOS beta status
 
+The exact verified development-signed Release app for 0.7.1/build 11 is also installed on the existing iPhone. After installation finished, Device Hub’s Apps row changed from 0.7.0 to **0.7.1**; the installed artifact’s source and same bundle identity were checked with build 11 metadata. Existing models and data were left in place. The phone app was not launched, and no recording, model operation or physical feature test was performed.
+
 The signed 0.7.1/build 11 UX update from artifact source `b9389ac` uploaded successfully at **2026-10-07 17:06:14 UTC**. Validated receipt `c4429836-ace4-43a6-b109-28419a4da0cb` matches App Store Connect app `6820165376`, bundle `com.devesh.localscribe.ios`, version/build and existing team `H2L3Q52987`; the server reports **PROCESSING**, with no upload or ITMS errors in the checked diagnostics. Beta description and review contact details are saved; private contact values stay out of these records. Processed-build eligibility is being checked; **external beta review has not been submitted**, and no public TestFlight invitation is available. Upload completion is separate from eligibility, review submission and approval. Current installation remains [building from source](docs/INSTALLATION.md#install-from-source).
