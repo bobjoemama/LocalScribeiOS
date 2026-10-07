@@ -4,7 +4,7 @@ An open-source alternative to Wispr Flow. Speech recognition runs on your iPhone
 
 ## Install
 
-The signed **0.7.0/build 10** beta has been uploaded to Apple. Processing, external beta review and a public invitation are pending. For now, [build and install from source](docs/INSTALLATION.md#install-from-source) with a Mac, Xcode 27+ and Apple signing access. The guide covers the app, keyboard and Live Activity extension.
+A public TestFlight invitation is not available yet. For now, [build and install from source](docs/INSTALLATION.md#install-from-source) with a Mac, Xcode 27+ and Apple signing access. The guide covers the app, keyboard and Live Activity extension. [Beta status](tasklist.md#current-ios-beta-status).
 
 ## Use
 

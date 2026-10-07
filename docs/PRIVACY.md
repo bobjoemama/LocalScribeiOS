@@ -1,6 +1,6 @@
 # LocalScribe iOS privacy
 
-Updated October 7, 2026. This describes LocalScribe 0.7.0/build 10, including its keyboard and Live Activity extension.
+Updated October 7, 2026. This describes LocalScribe 0.7.1/build 11, including its keyboard and Live Activity extension.
 
 ## Recognition and downloads
 

@@ -1,6 +1,6 @@
 # Installing LocalScribe on iPhone
 
-The current public delivery is source code. The developer has installed 0.7.0/build 10 using development signing; that installation does not provide public beta access or a generally installable IPA. For everyday use after installation, see the [README](../README.md). Read the [privacy policy](PRIVACY.md) for audio, saved text, permissions and beta diagnostics.
+The current public delivery is source code; development installations do not provide public beta access or a generally installable IPA. See [current beta status](../tasklist.md#current-ios-beta-status). For everyday use after installation, see the [README](../README.md). Read the [privacy policy](PRIVACY.md) for audio, saved text, permissions and beta diagnostics.
 
 ## Install from source
 
@@ -35,9 +35,9 @@ For simulator builds and developer checks, see [Development](DEVELOPMENT.md#buil
 
 ## TestFlight
 
-A public TestFlight link is the planned installation route for people who do not use Xcode. **The Apple Distribution-signed 0.7.0/build 10 app and both extensions were uploaded successfully on October 7, 2026. Processing, external beta review and a public invitation are pending.** Once the invitation is available, install Apple’s TestFlight app, open the link on your iPhone and accept/install the beta.
+A public TestFlight link is the planned installation route for people who do not use Xcode. **No public invitation is available yet.** Build/upload and external-review status live in [current beta status](../tasklist.md#current-ios-beta-status). Once an invitation is available, install Apple’s TestFlight app, open the link on your iPhone and accept/install the beta.
 
-For maintainers, the App Store Connect record is **LocalScribe – Local Dictation** (the shorter name was taken); the app's display name and bundle identifiers are unchanged. A manual internal group is prepared. Complete beta information, create the external tester group and attach the processed eligible build. Apple reviews the first external build; later builds may also need review. Enable a public invitation link only after the group has an approved available build. Each build expires **90 days after upload**, so an ongoing beta needs replacement builds. See Apple’s [TestFlight overview](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/) and [public invitation workflow](https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/).
+For maintainers, complete beta information, create the external tester group and attach an eligible processed build. Apple reviews the first external build; later builds may also need review. Enable a public invitation link only after the group has an approved available build. Each build expires **90 days after upload**, so an ongoing beta needs replacement builds. See Apple’s [TestFlight overview](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/) and [public invitation workflow](https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/).
 
 Apple’s TestFlight service collects crash, usage and tester feedback information separately from LocalScribe’s local recognition behavior; see [TestFlight privacy information](https://www.apple.com/legal/privacy/data/en/test-flight/).
 
