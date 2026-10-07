@@ -39,6 +39,14 @@ final class AppController: ObservableObject {
     @Published var selectedBackgroundModel: SpeechModel {
         didSet { defaults.set(selectedBackgroundModel.rawValue, forKey: "selectedBackgroundModel") }
     }
+    @Published var keepModelLoaded: Bool {
+        didSet {
+            defaults.set(keepModelLoaded, forKey: "keepModelLoaded")
+            guard oldValue != keepModelLoaded else { return }
+            if keepModelLoaded { prewarmSelectedModel() }
+            else { scheduleModelRelease() }
+        }
+    }
     @Published var saveHistory: Bool {
         didSet { defaults.set(saveHistory, forKey: "saveHistory") }
     }
@@ -109,6 +117,7 @@ final class AppController: ObservableObject {
         #endif
         selectedModel = SpeechModel(rawValue: defaults.string(forKey: "selectedModel") ?? "") ?? .parakeetRealtimeEOU
         selectedBackgroundModel = SpeechModel(rawValue: defaults.string(forKey: "selectedBackgroundModel") ?? "") ?? .parakeetRealtimeEOU
+        keepModelLoaded = defaults.object(forKey: "keepModelLoaded") as? Bool ?? true
         saveHistory = defaults.object(forKey: "saveHistory") as? Bool ?? true
         let idle = defaults.integer(forKey: "keyboardIdleMinutes")
         keyboardIdleMinutes = [1, 5, 15, 30].contains(idle) ? idle : 5
@@ -497,7 +506,8 @@ final class AppController: ObservableObject {
         preparationTask?.cancel()
         recorder.shutdown()
         phase = .idle
-        if !foreground { releaseRuntime() }
+        if preparationTask != nil { releaseRuntime() }
+        else { scheduleModelRelease() }
     }
 
     func enableKeyboardSession() async {
@@ -558,7 +568,16 @@ final class AppController: ObservableObject {
         if !active && !keyboardSessionActive && !actionButtonRecording {
             if phase == .recording { Task { await stopRecording() } }
             else if phase == .preparing { Task { await cancelPreparation() } }
-            else { recorder.shutdown(); if phase == .idle { releaseRuntime() } }
+            else {
+                recorder.shutdown()
+                if phase == .idle {
+                    // A ready runtime can stay resident without executing. An
+                    // unfinished foreground warm-up must not submit GPU/ANE work
+                    // after backgrounding; prepare it again on the next foreground.
+                    if preparationTask != nil { releaseRuntime() }
+                    else { scheduleModelRelease() }
+                }
+            }
         }
         if active, phase == .idle { pruneRetainedHistory(); prewarmSelectedModel() }
     }
@@ -741,13 +760,17 @@ final class AppController: ObservableObject {
     }
 
     private func prewarmSelectedModel() {
-        guard !verificationMode, foreground, phase == .idle, downloadingModel == nil, installedModels.contains(selectedModel) else { return }
+        guard !verificationMode, keepModelLoaded, foreground, phase == .idle, downloadingModel == nil, installedModels.contains(selectedModel) else { return }
         let model = selectedModel
+        let revision = preparationRevision
         Task { [weak self] in
-            do { try await self?.prepareRuntime(model) }
+            guard let self, self.keepModelLoaded, self.foreground, self.phase == .idle,
+                  self.downloadingModel == nil, self.selectedModel == model,
+                  self.preparationRevision == revision else { return }
+            do { try await self.prepareRuntime(model) }
             catch is CancellationError { }
             catch {
-                guard let self, self.selectedModel == model, self.phase == .idle, self.foreground else { return }
+                guard self.selectedModel == model, self.phase == .idle, self.foreground else { return }
                 self.errorMessage = "The model could not be prepared: \(error.localizedDescription)"
             }
         }
@@ -809,10 +832,10 @@ final class AppController: ObservableObject {
     }
 
     private func scheduleModelRelease() {
-        // Keep a prepared model ready for repeated foreground dictation. Background
-        // lifecycle and memory warnings release it, rather than an arbitrary idle timer.
+        // Retention owns only runtime references. It never arms a microphone or
+        // extends background execution. Real memory warnings still force release.
         guard phase == .idle, !keyboardSessionActive else { return }
-        if !foreground { releaseRuntime() }
+        if !keepModelLoaded { releaseRuntime() }
     }
 
     private func releaseRuntime() {

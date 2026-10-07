@@ -154,15 +154,15 @@ extension SharedKeyboardStore {
         guard condition() else { throw CheckFailure.failed(message) }
         checks += 1
     }
-    @MainActor static func eventually(_ predicate: @escaping () async -> Bool) async throws {
+    @MainActor static func eventually(file: StaticString = #filePath, line: UInt = #line, _ predicate: @escaping () async -> Bool) async throws {
         for _ in 0..<200 {
             if await predicate() { return }
             try await Task.sleep(for: .milliseconds(10))
         }
-        throw CheckFailure.failed("Timed out waiting for controller transition")
+        throw CheckFailure.failed("Timed out waiting for controller transition at \(file):\(line)")
     }
-    @MainActor static func fixture(_ engine: LifecycleEngine, model: SpeechModel = .parakeetPhonon) async -> AppController {
-        let defaults = UserDefaults(suiteName: "LocalScribeControllerCheck-\(UUID())")!
+    @MainActor static func fixture(_ engine: LifecycleEngine, model: SpeechModel = .parakeetPhonon, preferences: UserDefaults? = nil) async -> AppController {
+        let defaults = preferences ?? UserDefaults(suiteName: "LocalScribeControllerCheck-\(UUID())")!
         defaults.set(false, forKey: "saveHistory")
         defaults.set(model.rawValue, forKey: "selectedModel")
         let history = FileManager.default.temporaryDirectory.appendingPathComponent("LocalScribeControllerCheck-\(UUID())/history.json")
@@ -211,8 +211,12 @@ extension SharedKeyboardStore {
         try check(controller.transcript == "Captured words", "Recognition failure preserves already delivered text")
         try check(controller.errorMessage != nil, "Recognition failure is visible")
         controller.setForeground(false)
+        let retained = await engine.counts()
+        try check(controller.keepModelLoaded && retained.2 == 0 && controller.preparedModel == .parakeetPhonon, "Default retention keeps idle background model ready")
+        try check(!recorder.armed && !recorder.recording, "Idle background retention never keeps the microphone active")
+        controller.keepModelLoaded = false
         try await eventually { await engine.counts().2 > 0 }
-        try check(controller.modelStatus == nil, "Background unload clears readiness/status")
+        try check(controller.preparedModel == nil && controller.modelStatus == nil, "Turning retention off clears readiness and releases background runtime")
 
         let blocked = LifecycleEngine()
         let cancelController = await fixture(blocked)
@@ -372,6 +376,85 @@ extension SharedKeyboardStore {
         await failureEngine.configureDownloads()
         await failingDownloads.download(.parakeetUltra)
         try check(failingDownloads.installedModels.contains(.parakeetUltra) && failingDownloads.selectedModel == .parakeetPhonon, "Retry installs without changing selection")
+
+        // Exercise the preference through actual recording, background transitions,
+        // cancellation and the production memory-warning observer.
+        let retentionDefaults = UserDefaults(suiteName: "LocalScribeRetentionCheck-\(UUID())")!
+        retentionDefaults.set(false, forKey: "keepModelLoaded")
+        let retainedEngine = LifecycleEngine()
+        await retainedEngine.releasePreparation()
+        let retainedController = await fixture(retainedEngine, preferences: retentionDefaults)
+        let retainedRecorder = AudioRecorder.latest!
+        try check(!retainedController.keepModelLoaded, "Saved OFF preference survives controller recreation")
+        let coldCounts = await retainedEngine.counts()
+        try check(coldCounts.0 == 0 && retainedController.preparedModel == nil, "OFF does not prewarm during installation refresh")
+        retainedController.keepModelLoaded = true
+        try await eventually { retainedController.preparedModel == .parakeetPhonon }
+        try check(retentionDefaults.bool(forKey: "keepModelLoaded"), "ON preference is persisted")
+        retainedController.setForeground(false)
+        retainedController.setForeground(true)
+        await retainedController.refreshInstalledModels()
+        await retainedController.startRecording()
+        retainedRecorder.feed(8_000)
+        await retainedController.stopRecording()
+        let reused = await retainedEngine.counts()
+        try check(reused.0 == 1 && reused.2 == 0, "Background return and next dictation reuse the same warm model")
+        await retainedController.startRecording()
+        retainedRecorder.feed(8_000)
+        retainedController.keepModelLoaded = false
+        try check(retainedController.phase == .recording && retainedRecorder.recording && retainedController.preparedModel != nil, "OFF during capture defers release until finalization")
+        await retainedController.stopRecording()
+        try await eventually { await retainedEngine.counts().2 > 0 }
+        try check(retainedController.transcript == "Captured words." && retainedController.preparedModel == nil, "OFF finalizes speech then unloads")
+        await retainedController.startRecording()
+        retainedRecorder.feed(8_000)
+        await retainedController.stopRecording()
+        let onDemand = await retainedEngine.counts()
+        try check(onDemand.0 == 2, "OFF loads on demand for the next recording")
+        retainedController.keepModelLoaded = true
+        try await eventually { retainedController.preparedModel == .parakeetPhonon }
+        retainedController.selectedModel = .parakeetPhononG4
+        try await eventually { retainedController.preparedModel == .parakeetPhononG4 }
+        let switched = await retainedEngine.counts()
+        try check(switched.2 >= 3, "Changing model releases previous runtime despite retention")
+        let pressureReleases = await retainedEngine.counts().2
+        NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        try await eventually { retainedController.preparedModel == nil }
+        try await eventually { await retainedEngine.counts().2 > pressureReleases }
+        try check(retainedController.keepModelLoaded && !retainedRecorder.armed, "Real memory warning overrides residency without arming microphone")
+        retainedController.setForeground(true)
+        try await eventually { retainedController.preparedModel == .parakeetPhononG4 }
+        try check(retainedController.modelStatus == nil, "Foreground re-entry recovers after real pressure release")
+
+        let pendingWarm = LifecycleEngine()
+        let pendingWarmController = await fixture(pendingWarm)
+        try await eventually { await pendingWarm.counts().0 == 1 }
+        pendingWarmController.keepModelLoaded = false
+        await pendingWarm.releasePreparation()
+        try await eventually { await pendingWarm.counts().2 > 0 }
+        try check(pendingWarmController.preparedModel == nil && pendingWarmController.modelStatus == nil, "OFF during blocked warm-up prevents late ready state")
+
+        let staleWarm = LifecycleEngine()
+        await staleWarm.releasePreparation()
+        let staleDefaults = UserDefaults(suiteName: "LocalScribeQueuedWarmCheck-\(UUID())")!
+        staleDefaults.set(false, forKey: "keepModelLoaded")
+        let staleController = await fixture(staleWarm, preferences: staleDefaults)
+        staleController.keepModelLoaded = true
+        staleController.keepModelLoaded = false
+        await staleController.refreshInstalledModels()
+        let staleCounts = await staleWarm.counts()
+        try check(staleCounts.0 == 0 && staleController.preparedModel == nil, "Queued warm-up cannot load after immediate OFF")
+
+        let interruptedWarm = LifecycleEngine()
+        let interruptedWarmController = await fixture(interruptedWarm)
+        try await eventually { await interruptedWarm.counts().0 == 1 }
+        interruptedWarmController.setForeground(false)
+        await interruptedWarm.releasePreparation()
+        try await eventually { await interruptedWarm.counts().2 > 0 }
+        try check(interruptedWarmController.preparedModel == nil, "Unfinished foreground warm-up is cancelled on background, not used for background GPU work")
+        interruptedWarmController.setForeground(true)
+        try await eventually { interruptedWarmController.preparedModel == .parakeetPhonon }
+        try check(interruptedWarmController.keepModelLoaded, "Interrupted first load resumes with retention still enabled")
 
         print("PASS: \(checks) actual AppController lifecycle checks")
     }

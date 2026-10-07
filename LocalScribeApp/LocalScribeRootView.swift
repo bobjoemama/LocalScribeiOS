@@ -477,7 +477,13 @@ private struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section { Button("Choose model", action: openModels) }
+                Section {
+                    Button("Choose model", action: openModels)
+                    Toggle("Keep model loaded", isOn: $controller.keepModelLoaded)
+                        .disabled(controller.phase != .idle || controller.keyboardSessionActive)
+                } footer: {
+                    Text("Preloads your Dictate model and keeps the last-used model ready when you switch apps. Force quit LocalScribe to release it. iOS may reclaim memory when needed. Turn off to load only when recording.")
+                }
                 Section {
                     Toggle("Keep transcript history", isOn: $controller.saveHistory)
                     Picker("Auto-delete history", selection: Binding(get: { controller.historyRetentionDays }, set: { days in
