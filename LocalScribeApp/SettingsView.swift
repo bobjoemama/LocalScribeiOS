@@ -86,7 +86,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Keyboard").foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("The microphone stays on until you end the session or reach the idle timeout. Audio between dictations is discarded. Realtime recognizes speech in the background; GPU and Neural Engine models wait until LocalScribe is open.").foregroundStyle(AppTheme.inkSecondary)
+                    Text("The microphone stays on until you end the session or reach the idle timeout. Audio between dictations is discarded. Keyboard recordings use your Dictate model. Realtime and Moonshine can recognize speech in the background; other models wait until LocalScribe is open.").foregroundStyle(AppTheme.inkSecondary)
                 }
                 .listRowBackground(AppTheme.surface)
 
@@ -96,7 +96,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Action Button").foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("Shortcut recordings use this CPU model and need Live Activities. iOS may decline background microphone activation; open LocalScribe and record from Dictate if this happens.").foregroundStyle(AppTheme.inkSecondary)
+                    Text("Shortcut recordings use this model for both preview and final text, replacing the Dictate model for that recording. Live Activities are required. If iOS declines background microphone activation, open LocalScribe and record from Dictate.").foregroundStyle(AppTheme.inkSecondary)
                 }
                 .listRowBackground(AppTheme.surface)
 
@@ -148,7 +148,7 @@ struct SettingsView: View {
 private struct BackgroundModelPicker: View {
     @ObservedObject var controller: AppController
     var body: some View {
-        Picker("Background model", selection: $controller.selectedBackgroundModel) {
+        Picker("Action Button model", selection: $controller.selectedBackgroundModel) {
             ForEach([SpeechModel.parakeetRealtimeEOU, .moonshineSmall], id: \.self) { model in
                 Text(model.name).tag(model)
             }
@@ -165,7 +165,7 @@ private struct ActionButtonSetupView: View {
             Section {
                 BackgroundModelPicker(controller: controller)
             } footer: {
-                Text("These CPU runtimes can transcribe while another app is open. This choice is separate from the model on Dictate.").foregroundStyle(AppTheme.inkSecondary)
+                Text("These CPU runtimes can transcribe while another app is open. This choice replaces the Dictate model for shortcut recordings and provides both preview and final text.").foregroundStyle(AppTheme.inkSecondary)
             }
             .listRowBackground(AppTheme.surface)
             Section {

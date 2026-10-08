@@ -18,6 +18,7 @@ struct DictateView: View {
     private var ready: Bool { controller.installedModels.contains(controller.selectedModel) }
     private var recording: Bool { controller.phase == .recording }
     private var active: Bool { controller.phase != .idle }
+    private var displayedModel: SpeechModel { controller.recordingModel ?? controller.selectedModel }
     private var textToCopy: String { recording || controller.phase == .transcribing ? controller.partialText : controller.transcript }
     private var canSelectModel: Bool {
         controller.phase == .idle && controller.downloadingModel == nil && !controller.keyboardSessionActive
@@ -97,7 +98,7 @@ struct DictateView: View {
             Button("Manage models", action: openModels)
         } label: {
             HStack(spacing: 10) {
-                Text(controller.selectedModel.name).font(.subheadline.weight(.medium)).lineLimit(1).truncationMode(.middle)
+                Text(displayedModel.name).font(.subheadline.weight(.medium)).lineLimit(1).truncationMode(.middle)
                 Image(systemName: "chevron.down").font(.caption.weight(.medium))
             }
             .padding(.horizontal, 14).frame(minHeight: 44)
@@ -107,7 +108,7 @@ struct DictateView: View {
         }
         .disabled(!canSelectModel)
         .accessibilityLabel("Choose model")
-        .accessibilityValue(controller.selectedModel.name + ", " + modelModeState)
+        .accessibilityValue(displayedModel.name + ", " + modelModeState)
     }
 
     private var modelCaption: some View {
@@ -115,7 +116,7 @@ struct DictateView: View {
     }
 
     private var modelModeState: String {
-        SpeechModelPresentation.mode(controller.selectedModel) + (controller.preparedModel == controller.selectedModel ? " · loaded" : "")
+        SpeechModelPresentation.mode(displayedModel) + (controller.preparedModel == displayedModel ? " · loaded" : "")
     }
 
     @ViewBuilder private var transcriptWorkspace: some View {

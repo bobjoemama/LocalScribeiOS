@@ -14,10 +14,12 @@ struct ModelsView: View {
         NavigationStack {
             Form {
                 downloadSection
-                catalogSection("Streaming", models: SpeechModel.allCases.filter(SpeechModelPresentation.isStreaming))
-                catalogSection("Windowed", models: SpeechModel.allCases.filter { !SpeechModelPresentation.isStreaming($0) })
+                catalogSection("Continuous text", models: SpeechModel.allCases.filter(SpeechModelPresentation.isStreaming),
+                    explanation: "Streaming models update text as speech arrives, reusing recognition state.")
+                catalogSection("Periodic text", models: SpeechModel.allCases.filter { !SpeechModelPresentation.isStreaming($0) },
+                    explanation: "These models recognize overlapping audio windows. Preview starts after 5 seconds of audio, then updates every 3 seconds as processing catches up.")
                 Section {
-                    Text("Installed models stay on this iPhone. Only the model in use is loaded. Downloads need internet.")
+                    Text("The recording model provides both preview and final text. Installed models stay on this iPhone; downloads need internet.")
                         .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                 }
             }
@@ -78,10 +80,10 @@ struct ModelsView: View {
         }
     }
 
-    private func catalogSection(_ title: String, models: [SpeechModel]) -> some View {
-        Section(title) {
+    private func catalogSection(_ title: String, models: [SpeechModel], explanation: String) -> some View {
+        Section {
             ForEach(models) { model in modelRow(model) }
-        }
+        } header: { Text(title) } footer: { Text(explanation) }
     }
 
     private func modelRow(_ model: SpeechModel) -> some View {
@@ -121,7 +123,7 @@ struct ModelsView: View {
                     .buttonStyle(.borderless).frame(minHeight: 44).disabled(!canStartDownload)
                     .accessibilityLabel("Retry downloading \(model.name)")
             } else if selected && installed {
-                Label("Selected", systemImage: "checkmark").font(.footnote.weight(.medium)).foregroundStyle(AppTheme.ink)
+                Label("Dictate model", systemImage: "checkmark").font(.footnote.weight(.medium)).foregroundStyle(AppTheme.ink)
             } else {
                 Button(installed ? "Use" : "Download") {
                     if installed { controller.selectedModel = model }
@@ -129,7 +131,7 @@ struct ModelsView: View {
                 }
                 .buttonStyle(.borderless).frame(minHeight: 44)
                 .disabled(!canStartDownload)
-                .accessibilityLabel(installed ? "Use \(model.name)" : "Download \(model.name)")
+                .accessibilityLabel(installed ? "Use \(model.name) for Dictate" : "Download \(model.name)")
             }
         }.padding(.vertical, 4).listRowBackground(AppTheme.surface)
     }
@@ -144,11 +146,11 @@ private struct ModelDetailsView: View {
                 Section {
                     LabeledContent("Download size", value: SpeechModelPresentation.size(model))
                     LabeledContent("Languages", value: model.languages)
-                    LabeledContent("Recognition", value: SpeechModelPresentation.isStreaming(model) ? "Streaming · cached state" : "Windowed")
-                    if !SpeechModelPresentation.isStreaming(model) {
-                        Text("First preview after 5 seconds of audio, then every 3 seconds.")
-                            .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
-                    }
+                    LabeledContent("Recognition", value: SpeechModelPresentation.isStreaming(model) ? "Streaming" : "Overlapping windows")
+                    Text(SpeechModelPresentation.isStreaming(model)
+                        ? "Updates text incrementally as speech arrives, reusing recognition state. The same model provides preview and final text."
+                        : "First preview after 5 seconds of audio, then updates every 3 seconds as processing catches up. The same model provides preview and final text.")
+                        .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                     LabeledContent("Background inference", value: SpeechModelPresentation.isStreaming(model) ? "CPU supported" : "Foreground only")
                     Text(SpeechModelPresentation.backend(model)).font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                     Text(model.detail).foregroundStyle(AppTheme.inkSecondary)
@@ -174,7 +176,7 @@ private struct ModelDetailsView: View {
 /// describe requested compute paths, not measured GPU/Neural Engine occupancy.
 enum SpeechModelPresentation {
     static func isStreaming(_ model: SpeechModel) -> Bool { model == .parakeetRealtimeEOU || model == .moonshineSmall }
-    static func mode(_ model: SpeechModel) -> String { isStreaming(model) ? "Streaming" : "Windowed · 3 s" }
+    static func mode(_ model: SpeechModel) -> String { isStreaming(model) ? "Continuous text" : "Text after 5 s, then every 3 s" }
     static func backend(_ model: SpeechModel) -> String {
         if model == .moonshineSmall { return "Moonshine native ONNX Runtime · CPU only. GPU and Neural Engine disabled." }
         if model == .parakeetPhononLUT3 { return "Core ML encoder · CPU + GPU requested. Other components · CPU + Neural Engine requested." }
