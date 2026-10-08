@@ -55,6 +55,14 @@ final class AppController: ObservableObject {
     @Published private(set) var historyRetentionDays = 0
     var currentRecordingID: UUID? { recordingID }
     var actionButtonModel: SpeechModel { selectedModel }
+    var actionButtonModelReady: Bool {
+        runtimeReady(actionButtonModel, context: .backgroundCapable) && preparedAllowsBackground
+    }
+    var actionButtonModelLoading: Bool {
+        preparationModel == actionButtonModel
+            && preparationExecutionContext == effectiveExecutionContext(for: actionButtonModel, requested: .backgroundCapable)
+            && preparationTask.map { !$0.isCancelled } == true
+    }
     var canEditDictionary: Bool { dictionaryWritable && snippetsWritable }
     var canEditSnippets: Bool { dictionaryWritable && snippetsWritable }
     var canEditHistory: Bool { historyWritable && phase == .idle }
@@ -70,6 +78,8 @@ final class AppController: ObservableObject {
 
     var onDictationFinished: (() -> Void)?
     private var backgroundCompletionTask: UIBackgroundTaskIdentifier = .invalid
+    private var backgroundCompletionRevision = 0
+    private var platformManagedCompletionRecordingID: UUID?
     private let engine: any LocalTranscriptionEngine
     private let recorder = AudioRecorder()
     private let store: HistoryStore
@@ -89,10 +99,12 @@ final class AppController: ObservableObject {
     private var preparationTask: Task<Void, Error>?
     private var preparationModel: SpeechModel?
     private var preparationExecutionContext: ModelExecutionContext?
+    private var preparationAllowsBackground = false
     private var preparationRevision = 0
     private var prewarmRevision = 0
     @Published private(set) var preparedModel: SpeechModel?
     @Published private(set) var preparedExecutionContext: ModelExecutionContext?
+    private var preparedAllowsBackground = false
     private var streamingTask: Task<Void, Error>?
     private var recordingID: UUID?
     private var actionRecordingRequestID: UUID?
@@ -130,7 +142,7 @@ final class AppController: ObservableObject {
         keyboardSessionExpiresAt = nil
         selectedModel = .parakeetRealtimeEOU
         installedModels = DesignPreviewConfiguration.installedModels
-        preparedModel = .parakeetRealtimeEOU; preparedExecutionContext = .foreground
+        preparedModel = .parakeetRealtimeEOU; preparedExecutionContext = .foreground; preparedAllowsBackground = true
         transcript = ""
         rawTranscript = ""
         partialText = ""
@@ -156,7 +168,7 @@ final class AppController: ObservableObject {
         case .preparing:
             selectedModel = .parakeetPhonon
             recordingModel = selectedModel; recordingExecutionContext = .foreground
-            preparedModel = nil; preparedExecutionContext = nil
+            preparedModel = nil; preparedExecutionContext = nil; preparedAllowsBackground = false
             phase = .preparing
             modelStatus = "Loading Phonon-2…"
             elapsed = 4
@@ -369,8 +381,16 @@ final class AppController: ObservableObject {
             recordingModel = nil; recordingExecutionContext = nil
             return
         }
+        if actionRequestID != nil, !runtimeReady(model, context: context) {
+            errorMessage = "Open LocalScribe and wait until \(model.name) is Ready before using the Action Button."
+            phase = .idle
+            recordingModel = nil; recordingExecutionContext = nil
+            return
+        }
         captureBackgroundInferenceAllowed = backgroundAllowed
         do {
+            // Foreground Dictate can capture while its model loads. Action startup
+            // has already verified the exact reserved runtime before activation.
             // Capture does not wait for Core ML compilation/loading. Stop remains available
             // while the ordered recognition pump waits for the model.
             try Task.checkCancellation()
@@ -388,6 +408,12 @@ final class AppController: ObservableObject {
                 return
             }
             try Task.checkCancellation()
+            if actionRequestID != nil, !runtimeReady(model, context: context) {
+                recorder.shutdown(); phase = .idle
+                recordingModel = nil; recordingExecutionContext = nil
+                errorMessage = "Open LocalScribe and wait until \(model.name) is Ready before using the Action Button."
+                return
+            }
             recorder.beginCapture()
             let id = UUID()
             recordingID = id
@@ -456,7 +482,49 @@ final class AppController: ObservableObject {
     /// The shortcut freezes the same selected model used by Dictate.
     func startActionButtonRecording(requestID: UUID = UUID(), model requestedModel: SpeechModel? = nil) async {
         guard reserveActionButtonRecording(requestID: requestID, model: requestedModel ?? actionButtonModel) else { return }
+        guard await prepareReservedActionButtonRecording(requestID: requestID) else {
+            await cancelActionButtonRecording(requestID: requestID)
+            return
+        }
         await startReservedActionButtonRecording(requestID: requestID)
+    }
+
+    /// Prepare the reserved runtime before the bridge creates a recording
+    /// Activity. Background startup may only reuse an already-ready runtime.
+    func prepareReservedActionButtonRecording(requestID: UUID) async -> Bool {
+        guard actionRecordingRequestID == requestID, phase == .idle,
+              !verificationMode, let model = recordingModel, let context = recordingExecutionContext else { return false }
+        if runtimeReady(model, context: context) {
+            if foreground || preparedAllowsBackground { return true }
+            errorMessage = "\(model.name) requires LocalScribe to stay open."
+            return false
+        }
+        guard foreground else {
+            errorMessage = "Open LocalScribe and wait until \(model.name) is Ready before using the Action Button."
+            return false
+        }
+        guard installedModels.contains(model) else {
+            errorMessage = "Download your selected model in Models before dictating."
+            return false
+        }
+        phase = .preparing
+        microphoneRevision += 1
+        let revision = microphoneRevision
+        defer {
+            if actionRecordingRequestID == requestID, microphoneRevision == revision, phase == .preparing { phase = .idle }
+        }
+        do {
+            try Task.checkCancellation()
+            try await prepareRuntime(model, context: context)
+            try Task.checkCancellation()
+            guard actionRecordingRequestID == requestID, microphoneRevision == revision,
+                  phase == .preparing, foreground else { return false }
+            return runtimeReady(model, context: context)
+        } catch {
+            guard actionRecordingRequestID == requestID, microphoneRevision == revision else { return false }
+            if !(error is CancellationError) { errorMessage = error.localizedDescription }
+            return false
+        }
     }
 
     /// Continue only the existing reservation; a cancelled startup is never
@@ -470,6 +538,10 @@ final class AppController: ObservableObject {
                 actionButtonRecording = false
                 recordingModel = nil; recordingExecutionContext = nil
             }
+        }
+        guard runtimeReady(model, context: context) else {
+            errorMessage = "Open LocalScribe and wait until \(model.name) is Ready before using the Action Button."
+            return
         }
         let backgroundAllowed = await supportsBackgroundInference(model, context: context)
         guard actionRecordingRequestID == requestID, !Task.isCancelled,
@@ -494,13 +566,28 @@ final class AppController: ObservableObject {
         actionRecordingRequestID = nil
         let ownsRecording = actionButtonRecording
         actionButtonRecording = false
-        if ownsRecording { await cancelRecording() }
-        else if phase == .idle { recordingModel = nil; recordingExecutionContext = nil }
+        if phase == .preparing, recordingID == nil { await cancelPreparation() }
+        else if ownsRecording { await cancelRecording() }
+        else if phase == .idle { recordingModel = nil; recordingExecutionContext = nil; scheduleModelRelease() }
     }
 
-    func stopActionButtonRecording(progress: Progress? = nil) async {
+    /// A long-running intent can take ownership from an existing finite app
+    /// assertion, including when an interruption already began finalization.
+    func adoptPlatformManagedActionCompletion(requestID: UUID) -> Bool {
+        guard actionRecordingRequestID == requestID, actionButtonRecording,
+              phase == .recording || phase == .transcribing, let id = recordingID else { return false }
+        platformManagedCompletionRecordingID = id
+        endBackgroundCompletion()
+        return true
+    }
+
+    func stopActionButtonRecording(progress: Progress? = nil, completionIsPlatformManaged: Bool = false) async {
         guard actionButtonRecording else { return }
-        await stopRecording(endKeyboardSession: true, streamFailure: nil, progress: progress)
+        if completionIsPlatformManaged {
+            guard let requestID = actionRecordingRequestID, adoptPlatformManagedActionCompletion(requestID: requestID) else { return }
+        }
+        await stopRecording(endKeyboardSession: true, streamFailure: nil, progress: progress,
+                            completionIsPlatformManaged: completionIsPlatformManaged)
     }
 
     /// Reports observed work and elapsed waiting time while an App Intent awaits the
@@ -542,9 +629,10 @@ final class AppController: ObservableObject {
         await stopRecording(endKeyboardSession: endKeyboardSession, streamFailure: nil)
     }
 
-    private func stopRecording(endKeyboardSession: Bool = false, streamFailure: Error?, progress: Progress? = nil) async {
+    private func stopRecording(endKeyboardSession: Bool = false, streamFailure: Error?, progress: Progress? = nil,
+                               completionIsPlatformManaged: Bool = false) async {
         guard phase == .recording, let id = recordingID, let model = recordingModel else { return }
-        beginBackgroundCompletion()
+        if !completionIsPlatformManaged { beginBackgroundCompletion() }
         recordingTimer?.invalidate(); recordingTimer = nil
         let tail = recorder.endCapture(keepEngineRunning: !endKeyboardSession && keyboardSessionActive)
         progress?.totalUnitCount = Int64((tail.count + 31_999) / 32_000 + 3)
@@ -631,6 +719,7 @@ final class AppController: ObservableObject {
     private func guardRecordingCompletion(_ id: UUID) {
         guard recordingID == id else { return }
         completionStage = nil
+        platformManagedCompletionRecordingID = nil
         streamingTask = nil; recordingID = nil; recordingModel = nil; recordingExecutionContext = nil; captureBackgroundInferenceAllowed = false; acceptsLiveUpdates = false
         actionButtonRecording = false
         actionRecordingRequestID = nil
@@ -650,7 +739,9 @@ final class AppController: ObservableObject {
         guard phase == .recording || phase == .transcribing else { return }
         microphoneRevision += 1
         completionStage = nil
+        platformManagedCompletionRecordingID = nil
         recordingID = nil
+        endBackgroundCompletion()
         completedRecordingID = nil
         acceptsLiveUpdates = false
         recordingTimer?.invalidate(); recordingTimer = nil
@@ -675,7 +766,6 @@ final class AppController: ObservableObject {
         recordingCleanupTask = cleanup
         await cleanup.value
         recordingCleanupTask = nil
-        endBackgroundCompletion()
         scheduleModelRelease()
     }
 
@@ -768,7 +858,7 @@ final class AppController: ObservableObject {
                     // A ready runtime can stay resident without executing. An
                     // unfinished foreground warm-up must not submit GPU/ANE work
                     // after backgrounding; prepare it again on the next foreground.
-                    if preparationTask != nil { releaseRuntime() }
+                    if preparationTask != nil, !preparationAllowsBackground { releaseRuntime() }
                     else { scheduleModelRelease() }
                 }
             }
@@ -933,10 +1023,16 @@ final class AppController: ObservableObject {
     }
 
     private func beginBackgroundCompletion() {
-        guard backgroundCompletionTask == .invalid else { return }
+        guard backgroundCompletionTask == .invalid, let id = recordingID,
+              platformManagedCompletionRecordingID != id else { return }
+        backgroundCompletionRevision += 1
+        let revision = backgroundCompletionRevision
         backgroundCompletionTask = UIApplication.shared.beginBackgroundTask(withName: "Finish local dictation") { [weak self] in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.recordingID == id,
+                      self.backgroundCompletionRevision == revision,
+                      self.backgroundCompletionTask != .invalid,
+                      self.platformManagedCompletionRecordingID != id else { return }
                 self.errorMessage = "iOS ended background processing before dictation finished. Return to LocalScribe to check your text."
                 self.endBackgroundCompletion()
             }
@@ -944,6 +1040,7 @@ final class AppController: ObservableObject {
     }
 
     private func endBackgroundCompletion() {
+        backgroundCompletionRevision += 1
         guard backgroundCompletionTask != .invalid else { return }
         UIApplication.shared.endBackgroundTask(backgroundCompletionTask)
         backgroundCompletionTask = .invalid
@@ -951,6 +1048,10 @@ final class AppController: ObservableObject {
 
     private func refreshPerformanceReports() async {
         if let measured = engine as? any PerformanceReportingEngine { performanceReports = await measured.performanceReports() }
+    }
+
+    private func runtimeReady(_ model: SpeechModel, context: ModelExecutionContext) -> Bool {
+        preparedModel == model && preparedExecutionContext == effectiveExecutionContext(for: model, requested: context)
     }
 
     private func effectiveExecutionContext(for model: SpeechModel, requested context: ModelExecutionContext) -> ModelExecutionContext {
@@ -980,10 +1081,10 @@ final class AppController: ObservableObject {
     private func prewarmSelectedModel() {
         guard !verificationMode, keepModelLoaded, foreground, phase == .idle, downloadingModel == nil,
               actionRecordingRequestID == nil, recordingModel == nil, recordingCleanupTask == nil else { return }
-        // Lifecycle discovery and foregrounding keep the runtime already in use.
-        // An explicit selection releases it before requesting its replacement.
-        let model = preparedModel ?? preparationModel ?? selectedModel
-        let context = preparedExecutionContext ?? preparationExecutionContext ?? .foreground
+        // Ready means the selected model can serve Action dictation without a
+        // background load or processor switch. Dictate reuses this same runtime.
+        let model = selectedModel
+        let context = ModelExecutionContext.backgroundCapable
         guard installedModels.contains(model) else { return }
         let revision = preparationRevision
         let intentRevision = prewarmRevision
@@ -1007,7 +1108,13 @@ final class AppController: ObservableObject {
         if preparedModel == model, preparedExecutionContext == effectiveContext { return }
         if preparationModel == model, preparationExecutionContext == effectiveContext,
            let preparationTask, !preparationTask.isCancelled {
+            let revision = preparationRevision
             try await preparationTask.value
+            try Task.checkCancellation()
+            guard preparationRevision == revision else { throw CancellationError() }
+            preparedModel = model; preparedExecutionContext = effectiveContext
+            preparedAllowsBackground = preparationAllowsBackground
+            self.preparationTask = nil; preparationModel = nil; preparationExecutionContext = nil; modelStatus = nil
             return
         }
         let previous = preparationTask
@@ -1017,13 +1124,21 @@ final class AppController: ObservableObject {
         let revision = preparationRevision
         preparationModel = model
         preparationExecutionContext = effectiveContext
-        preparedModel = nil; preparedExecutionContext = nil
+        // A contextual background request is CPU-only. Other configurations
+        // remain conservative until the engine reports its actual capability.
+        preparationAllowsBackground = engine is any ContextualLocalTranscriptionEngine && context == .backgroundCapable
+        preparedModel = nil; preparedExecutionContext = nil; preparedAllowsBackground = false
         modelStatus = "Loading \(model.name)…"
         let engine = engine
         let task = Task { [self] in
             _ = await previous?.result
             await release?.value
             try Task.checkCancellation()
+            let backgroundAllowed = await supportsBackgroundInference(model, context: context)
+            try Task.checkCancellation()
+            guard preparationRevision == revision else { throw CancellationError() }
+            preparationAllowsBackground = backgroundAllowed
+            guard foreground || backgroundAllowed else { throw CancellationError() }
             let statusTask = Task { [weak self] in
                 guard let reporting = engine as? any ModelPreparationReportingEngine else { return }
                 while !Task.isCancelled {
@@ -1054,6 +1169,7 @@ final class AppController: ObservableObject {
             try await task.value
             guard revision == preparationRevision else { throw CancellationError() }
             preparedModel = model; preparedExecutionContext = effectiveContext
+            preparedAllowsBackground = preparationAllowsBackground
             preparationTask = nil; preparationModel = nil; preparationExecutionContext = nil; modelStatus = nil
             await refreshPerformanceReports()
         } catch {
@@ -1076,7 +1192,8 @@ final class AppController: ObservableObject {
         preparationRevision += 1
         preparationTask?.cancel()
         let preparation = preparationTask
-        preparationTask = nil; preparationModel = nil; preparationExecutionContext = nil; preparedModel = nil; preparedExecutionContext = nil; modelStatus = nil
+        preparationTask = nil; preparationModel = nil; preparationExecutionContext = nil; preparationAllowsBackground = false
+        preparedModel = nil; preparedExecutionContext = nil; preparedAllowsBackground = false; modelStatus = nil
         let previous = runtimeReleaseTask
         let engine = engine
         runtimeReleaseTask = Task {

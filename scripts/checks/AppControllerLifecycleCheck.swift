@@ -11,8 +11,15 @@ struct UIBackgroundTaskIdentifier: Equatable {
 @MainActor final class UIApplication {
     static let shared = UIApplication()
     static let didReceiveMemoryWarningNotification = Notification.Name("ControllerFixtureMemoryWarning")
-    func beginBackgroundTask(withName: String, expirationHandler: @escaping () -> Void) -> UIBackgroundTaskIdentifier { .init(value: 1) }
-    func endBackgroundTask(_ id: UIBackgroundTaskIdentifier) {}
+    var backgroundTaskStarts = 0
+    var backgroundTaskEnds = 0
+    var backgroundTaskExpirations: [Int: () -> Void] = [:]
+    func beginBackgroundTask(withName: String, expirationHandler: @escaping () -> Void) -> UIBackgroundTaskIdentifier {
+        backgroundTaskStarts += 1
+        backgroundTaskExpirations[backgroundTaskStarts] = expirationHandler
+        return .init(value: backgroundTaskStarts)
+    }
+    func endBackgroundTask(_ id: UIBackgroundTaskIdentifier) { backgroundTaskEnds += 1 }
 }
 struct EnginePerformanceReport: Sendable {}
 protocol PerformanceReportingEngine: LocalTranscriptionEngine {
@@ -163,6 +170,7 @@ actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRep
         try Task.checkCancellation()
     }
     func releasePreparation() { holdPreparation = false; loadContinuation?.resume(); loadContinuation = nil }
+    func holdNextPreparation() { holdPreparation = true }
     func beginStreaming(onUpdate: @escaping @Sendable (SpeechTranscriptUpdate) -> Void) async throws {
         beginCalls += 1; admittedSamples = 0; oldCallback = callback; callback = onUpdate
     }
@@ -821,13 +829,14 @@ extension SharedKeyboardStore {
         ownershipController.setForeground(true)
         await ownershipController.refreshInstalledModels()
         for _ in 0..<10 { await Task.yield() }
+        try await eventually { ownershipController.preparedModel == .parakeetPhononG4 }
         let retainedActionPreparations = await ownershipEngine.preparations()
-        try check(retainedActionPreparations == [.parakeetRealtimeEOU] && ownershipController.preparedModel == .parakeetRealtimeEOU,
-                  "Returning from Action dictation and discovery retain its ready runtime after a selection change during capture")
+        try check(retainedActionPreparations == [.parakeetRealtimeEOU, .parakeetPhononG4],
+                  "Returning after selection changed during capture prepares that selected model for the next Action")
         ownershipController.selectedModel = .parakeetPhonon
         try await eventually { ownershipController.preparedModel == .parakeetPhonon }
         let explicitPreparations = await ownershipEngine.preparations()
-        try check(explicitPreparations == [.parakeetRealtimeEOU, .parakeetPhonon],
+        try check(explicitPreparations == [.parakeetRealtimeEOU, .parakeetPhononG4, .parakeetPhonon],
                   "Explicit idle model selection still warms the selected Dictate model with retention enabled")
 
         // A queued warm-up retired by a cancelled explicit startup stays retired
@@ -874,8 +883,8 @@ extension SharedKeyboardStore {
         let unifiedArmCalls = unifiedRecorder.armCalls
         await unifiedController.startActionButtonRecording()
         try check(unifiedController.phase == .idle && unifiedRecorder.armCalls == unifiedArmCalls
-                  && unifiedController.errorMessage?.contains("requires LocalScribe to stay open") == true,
-                  "Background Action reports the selected runtime's restriction before arming microphone")
+                  && unifiedController.errorMessage?.contains("wait until") == true,
+                  "Cold background Action directs opening the app and waiting for Ready before arming microphone")
         let unifiedPreparations = await unifiedEngine.preparations()
         try check(unifiedPreparations == [.parakeetPhonon],
                   "Unsupported background request never loads Realtime or another fallback runtime")
@@ -911,8 +920,8 @@ extension SharedKeyboardStore {
         let contextualController = await fixture(contextualEngine)
         let contextualRecorder = AudioRecorder.latest!
         try await eventually { contextualController.preparedModel == .parakeetPhonon }
-        try check(contextualController.preparedExecutionContext == .foreground,
-                  "Cold foreground prewarm retains the existing accelerated execution preference")
+        try check(contextualController.preparedExecutionContext == .backgroundCapable && contextualController.actionButtonModelReady,
+                  "Keep-loaded foreground prewarm prepares the selected model's actual Action CPU configuration")
         contextualController.setForeground(false)
         await contextualController.startActionButtonRecording()
         try await eventually { contextualController.preparedExecutionContext == .backgroundCapable }
@@ -935,14 +944,13 @@ extension SharedKeyboardStore {
                   "Keyboard microphone lease also reuses the retained selected CPU runtime")
         contextualController.disableKeyboardSession()
         let contextualPreparations = await contextualEngine.preparationRequests()
-        try check(contextualPreparations.count == 2
-                  && contextualPreparations[0].0 == .parakeetPhonon && contextualPreparations[0].1 == .foreground
-                  && contextualPreparations[1].0 == .parakeetPhonon && contextualPreparations[1].1 == .backgroundCapable,
-                  "Only one context switch occurs; foreground return, refresh and Dictate never bounce back to acceleration")
+        try check(contextualPreparations.count == 1
+                  && contextualPreparations[0].0 == .parakeetPhonon && contextualPreparations[0].1 == .backgroundCapable,
+                  "Foreground prewarm, Action, return, refresh, Dictate and keyboard share one selected CPU runtime")
         contextualController.selectedModel = .parakeetPhononG4
         try await eventually { contextualController.preparedModel == .parakeetPhononG4 }
-        try check(contextualController.preparedExecutionContext == .foreground,
-                  "Explicit new model selection retains foreground acceleration preference")
+        try check(contextualController.preparedExecutionContext == .backgroundCapable && contextualController.actionButtonModelReady,
+                  "Explicit selected model change with retention ON prepares its Action CPU configuration")
 
         let normalizedEngine = ContextualLifecycleEngine()
         await normalizedEngine.engine.releasePreparation()
@@ -967,7 +975,6 @@ extension SharedKeyboardStore {
         failedContextDefaults.set(false, forKey: "keepModelLoaded")
         let failedContextController = await fixture(failedContextEngine, preferences: failedContextDefaults)
         await failedContextEngine.failNextBackgroundPreparation()
-        failedContextController.setForeground(false)
         await failedContextController.startActionButtonRecording()
         try await eventually { failedContextController.phase == .idle }
         let failedContextPreparations = await failedContextEngine.preparationRequests()
@@ -983,12 +990,13 @@ extension SharedKeyboardStore {
         cancelledContextDefaults.set(false, forKey: "keepModelLoaded")
         let cancelledContextController = await fixture(cancelledContextEngine, preferences: cancelledContextDefaults)
         let cancelledContextRecorder = AudioRecorder.latest!
-        await cancelledContextController.startActionButtonRecording()
+        let cancelledContextStart = Task { await cancelledContextController.startActionButtonRecording() }
         try await eventually { await cancelledContextEngine.engine.counts().0 == 1 }
         let cancellingContext = Task { await cancelledContextController.cancelRecording() }
         try await eventually { cancelledContextController.phase == .idle }
         await cancelledContextEngine.engine.releasePreparation()
         await cancellingContext.value
+        await cancelledContextStart.value
         try check(cancelledContextController.preparedModel == nil && cancelledContextController.preparedExecutionContext == nil
                   && cancelledContextController.recordingExecutionContext == nil && !cancelledContextRecorder.recording,
                   "Cancelled CPU preparation cannot publish late ready context or retain microphone capture")
@@ -998,6 +1006,188 @@ extension SharedKeyboardStore {
                   && cancelledContextController.recordingExecutionContext == .foreground,
                   "Replacement Dictate starts the selected model in its own foreground execution context")
         await cancelledContextController.cancelRecording()
+
+        // Ready is the selected Action CPU configuration, and cold background
+        // startup must never activate audio or start a new model load.
+        let coldReadyEngine = ContextualLifecycleEngine()
+        await coldReadyEngine.engine.releasePreparation()
+        let coldReadyDefaults = UserDefaults(suiteName: "LocalScribeColdReadyCheck-\(UUID())")!
+        coldReadyDefaults.set(false, forKey: "keepModelLoaded")
+        let coldReadyController = await fixture(coldReadyEngine, preferences: coldReadyDefaults)
+        let coldReadyRecorder = AudioRecorder.latest!
+        coldReadyController.setForeground(false)
+        await coldReadyController.startActionButtonRecording()
+        let coldReadyRequests = await coldReadyEngine.preparationRequests()
+        try check(coldReadyRequests.isEmpty && coldReadyRecorder.armCalls == 0 && !coldReadyRecorder.recording,
+                  "Cold background Action refuses before model preparation and microphone activation")
+        try check(coldReadyController.phase == .idle && coldReadyController.currentRecordingID == nil
+                  && coldReadyController.elapsed == 0 && coldReadyController.recordingModel == nil
+                  && coldReadyController.errorMessage?.contains("wait until") == true,
+                  "Cold background refusal has no recording owner or timer and gives the Ready instruction")
+
+        let readyGateEngine = ContextualLifecycleEngine()
+        let readyGateDefaults = UserDefaults(suiteName: "LocalScribeReadyGateCheck-\(UUID())")!
+        readyGateDefaults.set(false, forKey: "keepModelLoaded")
+        let readyGateController = await fixture(readyGateEngine, preferences: readyGateDefaults)
+        let readyGateRecorder = AudioRecorder.latest!
+        let readyGateOwner = UUID()
+        let readyGateStart = Task { await readyGateController.startActionButtonRecording(requestID: readyGateOwner) }
+        try await eventually { await readyGateEngine.engine.counts().0 == 1 }
+        try check(readyGateController.phase == .preparing && readyGateController.actionButtonModelLoading
+                  && !readyGateController.actionButtonModelReady && readyGateRecorder.armCalls == 0
+                  && !readyGateRecorder.recording && readyGateController.currentRecordingID == nil && readyGateController.elapsed == 0,
+                  "Foreground Action preparation remains cancellable and admits no microphone audio before Ready")
+        await readyGateEngine.engine.releasePreparation()
+        await readyGateStart.value
+        try check(readyGateController.actionButtonModelReady && readyGateController.phase == .recording
+                  && readyGateRecorder.armCalls == 1 && readyGateController.recordingExecutionContext == .backgroundCapable,
+                  "Action arms once only after the exact selected CPU runtime is ready")
+        await readyGateController.cancelRecording()
+
+        let flightEngine = ContextualLifecycleEngine()
+        let flightController = await fixture(flightEngine)
+        let flightRecorder = AudioRecorder.latest!
+        try await eventually { await flightEngine.engine.counts().0 == 1 }
+        try check(flightController.actionButtonModelLoading && !flightController.actionButtonModelReady,
+                  "Idle CPU prewarm is Loading rather than Ready until preparation completes")
+        flightController.setForeground(false)
+        await flightController.startActionButtonRecording()
+        let pendingFlightCounts = await flightEngine.engine.counts()
+        try check(pendingFlightCounts.0 == 1 && pendingFlightCounts.2 == 0 && flightRecorder.armCalls == 0
+                  && flightController.actionButtonModelLoading,
+                  "Backgrounding retains the CPU preparation flight but cold Action still refuses activation")
+        await flightEngine.engine.releasePreparation()
+        try await eventually { flightController.actionButtonModelReady }
+        let readyFlightCounts = await flightEngine.engine.counts()
+        try check(readyFlightCounts.2 == 0 && !flightRecorder.armed,
+                  "Ready selected CPU references remain resident in background without an audio keepalive")
+        await flightController.startActionButtonRecording()
+        flightRecorder.feed(8_000)
+        await flightController.stopActionButtonRecording()
+        flightController.setForeground(true)
+        await flightController.refreshInstalledModels()
+        await flightController.startRecording()
+        flightRecorder.feed(8_000)
+        await flightController.stopRecording()
+        let reusedFlightRequests = await flightEngine.preparationRequests()
+        try check(reusedFlightRequests.count == 1 && flightController.actionButtonModelReady,
+                  "Ready background Action and the following in-app recording reuse the one retained CPU runtime")
+
+        let revalidationOwner = UUID()
+        try check(flightController.reserveActionButtonRecording(requestID: revalidationOwner, model: .parakeetPhonon),
+                  "Readiness can be reserved before the bridge's Activity await")
+        let preActivityReady = await flightController.prepareReservedActionButtonRecording(requestID: revalidationOwner)
+        try check(preActivityReady, "Bridge preparation gate confirms Ready before creating its Activity")
+        let armsBeforePressure = flightRecorder.armCalls
+        NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        try await eventually { !flightController.actionButtonModelReady }
+        await flightController.startReservedActionButtonRecording(requestID: revalidationOwner)
+        let postPressureRequests = await flightEngine.preparationRequests()
+        try check(flightRecorder.armCalls == armsBeforePressure && flightController.phase == .idle
+                  && flightController.currentRecordingID == nil && postPressureRequests.count == 1,
+                  "Memory pressure after the Activity await invalidates Ready and cannot trigger activation or a late reload")
+        try check(flightController.errorMessage?.contains("wait until") == true,
+                  "Readiness invalidation gives the same open-app/wait-Ready instruction")
+
+        // A platform intent lease owns its completion; the retired finite UIKit
+        // callback cannot set an expiry error on that completion or a replacement.
+        let leaseEngine = LifecycleEngine()
+        await leaseEngine.releasePreparation()
+        let leaseController = await fixture(leaseEngine, model: .parakeetRealtimeEOU)
+        let leaseRecorder = AudioRecorder.latest!
+        try await eventually { leaseController.actionButtonModelReady }
+        let leaseOwner = UUID()
+        await leaseController.startActionButtonRecording(requestID: leaseOwner)
+        leaseRecorder.feed(8_000)
+        await leaseEngine.holdFinalization()
+        let fallbackLeaseStartCount = UIApplication.shared.backgroundTaskStarts
+        let fallbackCompletion = Task { await leaseController.stopActionButtonRecording() }
+        try await eventually { await leaseEngine.finalizationIsHeld() }
+        try check(UIApplication.shared.backgroundTaskStarts == fallbackLeaseStartCount + 1,
+                  "Ordinary Action completion still receives the finite UIKit fallback assertion")
+        let fallbackLeaseID = UIApplication.shared.backgroundTaskStarts
+        let retiredExpiry = UIApplication.shared.backgroundTaskExpirations[fallbackLeaseID]!
+        let endsBeforeAdoption = UIApplication.shared.backgroundTaskEnds
+        retiredExpiry()
+        try check(!leaseController.adoptPlatformManagedActionCompletion(requestID: UUID()),
+                  "A mismatched request cannot adopt another Action completion")
+        try check(leaseController.adoptPlatformManagedActionCompletion(requestID: leaseOwner),
+                  "The matching long-running intent adopts an already-transcribing Action completion")
+        for _ in 0..<10 { await Task.yield() }
+        try check(UIApplication.shared.backgroundTaskEnds == endsBeforeAdoption + 1 && leaseController.errorMessage == nil,
+                  "Adoption retires the finite assertion and fences its already-queued expiry callback")
+        await leaseEngine.releaseFinalization()
+        await fallbackCompletion.value
+
+        let newLeaseOwner = UUID()
+        await leaseController.startActionButtonRecording(requestID: newLeaseOwner)
+        leaseRecorder.feed(8_000)
+        await leaseEngine.holdFinalization()
+        let replacementCompletion = Task { await leaseController.stopActionButtonRecording() }
+        try await eventually { await leaseEngine.finalizationIsHeld() }
+        retiredExpiry()
+        for _ in 0..<10 { await Task.yield() }
+        try check(leaseController.phase == .transcribing && leaseController.errorMessage == nil,
+                  "An older finite expiry callback cannot report a false error on the next recording's completion")
+        let actualExpiry = UIApplication.shared.backgroundTaskExpirations[UIApplication.shared.backgroundTaskStarts]!
+        actualExpiry()
+        try await eventually { leaseController.errorMessage?.contains("iOS ended background processing") == true }
+        try check(leaseController.phase == .transcribing,
+                  "A genuine current finite assertion expiry remains visible while completion is pending")
+        await leaseEngine.releaseFinalization()
+        await replacementCompletion.value
+
+        let managedLeaseOwner = UUID()
+        await leaseController.startActionButtonRecording(requestID: managedLeaseOwner)
+        leaseRecorder.feed(8_000)
+        await leaseEngine.holdFinalization()
+        let startsBeforeManaged = UIApplication.shared.backgroundTaskStarts
+        let managedCompletion = Task {
+            await leaseController.stopActionButtonRecording(completionIsPlatformManaged: true)
+        }
+        try await eventually { await leaseEngine.finalizationIsHeld() }
+        try check(UIApplication.shared.backgroundTaskStarts == startsBeforeManaged && leaseController.errorMessage == nil,
+                  "Platform-managed Action completion does not start a redundant finite UIKit assertion")
+        await leaseEngine.releaseFinalization()
+        await managedCompletion.value
+
+        let preserveEngine = ContextualLifecycleEngine()
+        await preserveEngine.engine.releasePreparation()
+        let preserveDefaults = UserDefaults(suiteName: "LocalScribePreparePreservesTextCheck-\(UUID())")!
+        preserveDefaults.set(false, forKey: "keepModelLoaded")
+        let preserveController = await fixture(preserveEngine, preferences: preserveDefaults)
+        let preserveRecorder = AudioRecorder.latest!
+        preserveController.saveHistory = true
+        await preserveController.startRecording()
+        preserveRecorder.feed(8_000)
+        await preserveController.stopRecording()
+        let savedText = preserveController.transcript
+        let savedHistory = preserveController.history
+        let originalArmCalls = preserveRecorder.armCalls
+        try check(savedText == "Captured words." && savedHistory.count == 1,
+                  "Prior completed text and its saved history exist before cold Action preparation")
+        preserveController.transcript = "An unsaved edit to the previous result."
+        await preserveEngine.engine.holdNextPreparation()
+        let preserveOwner = UUID()
+        let preservingStart = Task { await preserveController.startActionButtonRecording(requestID: preserveOwner) }
+        try await eventually { preserveController.phase == .preparing && preserveController.actionButtonModelLoading }
+        await preserveController.cancelActionButtonRecording(requestID: UUID())
+        try check(preserveController.phase == .preparing && preserveController.recordingModel == .parakeetPhonon,
+                  "A stale Action cancellation cannot retire the owned cold preparation")
+        await preserveController.cancelActionButtonRecording(requestID: preserveOwner)
+        await preserveEngine.engine.releasePreparation()
+        await preservingStart.value
+        try check(preserveController.phase == .idle && preserveController.transcript == "An unsaved edit to the previous result."
+                  && preserveController.rawTranscript == savedText && preserveController.history == savedHistory
+                  && preserveRecorder.armCalls == originalArmCalls && !preserveRecorder.recording,
+                  "Cancelling cold Action preparation preserves prior saved and unsaved text without admitting audio")
+        await preserveEngine.failNextBackgroundPreparation()
+        await preserveController.startActionButtonRecording()
+        try check(preserveController.phase == .idle && preserveController.errorMessage != nil
+                  && preserveController.transcript == "An unsaved edit to the previous result."
+                  && preserveController.rawTranscript == savedText && preserveController.history == savedHistory
+                  && preserveRecorder.armCalls == originalArmCalls,
+                  "Failed CPU warming preserves the prior result and history without starting a microphone session")
 
         print("PASS: \(checks) actual AppController lifecycle checks")
     }
