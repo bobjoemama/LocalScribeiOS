@@ -1,6 +1,6 @@
 # LocalScribe iOS privacy
 
-Updated October 7, 2026. This describes LocalScribe 0.7.1/build 11, including its keyboard and Live Activity extension.
+Updated October 7, 2026. This describes LocalScribe's current implementation, including its keyboard and Live Activity extension.
 
 ## Recognition and downloads
 
@@ -26,7 +26,9 @@ Copy, Share, text export, recovery-copy export and keyboard insertion send text 
 
 ## Optional diagnostics and beta testing
 
-CPU/memory readings work locally. Developer profiling is manually enabled: the optional USB Mac companion connects to a temporary loopback listener using a connection code and supplies device performance counters. It does not send speech to a recognition service; the session stops when the phone app leaves the foreground. Instruments report import reads the file you select locally. Share diagnostic files only after checking their contents.
+CPU/memory readings work locally. The Models tab saves recent load measurements with model/configuration, timing, sampled app RAM, device class and OS/app version. These protected local summaries contain no audio, transcript or unique device identifier and are excluded from backups.
+
+Developer profiling is manually enabled: the optional USB Mac companion connects to a temporary loopback listener using a connection code and supplies device performance counters. It does not send speech to a recognition service; the session stops when the phone app leaves the foreground. Instruments report import reads the file you select locally. Share diagnostic files only after checking their contents.
 
 If you install through TestFlight, Apple separately collects beta crash, usage and feedback information under its [TestFlight privacy information](https://www.apple.com/legal/privacy/data/en/test-flight/). This is separate from LocalScribe’s local recognition. Sending feedback or opening a public issue is your choice.
 

@@ -8,13 +8,13 @@ A public TestFlight invitation is not available yet. For now, [build and install
 
 ## Use
 
-1. Open **Models** and download a model. Keep the app open during setup.
+1. Open the **Models** tab, download a model and choose **Use**. Its details show measured load time and app RAM after a load.
 2. In **Dictate**, tap **Record**, allow microphone access and speak.
 3. Tap **Stop**, edit your transcript, then **Copy** or **Share**.
 
 Realtime and Moonshine stream live text. Phonon-2 gives formatted text with periodic previews; Realtime produces English without punctuation or capitalization. **Library** contains Dictionary, Snippets and Notes; **History** contains saved transcripts.
 
-Optional: [set up the keyboard](docs/INSTALLATION.md#keyboard) for dictation in other apps, or [configure the Action Button](docs/INSTALLATION.md#action-button). For Action Button, leave **Keep model loaded** On and wait for **Ready** before switching apps. Physical shortcut delivery still needs verification.
+Optional: [set up the keyboard](docs/INSTALLATION.md#keyboard) or [configure the Action Button](docs/INSTALLATION.md#action-button). Leave **Keep model loaded** On and wait for **Ready** before Action Button dictation. On iOS 26+, **Load in Background** requests permission to finish CPU preparation while you use another app; iOS can decline or stop it. Physical shortcut delivery still needs verification.
 
 Recognition stays local. Model downloads contact Hugging Face; audio is not saved. Text leaves through your copy, share, export or insertion actions. [Privacy details](docs/PRIVACY.md).
 
