@@ -78,6 +78,22 @@ struct FixtureCaptureSnapshot {
     }
 }
 
+// The controller script inserts wait() at the scheduling boundary of the actual
+// production event Task; its recording-ID validation and stop path remain intact.
+@MainActor enum FixtureAudioEventGate {
+    static var held = false
+    static var continuations: [CheckedContinuation<Void, Never>] = []
+    static func wait() async {
+        if held { await withCheckedContinuation { continuations.append($0) } }
+    }
+    static func release() {
+        held = false
+        let pending = continuations
+        continuations = []
+        pending.forEach { $0.resume() }
+    }
+}
+
 actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine {
     var cpuBackgroundEnabled = true
     func supportsBackgroundInference(for model: SpeechModel) async -> Bool { cpuBackgroundEnabled && model == .parakeetRealtimeEOU }
@@ -254,6 +270,56 @@ extension SharedKeyboardStore {
         cancelRecorder.captureSnapshot.processingFailureCount = 1
         await cancelController.stopRecording()
         try check(cancelController.errorMessage?.contains("conversion failed") == true, "Stop observes conversion failures even before callback delivery")
+
+        let eventEngine = LifecycleEngine()
+        await eventEngine.releasePreparation()
+        let eventController = await fixture(eventEngine)
+        let eventRecorder = AudioRecorder.latest!
+        let events: [(String, () -> Void)] = [
+            ("interruption", { eventRecorder.onInterruption?() }),
+            ("overflow", { eventRecorder.onOverflow?(1_600) }),
+            ("conversion failure", { eventRecorder.onCaptureFailure?(.conversionFailed) })
+        ]
+        for (name, emit) in events {
+            await eventController.startRecording()
+            eventRecorder.feed(8_000)
+            let firstID = eventController.currentRecordingID
+            FixtureAudioEventGate.held = true
+            emit()
+            try await eventually { FixtureAudioEventGate.continuations.count == 1 }
+            await eventController.stopRecording()
+            try check(eventController.phase == .idle && eventController.completedRecordingID == firstID,
+                      "A finalizes while its queued \(name) stop is withheld")
+            await eventController.startRecording()
+            let replacementID = eventController.currentRecordingID
+            try check(replacementID != nil && replacementID != firstID, "B starts with a fresh recording owner after \(name) in A")
+            FixtureAudioEventGate.release()
+            for _ in 0..<10 { await Task.yield() }
+            try check(eventController.phase == .recording && eventController.currentRecordingID == replacementID && eventRecorder.recording,
+                      "A's late queued \(name) stop cannot end B")
+            try check(eventController.errorMessage == nil, "A's \(name) warning does not contaminate B")
+            eventRecorder.feed(8_000)
+            emit()
+            try await eventually { eventController.phase == .idle }
+            try check(eventController.completedRecordingID == replacementID && !eventRecorder.recording && eventController.errorMessage != nil,
+                      "Genuine B \(name) still stops capture and reports its warning")
+        }
+        await eventController.startRecording()
+        FixtureAudioEventGate.held = true
+        eventRecorder.onInterruption?()
+        try await eventually { FixtureAudioEventGate.continuations.count == 1 }
+        await eventController.cancelRecording()
+        await eventController.startRecording()
+        let postCancellationID = eventController.currentRecordingID
+        FixtureAudioEventGate.release()
+        for _ in 0..<10 { await Task.yield() }
+        try check(eventController.phase == .recording && eventController.currentRecordingID == postCancellationID && eventRecorder.recording,
+                  "Canceled A's queued interruption cannot stop its replacement")
+        await eventController.cancelRecording()
+        await eventController.enableKeyboardSession()
+        eventRecorder.onInterruption?()
+        try check(!eventController.keyboardSessionActive && !eventRecorder.armed,
+                  "A current idle-keyboard interruption still shuts down its microphone lease")
 
         let keyboardEngine = LifecycleEngine()
         await keyboardEngine.releasePreparation()

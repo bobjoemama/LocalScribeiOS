@@ -215,18 +215,18 @@ final class AppController: ObservableObject {
         recorder.onOverflow = { [weak self] droppedSamples in
             guard let self, self.phase == .recording else { return }
             self.captureWarning = "Recognition could not keep up with the microphone. Recording stopped; \(String(format: "%.2f", Double(droppedSamples) / 16_000)) seconds of new audio could not be buffered. Captured text is preserved."
-            Task { await self.stopRecording(endKeyboardSession: true) }
+            self.queueAudioEventStop()
         }
         recorder.onCaptureFailure = { [weak self] failure in
             guard let self, self.phase == .recording else { return }
             self.captureWarning = failure.localizedDescription
-            Task { await self.stopRecording(endKeyboardSession: true) }
+            self.queueAudioEventStop()
         }
         recorder.onInterruption = { [weak self] in
             guard let self else { return }
             if self.phase == .recording {
                 self.captureWarning = "The microphone was interrupted. Recording stopped and captured speech is being finished."
-                Task { await self.stopRecording(endKeyboardSession: true) }
+                self.queueAudioEventStop()
             } else { self.disableKeyboardSession() }
         }
         memoryObserver = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
@@ -243,6 +243,16 @@ final class AppController: ObservableObject {
             }
         }
         Task { await refreshInstalledModels() }
+    }
+
+    /// Recorder events are checked at delivery, then checked again after this
+    /// second queue hop so an ended utterance cannot stop its replacement.
+    private func queueAudioEventStop() {
+        guard let id = recordingID else { return }
+        Task { @MainActor [weak self] in
+            guard let self, self.recordingID == id, self.phase == .recording else { return }
+            await self.stopRecording(endKeyboardSession: true)
+        }
     }
 
     func refreshInstalledModels() async {

@@ -174,6 +174,73 @@ enum FixtureFailure: Error { case expected, failed(String) }
             try check(RecordingError.audioSessionFailed(code: code).localizedDescription.contains("!rec"), "User can report the actual recording denial code")
         }
         try check(!session.active && !engine.isRunning && engine.inputNode.taps == 0, "Denied mixable session is completely cleaned up")
+        session.background = false
+        session.forbidBackgroundRecording = false
+        var deliveredEvents = 0
+        recorder.onInterruption = {
+            deliveredEvents += 1
+            _ = recorder.endCapture(keepEngineRunning: false)
+        }
+        let events: [(Notification.Name, [String: UInt]?)] = [
+            (AVAudioSession.interruptionNotification, [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue]),
+            (AVAudioSession.routeChangeNotification, [AVAudioSessionRouteChangeReasonKey: AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue]),
+            (AVAudioSession.mediaServicesWereResetNotification, nil)
+        ]
+        for (name, info) in events {
+            // The notification queues its actor delivery while A owns capture.
+            // End A and begin B synchronously under the same keyboard activation.
+            try await recorder.arm(requireExistingPermission: true)
+            recorder.beginCapture()
+            let before = deliveredEvents
+            NotificationCenter.default.post(name: name, object: nil, userInfo: info)
+            _ = recorder.endCapture(keepEngineRunning: true)
+            recorder.beginCapture()
+            let replacementGeneration = recorder.captureSnapshot.generation
+            for _ in 0..<10 { await Task.yield() }
+            try check(deliveredEvents == before && recorder.captureSnapshot.generation == replacementGeneration && engine.isRunning,
+                      "Late \(name.rawValue) from capture A cannot stop B on the same activation")
+
+            NotificationCenter.default.post(name: name, object: nil, userInfo: info)
+            for _ in 0..<10 { await Task.yield() }
+            try check(deliveredEvents == before + 1 && !engine.isRunning && recorder.captureSnapshot.generation == nil,
+                      "Current \(name.rawValue) still stops B capture")
+
+            try await recorder.arm(requireExistingPermission: true)
+            NotificationCenter.default.post(name: name, object: nil, userInfo: info)
+            recorder.beginCapture()
+            for _ in 0..<10 { await Task.yield() }
+            try check(deliveredEvents == before + 1 && engine.isRunning && recorder.captureSnapshot.generation != nil,
+                      "Queued idle-keyboard \(name.rawValue) cannot stop a newly begun capture")
+            _ = recorder.endCapture(keepEngineRunning: true)
+
+            NotificationCenter.default.post(name: name, object: nil, userInfo: info)
+            for _ in 0..<10 { await Task.yield() }
+            try check(deliveredEvents == before + 2 && !engine.isRunning,
+                      "Current idle-keyboard \(name.rawValue) still retires its microphone lease")
+
+            try await recorder.arm(requireExistingPermission: true)
+            recorder.beginCapture()
+            // The platform can post from an audio worker. Observe on that thread
+            // before the MainActor hop, rather than first queueing observer delivery.
+            DispatchQueue.global().sync {
+                NotificationCenter.default.post(name: name, object: nil, userInfo: info)
+            }
+            recorder.shutdown()
+            try await recorder.arm(requireExistingPermission: true)
+            recorder.beginCapture()
+            for _ in 0..<10 { await Task.yield() }
+            try check(deliveredEvents == before + 2 && engine.isRunning && recorder.captureSnapshot.generation != nil,
+                      "Shutdown invalidates queued \(name.rawValue) before replacement activation")
+            recorder.shutdown()
+
+            NotificationCenter.default.post(name: name, object: nil, userInfo: info)
+            try await recorder.arm(requireExistingPermission: true)
+            recorder.beginCapture()
+            for _ in 0..<10 { await Task.yield() }
+            try check(deliveredEvents == before + 2 && engine.isRunning,
+                      "Unarmed \(name.rawValue) cannot become a future capture's event")
+            recorder.shutdown()
+        }
         print("PASS: \(checks) production AudioRecorder lifecycle checks")
     }
 }

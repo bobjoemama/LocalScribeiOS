@@ -35,6 +35,7 @@ final class AudioRecorder {
     private let capture = CaptureBuffer()
     private var tapInstalled = false
     private var activationRevision: UInt = 0
+    private let eventOwnership = AudioEventOwnership()
     private var observers: [NSObjectProtocol] = []
     var preferBuiltInMicrophone = false
     var hapticFeedbackEnabled = false
@@ -47,18 +48,33 @@ final class AudioRecorder {
     var onInterruption: (() -> Void)?
 
     init() {
-        observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
+        let eventOwnership = eventOwnership
+        // Observe on the posting thread so ownership is captured before any
+        // queue hop; the lock makes that read safe outside MainActor.
+        observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: nil) { [weak self, eventOwnership] notification in
             guard let value = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                   AVAudioSession.InterruptionType(rawValue: value) == .began else { return }
-            Task { @MainActor in self?.onInterruption?() }
+            guard let owner = eventOwnership.snapshot else { return }
+            Task { @MainActor [weak self] in
+                guard let self, eventOwnership.snapshot == owner else { return }
+                self.onInterruption?()
+            }
         })
-        observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] notification in
+        observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: nil) { [weak self, eventOwnership] notification in
             guard let value = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
                   AVAudioSession.RouteChangeReason(rawValue: value) == .oldDeviceUnavailable else { return }
-            Task { @MainActor in self?.onInterruption?() }
+            guard let owner = eventOwnership.snapshot else { return }
+            Task { @MainActor [weak self] in
+                guard let self, eventOwnership.snapshot == owner else { return }
+                self.onInterruption?()
+            }
         })
-        observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.onInterruption?() }
+        observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: nil) { [weak self, eventOwnership] _ in
+            guard let owner = eventOwnership.snapshot else { return }
+            Task { @MainActor [weak self] in
+                guard let self, eventOwnership.snapshot == owner else { return }
+                self.onInterruption?()
+            }
         })
     }
 
@@ -76,6 +92,8 @@ final class AudioRecorder {
         try Task.checkCancellation()
         guard allowed else { throw RecordingError.microphoneDenied }
         if engine.isRunning { return }
+        activationRevision &+= 1
+        eventOwnership.set(.init(activationRevision: activationRevision, captureGeneration: nil))
         do {
             let session = AVAudioSession.sharedInstance()
             // A nonmixable .record session cannot activate from the background.
@@ -129,24 +147,42 @@ final class AudioRecorder {
         }
     }
 
-    func beginCapture() { capture.begin() }
+    func beginCapture() {
+        capture.begin()
+        eventOwnership.set(.init(activationRevision: activationRevision, captureGeneration: capture.captureGeneration))
+    }
     var captureSnapshot: CaptureBufferSnapshot { capture.snapshot }
     func drainCapture(minimumSamples: Int = 0, maximumSamples: Int = CaptureBuffer.sampleRate * 8) -> [Float] {
         capture.drain(minimumSamples: minimumSamples, maximumSamples: maximumSamples)
     }
     func endCapture(keepEngineRunning: Bool) -> [Float] {
         let samples = capture.finish()
+        eventOwnership.set(.init(activationRevision: activationRevision, captureGeneration: nil))
         if !keepEngineRunning { shutdown() }
         return samples
     }
     func shutdown() {
         activationRevision &+= 1
+        eventOwnership.set(nil)
         capture.discard()
         engine.stop()
         if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         onLevel?(0)
     }
+}
+
+/// Notification callbacks snapshot this lease before their actor hop. A capture
+/// change also retires idle events from the same armed keyboard audio session.
+private final class AudioEventOwnership: @unchecked Sendable {
+    struct Owner: Equatable, Sendable {
+        let activationRevision: UInt
+        let captureGeneration: UInt?
+    }
+    private let lock = NSLock()
+    private var owner: Owner?
+    nonisolated var snapshot: Owner? { lock.withLock { owner } }
+    nonisolated func set(_ owner: Owner?) { lock.withLock { self.owner = owner } }
 }
 
 /// Mutable converter state belongs to this nonisolated audio helper, never to the UI actor.
