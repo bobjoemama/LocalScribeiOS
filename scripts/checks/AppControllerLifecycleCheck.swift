@@ -200,6 +200,35 @@ actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRep
     enum Failure: Error { case expected }
 }
 
+actor ContextualLifecycleEngine: StreamingLocalTranscriptionEngine, ContextualLocalTranscriptionEngine {
+    let engine = LifecycleEngine()
+    private var requestedPreparations: [(SpeechModel, ModelExecutionContext)] = []
+    private var failBackgroundPreparation = false
+    func failNextBackgroundPreparation() { failBackgroundPreparation = true }
+    func preparationRequests() -> [(SpeechModel, ModelExecutionContext)] { requestedPreparations }
+    func isInstalled(_ model: SpeechModel) async -> Bool { await engine.isInstalled(model) }
+    func download(_ model: SpeechModel, progress: @escaping @Sendable (Double) -> Void) async throws { try await engine.download(model, progress: progress) }
+    func prepare(_ model: SpeechModel) async throws { try await prepare(model, context: .foreground) }
+    func prepare(_ model: SpeechModel, context: ModelExecutionContext) async throws {
+        requestedPreparations.append((model, context.normalized(for: model)))
+        if failBackgroundPreparation, context == .backgroundCapable {
+            failBackgroundPreparation = false
+            throw LifecycleEngine.Failure.expected
+        }
+        try await engine.prepare(model)
+    }
+    func supportsBackgroundInference(for model: SpeechModel, context: ModelExecutionContext) async -> Bool {
+        let defaultCapability = await engine.supportsBackgroundInference(for: model)
+        return context == .backgroundCapable || defaultCapability
+    }
+    func beginStreaming(onUpdate: @escaping @Sendable (SpeechTranscriptUpdate) -> Void) async throws { try await engine.beginStreaming(onUpdate: onUpdate) }
+    func appendStreaming(samples: [Float]) async throws { try await engine.appendStreaming(samples: samples) }
+    func finishStreaming() async throws -> String { try await engine.finishStreaming() }
+    func cancelStreaming() async { await engine.cancelStreaming() }
+    func transcribe(samples: [Float]) async throws -> String { "Unused offline API" }
+    func unload() async { await engine.unload() }
+}
+
 #if os(macOS)
 extension SharedKeyboardStore {
     static func appGroupStore() throws -> SharedKeyboardStore { throw StoreError.unavailable }
@@ -220,7 +249,7 @@ extension SharedKeyboardStore {
         }
         throw CheckFailure.failed("Timed out waiting for controller transition at \(file):\(line)")
     }
-    @MainActor static func fixture(_ engine: LifecycleEngine, model: SpeechModel = .parakeetPhonon, preferences: UserDefaults? = nil) async -> AppController {
+    @MainActor static func fixture(_ engine: any LocalTranscriptionEngine, model: SpeechModel = .parakeetPhonon, preferences: UserDefaults? = nil) async -> AppController {
         let defaults = preferences ?? UserDefaults(suiteName: "LocalScribeControllerCheck-\(UUID())")!
         defaults.set(false, forKey: "saveHistory")
         defaults.set(model.rawValue, forKey: "selectedModel")
@@ -874,6 +903,101 @@ extension SharedKeyboardStore {
         try await eventually { unifiedController.phase == .idle }
         try check(unifiedController.transcript == "Captured words.",
                   "Returning to foreground finishes the captured selected-model utterance")
+
+        // A selected accelerated model may request CPU execution for Action
+        // capture without selecting or preparing a second speech model.
+        let contextualEngine = ContextualLifecycleEngine()
+        await contextualEngine.engine.releasePreparation()
+        let contextualController = await fixture(contextualEngine)
+        let contextualRecorder = AudioRecorder.latest!
+        try await eventually { contextualController.preparedModel == .parakeetPhonon }
+        try check(contextualController.preparedExecutionContext == .foreground,
+                  "Cold foreground prewarm retains the existing accelerated execution preference")
+        contextualController.setForeground(false)
+        await contextualController.startActionButtonRecording()
+        try await eventually { contextualController.preparedExecutionContext == .backgroundCapable }
+        try check(contextualController.phase == .recording && contextualController.recordingModel == .parakeetPhonon
+                  && contextualController.recordingExecutionContext == .backgroundCapable,
+                  "Background Action freezes selected Phonon with CPU-capable execution rather than another model")
+        contextualRecorder.feed(16_000)
+        try await eventually { await contextualEngine.engine.counts().3 == 16_000 }
+        await contextualController.stopActionButtonRecording()
+        contextualController.setForeground(true)
+        await contextualController.refreshInstalledModels()
+        await contextualController.startRecording()
+        try check(contextualController.recordingExecutionContext == .backgroundCapable,
+                  "Next Dictate recording freezes and reuses the ready selected CPU runtime")
+        contextualRecorder.feed(8_000)
+        await contextualController.stopRecording()
+        await contextualController.enableKeyboardSession()
+        try check(contextualController.keyboardSessionActive
+                  && contextualController.preparedExecutionContext == .backgroundCapable,
+                  "Keyboard microphone lease also reuses the retained selected CPU runtime")
+        contextualController.disableKeyboardSession()
+        let contextualPreparations = await contextualEngine.preparationRequests()
+        try check(contextualPreparations.count == 2
+                  && contextualPreparations[0].0 == .parakeetPhonon && contextualPreparations[0].1 == .foreground
+                  && contextualPreparations[1].0 == .parakeetPhonon && contextualPreparations[1].1 == .backgroundCapable,
+                  "Only one context switch occurs; foreground return, refresh and Dictate never bounce back to acceleration")
+        contextualController.selectedModel = .parakeetPhononG4
+        try await eventually { contextualController.preparedModel == .parakeetPhononG4 }
+        try check(contextualController.preparedExecutionContext == .foreground,
+                  "Explicit new model selection retains foreground acceleration preference")
+
+        let normalizedEngine = ContextualLifecycleEngine()
+        await normalizedEngine.engine.releasePreparation()
+        let normalizedController = await fixture(normalizedEngine, model: .parakeetRealtimeEOU)
+        let normalizedRecorder = AudioRecorder.latest!
+        try await eventually { normalizedController.preparedModel == .parakeetRealtimeEOU }
+        normalizedController.setForeground(false)
+        await normalizedController.startActionButtonRecording()
+        normalizedRecorder.feed(8_000)
+        await normalizedController.stopActionButtonRecording()
+        normalizedController.setForeground(true)
+        await normalizedController.startRecording()
+        normalizedRecorder.feed(8_000)
+        await normalizedController.stopRecording()
+        let normalizedPreparations = await normalizedEngine.preparationRequests()
+        try check(normalizedPreparations.count == 1 && normalizedPreparations[0].1 == .foreground,
+                  "CPU-only model contexts normalize and reuse one runtime across Dictate and Action")
+
+        let failedContextEngine = ContextualLifecycleEngine()
+        await failedContextEngine.engine.releasePreparation()
+        let failedContextDefaults = UserDefaults(suiteName: "LocalScribeContextFailureCheck-\(UUID())")!
+        failedContextDefaults.set(false, forKey: "keepModelLoaded")
+        let failedContextController = await fixture(failedContextEngine, preferences: failedContextDefaults)
+        await failedContextEngine.failNextBackgroundPreparation()
+        failedContextController.setForeground(false)
+        await failedContextController.startActionButtonRecording()
+        try await eventually { failedContextController.phase == .idle }
+        let failedContextPreparations = await failedContextEngine.preparationRequests()
+        try check(failedContextController.errorMessage != nil && failedContextController.preparedModel == nil
+                  && failedContextPreparations.count == 1 && failedContextPreparations[0].0 == .parakeetPhonon
+                  && failedContextPreparations[0].1 == .backgroundCapable,
+                  "CPU-context loading failure is reported without retrying another model or accelerated runtime")
+        try check(failedContextController.recordingModel == nil && failedContextController.recordingExecutionContext == nil,
+                  "Failed context preparation retires its active model and execution attribution")
+
+        let cancelledContextEngine = ContextualLifecycleEngine()
+        let cancelledContextDefaults = UserDefaults(suiteName: "LocalScribeContextCancellationCheck-\(UUID())")!
+        cancelledContextDefaults.set(false, forKey: "keepModelLoaded")
+        let cancelledContextController = await fixture(cancelledContextEngine, preferences: cancelledContextDefaults)
+        let cancelledContextRecorder = AudioRecorder.latest!
+        await cancelledContextController.startActionButtonRecording()
+        try await eventually { await cancelledContextEngine.engine.counts().0 == 1 }
+        let cancellingContext = Task { await cancelledContextController.cancelRecording() }
+        try await eventually { cancelledContextController.phase == .idle }
+        await cancelledContextEngine.engine.releasePreparation()
+        await cancellingContext.value
+        try check(cancelledContextController.preparedModel == nil && cancelledContextController.preparedExecutionContext == nil
+                  && cancelledContextController.recordingExecutionContext == nil && !cancelledContextRecorder.recording,
+                  "Cancelled CPU preparation cannot publish late ready context or retain microphone capture")
+        await cancelledContextController.startRecording()
+        try await eventually { cancelledContextController.preparedExecutionContext == .foreground }
+        try check(cancelledContextController.recordingModel == .parakeetPhonon
+                  && cancelledContextController.recordingExecutionContext == .foreground,
+                  "Replacement Dictate starts the selected model in its own foreground execution context")
+        await cancelledContextController.cancelRecording()
 
         print("PASS: \(checks) actual AppController lifecycle checks")
     }

@@ -80,6 +80,7 @@ final class AppController: ObservableObject {
     private let verificationMode: Bool
     private var recordingStartedAt: Date?
     @Published private(set) var recordingModel: SpeechModel?
+    @Published private(set) var recordingExecutionContext: ModelExecutionContext?
     private var captureBackgroundInferenceAllowed = false
     private var currentEntryID: UUID?
     private var recordingTimer: Timer?
@@ -87,9 +88,11 @@ final class AppController: ObservableObject {
     private var recordingCleanupTask: Task<Void, Never>?
     private var preparationTask: Task<Void, Error>?
     private var preparationModel: SpeechModel?
+    private var preparationExecutionContext: ModelExecutionContext?
     private var preparationRevision = 0
     private var prewarmRevision = 0
     @Published private(set) var preparedModel: SpeechModel?
+    @Published private(set) var preparedExecutionContext: ModelExecutionContext?
     private var streamingTask: Task<Void, Error>?
     private var recordingID: UUID?
     private var actionRecordingRequestID: UUID?
@@ -122,12 +125,12 @@ final class AppController: ObservableObject {
         recordingID = nil
         completedRecordingID = nil
         recordingStartedAt = nil
-        recordingModel = nil
+        recordingModel = nil; recordingExecutionContext = nil
         actionButtonRecording = false
         keyboardSessionExpiresAt = nil
         selectedModel = .parakeetRealtimeEOU
         installedModels = DesignPreviewConfiguration.installedModels
-        preparedModel = .parakeetRealtimeEOU
+        preparedModel = .parakeetRealtimeEOU; preparedExecutionContext = .foreground
         transcript = ""
         rawTranscript = ""
         partialText = ""
@@ -145,20 +148,20 @@ final class AppController: ObservableObject {
         switch state {
         case .idle: break
         case .recording:
-            recordingModel = selectedModel
+            recordingModel = selectedModel; recordingExecutionContext = .foreground
             phase = .recording
             partialText = DesignPreviewConfiguration.liveTranscript
             level = 0.62
             elapsed = 42
         case .preparing:
             selectedModel = .parakeetPhonon
-            recordingModel = selectedModel
-            preparedModel = nil
+            recordingModel = selectedModel; recordingExecutionContext = .foreground
+            preparedModel = nil; preparedExecutionContext = nil
             phase = .preparing
             modelStatus = "Loading Phonon-2…"
             elapsed = 4
         case .transcribing:
-            recordingModel = selectedModel
+            recordingModel = selectedModel; recordingExecutionContext = .foreground
             phase = .transcribing
             partialText = DesignPreviewConfiguration.liveTranscript
             elapsed = 42
@@ -331,10 +334,12 @@ final class AppController: ObservableObject {
     }
 
     func startRecording() async {
-        await startRecording(model: selectedModel)
+        let model = selectedModel
+        let context = retainedExecutionContext(for: model) ?? .foreground
+        await startRecording(model: model, context: context)
     }
 
-    private func startRecording(model: SpeechModel, actionRequestID: UUID? = nil) async {
+    private func startRecording(model: SpeechModel, context: ModelExecutionContext = .foreground, actionRequestID: UUID? = nil) async {
         if let actionRequestID, actionRecordingRequestID != actionRequestID { return }
         await recordingCleanupTask?.value
         if let actionRequestID, actionRecordingRequestID != actionRequestID { return }
@@ -345,12 +350,13 @@ final class AppController: ObservableObject {
         guard installedModels.contains(model) else { errorMessage = "Download your selected model in Models before dictating."; return }
         errorMessage = nil
         prewarmRevision += 1
-        cancelMismatchedPrewarm(model)
+        cancelMismatchedPrewarm(model, context: context)
         recordingModel = model
+        recordingExecutionContext = effectiveExecutionContext(for: model, requested: context)
         phase = .preparing
         microphoneRevision += 1
         let revision = microphoneRevision
-        let backgroundAllowed = await (engine as? any BackgroundInferenceReportingEngine)?.supportsBackgroundInference(for: model) ?? false
+        let backgroundAllowed = await supportsBackgroundInference(model, context: context)
         guard revision == microphoneRevision, phase == .preparing,
               actionRequestID == nil || actionRecordingRequestID == actionRequestID else { return }
         if Task.isCancelled, actionRequestID != nil {
@@ -360,7 +366,7 @@ final class AppController: ObservableObject {
         guard !actionButtonRecording || backgroundAllowed || foreground else {
             errorMessage = "\(model.name) requires LocalScribe to stay open. Select a model that supports background dictation to use the Action Button from another app."
             phase = .idle
-            recordingModel = nil
+            recordingModel = nil; recordingExecutionContext = nil
             return
         }
         captureBackgroundInferenceAllowed = backgroundAllowed
@@ -375,7 +381,7 @@ final class AppController: ObservableObject {
                 if recordingID == nil { recorder.shutdown() }
                 if revision == microphoneRevision, phase == .preparing {
                     phase = .idle
-                    recordingModel = nil
+                    recordingModel = nil; recordingExecutionContext = nil
                     errorMessage = "Open LocalScribe to start recording."
                     scheduleModelRelease()
                 }
@@ -401,7 +407,7 @@ final class AppController: ObservableObject {
             }
             let task = Task { [self] in
                 try await waitForInferenceForeground(backgroundAllowed: backgroundAllowed, recordingID: id)
-                try await prepareRuntime(model)
+                try await prepareRuntime(model, context: context)
                 guard recordingID == id else { throw CancellationError() }
                 guard let streaming = engine as? any StreamingLocalTranscriptionEngine else { throw AppError.streamingUnavailable }
                 try await waitForInferenceForeground(backgroundAllowed: backgroundAllowed, recordingID: id)
@@ -430,7 +436,7 @@ final class AppController: ObservableObject {
             }
         } catch {
             guard revision == microphoneRevision else { return }
-            recorder.shutdown(); phase = .idle; recordingModel = nil; errorMessage = error.localizedDescription
+            recorder.shutdown(); phase = .idle; recordingModel = nil; recordingExecutionContext = nil; errorMessage = error.localizedDescription
             scheduleModelRelease()
         }
     }
@@ -442,7 +448,8 @@ final class AppController: ObservableObject {
         actionRecordingRequestID = requestID
         prewarmRevision += 1
         recordingModel = model
-        cancelMismatchedPrewarm(model)
+        recordingExecutionContext = effectiveExecutionContext(for: model, requested: .backgroundCapable)
+        cancelMismatchedPrewarm(model, context: .backgroundCapable)
         return true
     }
 
@@ -456,15 +463,15 @@ final class AppController: ObservableObject {
     /// recreated when an earlier installation or Activity await finally returns.
     func startReservedActionButtonRecording(requestID: UUID) async {
         guard actionRecordingRequestID == requestID, phase == .idle,
-              !verificationMode, let model = recordingModel else { return }
+              !verificationMode, let model = recordingModel, let context = recordingExecutionContext else { return }
         defer {
             if actionRecordingRequestID == requestID, phase != .recording {
                 actionRecordingRequestID = nil
                 actionButtonRecording = false
-                recordingModel = nil
+                recordingModel = nil; recordingExecutionContext = nil
             }
         }
-        let backgroundAllowed = await (engine as? any BackgroundInferenceReportingEngine)?.supportsBackgroundInference(for: model) == true
+        let backgroundAllowed = await supportsBackgroundInference(model, context: context)
         guard actionRecordingRequestID == requestID, !Task.isCancelled,
               phase == .idle, !verificationMode else { return }
         guard backgroundAllowed || foreground else {
@@ -477,7 +484,7 @@ final class AppController: ObservableObject {
         }
         captureBackgroundInferenceAllowed = backgroundAllowed
         actionButtonRecording = true
-        await startRecording(model: model, actionRequestID: requestID)
+        await startRecording(model: model, context: context, actionRequestID: requestID)
     }
 
     /// Cancellation may arrive before capability discovery creates any recording.
@@ -488,7 +495,7 @@ final class AppController: ObservableObject {
         let ownsRecording = actionButtonRecording
         actionButtonRecording = false
         if ownsRecording { await cancelRecording() }
-        else if phase == .idle { recordingModel = nil }
+        else if phase == .idle { recordingModel = nil; recordingExecutionContext = nil }
     }
 
     func stopActionButtonRecording(progress: Progress? = nil) async {
@@ -624,7 +631,7 @@ final class AppController: ObservableObject {
     private func guardRecordingCompletion(_ id: UUID) {
         guard recordingID == id else { return }
         completionStage = nil
-        streamingTask = nil; recordingID = nil; recordingModel = nil; captureBackgroundInferenceAllowed = false; acceptsLiveUpdates = false
+        streamingTask = nil; recordingID = nil; recordingModel = nil; recordingExecutionContext = nil; captureBackgroundInferenceAllowed = false; acceptsLiveUpdates = false
         actionButtonRecording = false
         actionRecordingRequestID = nil
         completedRecordingID = id
@@ -653,7 +660,7 @@ final class AppController: ObservableObject {
         streamTask?.cancel()
         preparationTask?.cancel()
         transcript = ""; rawTranscript = ""; partialText = ""
-        recordingModel = nil; captureBackgroundInferenceAllowed = false
+        recordingModel = nil; recordingExecutionContext = nil; captureBackgroundInferenceAllowed = false
         actionButtonRecording = false; recordingStartedAt = nil; elapsed = 0; level = 0
         errorMessage = nil; captureWarning = nil
         phase = .idle
@@ -683,7 +690,7 @@ final class AppController: ObservableObject {
         actionRecordingRequestID = nil
         actionButtonRecording = false
         microphoneRevision += 1
-        recordingModel = nil
+        recordingModel = nil; recordingExecutionContext = nil
         preparationTask?.cancel()
         recorder.shutdown()
         phase = .idle
@@ -694,17 +701,19 @@ final class AppController: ObservableObject {
     func enableKeyboardSession() async {
         guard !verificationMode, phase == .idle, downloadingModel == nil, foreground, actionRecordingRequestID == nil else { return }
         let model = selectedModel
+        let context = retainedExecutionContext(for: model) ?? .foreground
         guard installedModels.contains(model) else { errorMessage = "Download a model before enabling the keyboard microphone session."; return }
         prewarmRevision += 1
         recordingModel = model
+        recordingExecutionContext = effectiveExecutionContext(for: model, requested: context)
         phase = .preparing; errorMessage = nil
         microphoneRevision += 1
         let revision = microphoneRevision
-        defer { if revision == microphoneRevision { phase = .idle; recordingModel = nil; if !keyboardSessionActive { scheduleModelRelease() } } }
+        defer { if revision == microphoneRevision { phase = .idle; recordingModel = nil; recordingExecutionContext = nil; if !keyboardSessionActive { scheduleModelRelease() } } }
         do {
             try await recorder.arm()
             guard foreground, revision == microphoneRevision else { throw AppError.sessionEnded }
-            try await prepareRuntime(model)
+            try await prepareRuntime(model, context: context)
             await refreshPerformanceReports()
             guard foreground, revision == microphoneRevision else { throw AppError.sessionEnded }
             renewKeyboardSession()
@@ -737,7 +746,7 @@ final class AppController: ObservableObject {
             queueRecordingStop(endKeyboardSession: true)
         } else {
             recorder.shutdown()
-            if phase == .preparing { preparationTask?.cancel(); phase = .idle; recordingModel = nil }
+            if phase == .preparing { preparationTask?.cancel(); phase = .idle; recordingModel = nil; recordingExecutionContext = nil }
             if phase == .idle { scheduleModelRelease() }
         }
     }
@@ -944,8 +953,27 @@ final class AppController: ObservableObject {
         if let measured = engine as? any PerformanceReportingEngine { performanceReports = await measured.performanceReports() }
     }
 
-    private func cancelMismatchedPrewarm(_ model: SpeechModel) {
-        guard let preparationModel, preparationModel != model else { return }
+    private func effectiveExecutionContext(for model: SpeechModel, requested context: ModelExecutionContext) -> ModelExecutionContext {
+        guard engine is any ContextualLocalTranscriptionEngine else { return .foreground }
+        return context.normalized(for: model)
+    }
+
+    private func retainedExecutionContext(for model: SpeechModel) -> ModelExecutionContext? {
+        if preparedModel == model { return preparedExecutionContext }
+        if preparationModel == model, let preparationTask, !preparationTask.isCancelled { return preparationExecutionContext }
+        return nil
+    }
+
+    private func supportsBackgroundInference(_ model: SpeechModel, context: ModelExecutionContext) async -> Bool {
+        if let contextual = engine as? any ContextualLocalTranscriptionEngine {
+            return await contextual.supportsBackgroundInference(for: model, context: context)
+        }
+        return await (engine as? any BackgroundInferenceReportingEngine)?.supportsBackgroundInference(for: model) ?? false
+    }
+
+    private func cancelMismatchedPrewarm(_ model: SpeechModel, context: ModelExecutionContext) {
+        guard preparationModel != nil,
+              preparationModel != model || preparationExecutionContext != effectiveExecutionContext(for: model, requested: context) else { return }
         releaseRuntime()
     }
 
@@ -955,6 +983,7 @@ final class AppController: ObservableObject {
         // Lifecycle discovery and foregrounding keep the runtime already in use.
         // An explicit selection releases it before requesting its replacement.
         let model = preparedModel ?? preparationModel ?? selectedModel
+        let context = preparedExecutionContext ?? preparationExecutionContext ?? .foreground
         guard installedModels.contains(model) else { return }
         let revision = preparationRevision
         let intentRevision = prewarmRevision
@@ -963,7 +992,7 @@ final class AppController: ObservableObject {
                   self.downloadingModel == nil, self.actionRecordingRequestID == nil,
                   self.recordingModel == nil, self.recordingCleanupTask == nil,
                   self.preparationRevision == revision, self.prewarmRevision == intentRevision else { return }
-            do { try await self.prepareRuntime(model) }
+            do { try await self.prepareRuntime(model, context: context) }
             catch is CancellationError { }
             catch {
                 guard self.prewarmRevision == intentRevision, self.phase == .idle, self.foreground,
@@ -973,9 +1002,11 @@ final class AppController: ObservableObject {
         }
     }
 
-    private func prepareRuntime(_ model: SpeechModel) async throws {
-        if preparedModel == model { return }
-        if preparationModel == model, let preparationTask, !preparationTask.isCancelled {
+    private func prepareRuntime(_ model: SpeechModel, context: ModelExecutionContext = .foreground) async throws {
+        let effectiveContext = effectiveExecutionContext(for: model, requested: context)
+        if preparedModel == model, preparedExecutionContext == effectiveContext { return }
+        if preparationModel == model, preparationExecutionContext == effectiveContext,
+           let preparationTask, !preparationTask.isCancelled {
             try await preparationTask.value
             return
         }
@@ -985,7 +1016,8 @@ final class AppController: ObservableObject {
         preparationRevision += 1
         let revision = preparationRevision
         preparationModel = model
-        preparedModel = nil
+        preparationExecutionContext = effectiveContext
+        preparedModel = nil; preparedExecutionContext = nil
         modelStatus = "Loading \(model.name)…"
         let engine = engine
         let task = Task { [self] in
@@ -1010,19 +1042,23 @@ final class AppController: ObservableObject {
                 }
             }
             defer { statusTask.cancel() }
-            try await engine.prepare(model)
+            if let contextual = engine as? any ContextualLocalTranscriptionEngine {
+                try await contextual.prepare(model, context: context)
+            } else {
+                try await engine.prepare(model)
+            }
             try Task.checkCancellation()
         }
         preparationTask = task
         do {
             try await task.value
             guard revision == preparationRevision else { throw CancellationError() }
-            preparedModel = model
-            preparationTask = nil; preparationModel = nil; modelStatus = nil
+            preparedModel = model; preparedExecutionContext = effectiveContext
+            preparationTask = nil; preparationModel = nil; preparationExecutionContext = nil; modelStatus = nil
             await refreshPerformanceReports()
         } catch {
             if revision == preparationRevision {
-                preparationTask = nil; preparationModel = nil; modelStatus = nil
+                preparationTask = nil; preparationModel = nil; preparationExecutionContext = nil; modelStatus = nil
             }
             throw error
         }
@@ -1040,7 +1076,7 @@ final class AppController: ObservableObject {
         preparationRevision += 1
         preparationTask?.cancel()
         let preparation = preparationTask
-        preparationTask = nil; preparationModel = nil; preparedModel = nil; modelStatus = nil
+        preparationTask = nil; preparationModel = nil; preparationExecutionContext = nil; preparedModel = nil; preparedExecutionContext = nil; modelStatus = nil
         let previous = runtimeReleaseTask
         let engine = engine
         runtimeReleaseTask = Task {
