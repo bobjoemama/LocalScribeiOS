@@ -9,7 +9,7 @@ struct DictationActivityAttributes: ActivityAttributes, Sendable {
       switch self {
       case .recording: "Recording"
       case .transcribing: "Transcribing"
-      case .ready: "Copied"
+      case .ready: "Ready"
       case .cancelled: "Cancelled"
       case .failed: "Dictation failed"
       }

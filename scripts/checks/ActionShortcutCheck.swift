@@ -1,7 +1,6 @@
 import AppIntents
 import Foundation
 import LocalScribeCore
-import UniformTypeIdentifiers
 
 protocol LiveActivityIntent: AppIntent {}
 @MainActor enum AppContext { static let shared = 0 }
@@ -128,23 +127,61 @@ struct DictationActivityAttributes {
       stopResult.value == "Captured words.",
       "Stop exposes the final transcript for a Shortcuts Copy action")
     try check(controller.phase == .idle && !recorder.recording, "Next toggle stops same session")
-    try check(UIPasteboard.general.writes.count == 1, "Stop copies owned transcript exactly once")
     try check(
-      DictationLiveActivity.lastPhase == .ready, "Copied session ends with a ready Activity")
+      UIPasteboard.general.writes.isEmpty,
+      "Background Stop delegates clipboard delivery to the system Shortcut")
+    try check(
+      DictationLiveActivity.lastPhase == .ready, "Completed transcript ends with a ready Activity")
     try check(
       !DictationLiveActivity.regressedToRecording,
       "Stop never resets Activity processing to recording when partial text clears")
     try check(
       DictationLiveActivity.lastText == "Captured words.",
       "Final Activity preview uses actual final transcript")
-    try check(
-      UIPasteboard.general.writes.first?[UTType.utf8PlainText.identifier] as? String
-        == "Captured words.", "Clipboard contains real controller transcript")
     do {
       _ = try await StopLiveDictationIntent(sessionID: UUID()).perform()
       throw Failure.check("Stale stop must fail")
     } catch DictationActionError.noSession { checks += 1 }
-    try check(UIPasteboard.general.writes.count == 1, "Stale Stop never copies again")
+    try check(UIPasteboard.general.writes.isEmpty, "Stale Stop never writes the app clipboard")
+    _ = try await StartDictationShortcut().perform()
+    let interruptedSession = owner!.sessionIdentifier!
+    recorder.feed(32_000)
+    recorder.onInterruption?()
+    while controller.phase != .idle { try await Task.sleep(for: .milliseconds(10)) }
+    try check(
+      owner!.sessionIdentifier == interruptedSession && !recorder.recording,
+      "Interruption retains its completed session for the next Action Button hold")
+    controller.transcript = "An edit after the recording finished."
+    let interruptedResult = try await ToggleDictationShortcut().perform()
+    try check(
+      interruptedResult.value == "Captured words." && controller.phase == .idle,
+      "Next toggle returns the interrupted session snapshot instead of starting a microphone")
+    try check(owner!.sessionIdentifier == nil, "Successful result is consumed once")
+    do {
+      _ = try await StopDictationShortcut().perform()
+      throw Failure.check("Consumed Stop must fail")
+    } catch DictationActionError.noSession { checks += 1 }
+    _ = try await StartDictationShortcut().perform()
+    let completedSession = owner!.sessionIdentifier!
+    recorder.feed(32_000)
+    await controller.stopRecording(endKeyboardSession: true)
+    controller.setForeground(true)
+    await controller.startRecording()
+    await DictationActionRuntime.cancel(sessionID: completedSession)
+    try check(
+      controller.phase == .recording && recorder.recording && owner!.sessionIdentifier == nil,
+      "Canceling a pending shortcut result cannot cancel a later foreground recording")
+    await controller.cancelRecording()
+    controller.setForeground(false)
+    _ = try await StartDictationShortcut().perform()
+    do {
+      _ = try await ToggleDictationShortcut().perform()
+      throw Failure.check("Empty dictation must fail instead of reaching the Copy action")
+    } catch DictationActionError.failed { checks += 1 }
+    try check(
+      owner!.sessionIdentifier == nil && UIPasteboard.general.writes.isEmpty,
+      "Empty recognition retires the session without returning stale text or overwriting clipboard")
+
     _ = try await StartDictationShortcut().perform()
     let cancelSession = DictationActionRuntime.sessionIdentifier?()!
     recorder.feed(32_000)

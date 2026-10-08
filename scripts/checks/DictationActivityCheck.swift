@@ -64,8 +64,8 @@ import Foundation
     activity.finish(transcript: finalText, elapsed: 7)
     try await waitForEnd(completed)
     try check(
-      completed.finalState?.phase == .ready && completed.finalState?.status == "Copied",
-      "Successful copy has its own ready outcome")
+      completed.finalState?.phase == .ready && completed.finalState?.status == "Ready",
+      "Completed transcription is ready without claiming clipboard delivery")
     try check(
       completed.finalState?.transcriptTail == DictationTranscriptTail.make(from: finalText),
       "Final preview follows the production bounded-tail policy")

@@ -2,7 +2,7 @@ import AppIntents
 
 struct StartDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
     static let title: LocalizedStringResource = "Start Dictation"
-    static let description = IntentDescription("Start a background recording using your Action Button CPU model. Stop to copy the transcript.")
+    static let description = IntentDescription("Start a background recording using your Action Button CPU model. Use the result of Stop and Copy Dictation with the Shortcuts Copy to Clipboard action.")
     static let openAppWhenRun = false
     @available(iOS 26.0, macOS 26.0, *)
     static var supportedModes: IntentModes { .background }
@@ -16,7 +16,7 @@ struct StartDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
 
 struct StopDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
     static let title: LocalizedStringResource = "Stop and Copy Dictation"
-    static let description = IntentDescription("Finish your shortcut recording locally in the background and copy the transcript.")
+    static let description = IntentDescription("Finish your shortcut recording locally in the background and return its transcript. Add Copy to Clipboard after this action to copy without opening LocalScribe.")
     static let openAppWhenRun = false
     @available(iOS 26.0, macOS 26.0, *)
     static var supportedModes: IntentModes { .background }
@@ -44,7 +44,7 @@ struct StopDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
 
 struct ToggleDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
     static let title: LocalizedStringResource = "Dictate and Copy"
-    static let description = IntentDescription("Hold the Action Button once to start, release and speak, then hold again to stop and copy.")
+    static let description = IntentDescription("Return empty output when starting, or the completed transcript when stopping. In your Action Button shortcut, copy the result only if it has a value.")
     static let openAppWhenRun = false
     @available(iOS 26.0, macOS 26.0, *)
     static var supportedModes: IntentModes { .background }

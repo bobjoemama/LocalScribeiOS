@@ -3,14 +3,14 @@ import Combine
 import Foundation
 import LocalScribeCore
 import OSLog
-import UniformTypeIdentifiers
 
 #if canImport(UIKit)
   import UIKit
 #endif
 
-/// Uses the same app-owned recorder and model as Dictate. Clipboard writes apply only
-/// to recordings explicitly started through these shortcuts, never keyboard/app sessions.
+/// Uses the app-owned recorder and returns only the transcript of its shortcut session.
+/// The calling Shortcut copies this output using the system Copy to Clipboard action;
+/// background pasteboard writes have no success acknowledgement from UIKit.
 @MainActor
 final class DictationActionBridge {
   private let logger = Logger(
@@ -20,7 +20,6 @@ final class DictationActionBridge {
   private var subscription: AnyCancellable?
   private var transcriptSubscription: AnyCancellable?
   private var recordingActivityStarted = false
-  private var completedResult: String?
   private var pendingResult: String?
   private var pendingElapsed: TimeInterval = 0
   private var sessionModelName = ""
@@ -60,12 +59,12 @@ final class DictationActionBridge {
     guard let controller else { throw DictationActionError.notReady }
     if case .cancel(let sessionID) = action {
       guard activeSessionID == sessionID else { return nil }
+      let needsRecordingCancellation = pendingResult == nil
       didBeginRecording = false
       activeSessionID = nil
       pendingResult = nil
-      completedResult = nil
       liveActivity.cancel(elapsed: controller.elapsed)
-      await controller.cancelRecording()
+      if needsRecordingCancellation { await controller.cancelRecording() }
       return nil
     }
     try Task.checkCancellation()
@@ -107,7 +106,6 @@ final class DictationActionBridge {
     activeSessionID = sessionID
     sessionModelName = controller.selectedBackgroundModel.name
     pendingResult = nil
-    completedResult = nil
     didBeginRecording = false
     recordingActivityStarted = liveActivity.start(
       sessionID: sessionID, modelName: sessionModelName, startedAt: Date(), required: true)
@@ -151,25 +149,29 @@ final class DictationActionBridge {
     guard let id = activeSessionID, expectedID == nil || expectedID == id else {
       throw DictationActionError.noSession
     }
-    if controller.phase == .recording {
-      await controller.stopActionButtonRecording(progress: progress)
-    } else if controller.phase == .transcribing {
-      // A microphone interruption/backpressure stop may already be finishing.
-      while activeSessionID == id && controller.phase == .transcribing {
-        try await Task.sleep(for: .milliseconds(100))
+    if pendingResult == nil {
+      if controller.phase == .recording {
+        await controller.stopActionButtonRecording(progress: progress)
+      } else if controller.phase == .transcribing {
+        // A microphone interruption/backpressure stop may already be finishing.
+        while activeSessionID == id && controller.phase == .transcribing {
+          try await Task.sleep(for: .milliseconds(100))
+        }
+      } else {
+        throw DictationActionError.noSession
       }
-    } else if pendingResult != nil {
-      deliverPendingResult()
-    } else {
-      throw DictationActionError.noSession
     }
     try Task.checkCancellation()
     logger.notice("Shortcut stop completed")
-    guard let result = completedResult,
+    guard activeSessionID == id, let result = pendingResult,
       !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else {
       throw DictationActionError.failed(controller.errorMessage ?? "No speech was recognized.")
     }
+    pendingResult = nil
+    activeSessionID = nil
+    liveActivity.finish(transcript: result, elapsed: pendingElapsed)
+    logger.notice("Shortcut result returned for system clipboard action")
     return result
   }
 
@@ -188,7 +190,6 @@ final class DictationActionBridge {
     case .idle:
       guard didBeginRecording else { return }
       let text = controller.transcript
-      completedResult = text
       didBeginRecording = false
       if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         if let message = controller.errorMessage {
@@ -201,21 +202,10 @@ final class DictationActionBridge {
         activeSessionID = nil
       } else {
         // Preserve exactly this completed session, including interruption results.
-        liveActivity.update(phase: .transcribing, elapsed: controller.elapsed, transcript: text)
         pendingResult = text
         pendingElapsed = controller.elapsed
-        deliverPendingResult()
+        liveActivity.update(phase: .ready, elapsed: controller.elapsed, transcript: text)
       }
     }
-  }
-
-  private func deliverPendingResult() {
-    guard let text = pendingResult else { return }
-    UIPasteboard.general.setItems(
-      [[UTType.utf8PlainText.identifier: text]], options: [.localOnly: true])
-    pendingResult = nil
-    activeSessionID = nil
-    liveActivity.finish(transcript: text, elapsed: pendingElapsed)
-    logger.notice("Shortcut result submitted to clipboard")
   }
 }
