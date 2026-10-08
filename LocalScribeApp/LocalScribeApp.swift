@@ -51,6 +51,7 @@ private struct LocalScribeApplicationContent: View {
 final class AppContext: ObservableObject {
     static let shared = AppContext()
     let controller: AppController
+    let backgroundModelPreparation: BackgroundModelPreparation?
     let notesController = NotesController()
     let keyboardCoordinator: KeyboardSessionCoordinator
     let actionBridge: DictationActionBridge
@@ -68,7 +69,9 @@ final class AppContext: ObservableObject {
         #else
         let developerRun = false
         #endif
-        controller = AppController(engine: engine, verificationMode: developerRun)
+        backgroundModelPreparation = developerRun ? nil : BackgroundModelPreparation()
+        controller = AppController(engine: engine, verificationMode: developerRun,
+                                   backgroundModelPreparation: backgroundModelPreparation)
         if let startupError { controller.errorMessage = startupError }
         keyboardCoordinator = KeyboardSessionCoordinator(controller: controller)
         actionBridge = DictationActionBridge(controller: controller)

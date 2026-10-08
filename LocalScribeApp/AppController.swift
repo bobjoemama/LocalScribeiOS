@@ -8,6 +8,18 @@ import LocalScribeCore
 @MainActor
 final class AppController: ObservableObject {
     @Published private(set) var performanceReports: [EnginePerformanceReport] = []
+    @Published private(set) var modelPreparationReports: [ModelPreparationReport] = []
+    @Published private(set) var modelPreparationReportError: String?
+    @Published private(set) var modelPreparationProgress: EnginePreparationProgress?
+    @Published private(set) var backgroundModelPreparationStatus: BackgroundModelPreparation.Status?
+    @Published private var backgroundPreparationOwner: BackgroundPreparationOwner?
+    var backgroundModelPreparationActive: Bool { backgroundPreparationOwner != nil }
+    private struct BackgroundPreparationOwner {
+        let id: UUID
+        let model: SpeechModel
+        let context: ModelExecutionContext
+        var revision: Int?
+    }
     @Published private(set) var phase: DictationPhase = .idle
     @Published var transcript = ""
     @Published private(set) var rawTranscript = ""
@@ -32,6 +44,8 @@ final class AppController: ObservableObject {
         didSet {
             defaults.set(selectedModel.rawValue, forKey: "selectedModel")
             guard oldValue != selectedModel else { return }
+            cancelSelectedModelPreparation()
+            backgroundModelPreparationStatus = nil
             prewarmRevision += 1
             guard phase == .idle, !keyboardSessionActive, actionRecordingRequestID == nil, recordingModel == nil else { return }
             releaseRuntime()
@@ -43,7 +57,7 @@ final class AppController: ObservableObject {
             defaults.set(keepModelLoaded, forKey: "keepModelLoaded")
             guard oldValue != keepModelLoaded else { return }
             if keepModelLoaded { prewarmSelectedModel() }
-            else { scheduleModelRelease() }
+            else { cancelSelectedModelPreparation(); scheduleModelRelease() }
         }
     }
     @Published var saveHistory: Bool {
@@ -88,6 +102,10 @@ final class AppController: ObservableObject {
     private var personalizer = TranscriptPersonalizer(dictionary: [], snippets: [])
     private let defaults: UserDefaults
     private let verificationMode: Bool
+    private let modelPerformanceStore: ModelPerformanceStore
+    private let measurementProvenance: ModelMeasurementProvenance
+    private var modelReportsRevision = 0
+    private let backgroundModelPreparation: BackgroundModelPreparation?
     private var recordingStartedAt: Date?
     @Published private(set) var recordingModel: SpeechModel?
     @Published private(set) var recordingExecutionContext: ModelExecutionContext?
@@ -196,10 +214,17 @@ final class AppController: ObservableObject {
     }
     #endif
 
-    init(engine: any LocalTranscriptionEngine, defaults: UserDefaults = .standard, historyURL: URL? = nil, verificationMode: Bool = false) {
+    init(engine: any LocalTranscriptionEngine, defaults: UserDefaults = .standard, historyURL: URL? = nil,
+         verificationMode: Bool = false, modelPerformanceURL: URL? = nil,
+         backgroundModelPreparation: BackgroundModelPreparation? = nil) {
         self.engine = engine
         self.defaults = defaults
         self.verificationMode = verificationMode
+        self.backgroundModelPreparation = backgroundModelPreparation
+        measurementProvenance = .current()
+        let reportDirectory = (historyURL?.deletingLastPathComponent() ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("LocalScribe", isDirectory: true))
+            .appendingPathComponent("ModelPerformance", isDirectory: true)
+        modelPerformanceStore = ModelPerformanceStore(file: modelPerformanceURL ?? reportDirectory.appendingPathComponent("load-reports.json"))
         #if canImport(UIKit)
         foreground = UIApplication.shared.applicationState == .active
         #endif
@@ -261,6 +286,7 @@ final class AppController: ObservableObject {
                 }
             }
         }
+        Task { await restoreModelPreparationReports() }
         Task { await refreshInstalledModels() }
     }
 
@@ -1046,8 +1072,114 @@ final class AppController: ObservableObject {
         backgroundCompletionTask = .invalid
     }
 
+    private func restoreModelPreparationReports() async {
+        guard !verificationMode else { return }
+        let revision = modelReportsRevision
+        do {
+            let restored = try await modelPerformanceStore.load()
+            guard revision == modelReportsRevision else { return }
+            modelPreparationReports = restored
+        } catch {
+            guard revision == modelReportsRevision else { return }
+            modelPreparationReportError = "Saved model measurements could not be opened and were preserved: \(error.localizedDescription)"
+        }
+    }
+
     private func refreshPerformanceReports() async {
-        if let measured = engine as? any PerformanceReportingEngine { performanceReports = await measured.performanceReports() }
+        guard let measured = engine as? any PerformanceReportingEngine else { return }
+        modelReportsRevision += 1
+        let revision = modelReportsRevision
+        let current = await measured.performanceReports()
+        if revision == modelReportsRevision { performanceReports = current }
+        guard !verificationMode else { return }
+        do {
+            let merged = try await modelPerformanceStore.merge(current, provenance: measurementProvenance)
+            guard revision == modelReportsRevision else { return }
+            modelPreparationReports = merged
+            modelPreparationReportError = nil
+        } catch {
+            guard revision == modelReportsRevision else { return }
+            modelPreparationReportError = "Model measurements could not be saved; existing measurements were preserved: \(error.localizedDescription)"
+        }
+    }
+
+    /// A native continuation is requested only by this explicit user action.
+    /// Automatic prewarming never submits a background processing request.
+    func prepareSelectedModelInBackground() {
+        guard !verificationMode, foreground, phase == .idle, !keyboardSessionActive,
+              actionRecordingRequestID == nil, recordingModel == nil, downloadingModel == nil else { return }
+        guard keepModelLoaded else {
+            backgroundModelPreparationStatus = .foregroundOnly("Turn on Keep model loaded before preparing a model for background dictation.")
+            return
+        }
+        guard installedModels.contains(selectedModel) else {
+            backgroundModelPreparationStatus = .failed("Download your selected model before preparing it.")
+            return
+        }
+        guard let backgroundModelPreparation else {
+            backgroundModelPreparationStatus = .foregroundOnly("Keep LocalScribe open until Ready. Background preparation is unavailable.")
+            return
+        }
+        if actionButtonModelReady { backgroundModelPreparationStatus = .ready; return }
+        let model = selectedModel
+        let context = effectiveExecutionContext(for: model, requested: .backgroundCapable)
+        if let owner = backgroundPreparationOwner, owner.model == model, owner.context == context { return }
+        cancelSelectedModelPreparation()
+        prewarmRevision += 1
+        let joining = preparationModel == model && preparationExecutionContext == context && preparationTask.map { !$0.isCancelled } == true
+        let owner = BackgroundPreparationOwner(id: UUID(), model: model, context: context,
+                                               revision: joining ? preparationRevision : nil)
+        backgroundPreparationOwner = owner
+        backgroundModelPreparation.begin(ownerID: owner.id, modelName: model.name,
+            operation: { [weak self] in
+                guard let self, self.backgroundPreparationOwner?.id == owner.id else { throw CancellationError() }
+                guard await self.supportsBackgroundInference(model, context: context) else { throw AppError.backgroundPreparationUnavailable }
+                try Task.checkCancellation()
+                guard self.backgroundPreparationOwner?.id == owner.id else { throw CancellationError() }
+                try await self.prepareRuntime(model, context: context, backgroundOwnerID: owner.id)
+                try Task.checkCancellation()
+                guard self.backgroundPreparationOwner?.id == owner.id else { throw CancellationError() }
+            }, cancelOwned: { [weak self] in
+                guard let self, let currentOwner = self.backgroundPreparationOwner, currentOwner.id == owner.id,
+                      self.preparationRevision == currentOwner.revision, self.preparationModel == model,
+                      self.preparationExecutionContext == context, self.preparationTask != nil,
+                      self.phase == .idle, self.recordingID == nil, self.recordingModel == nil,
+                      self.actionRecordingRequestID == nil else { return }
+                self.releaseRuntime()
+            }, onStatus: { [weak self] status in
+                guard let self, self.backgroundPreparationOwner?.id == owner.id else { return }
+                if self.backgroundModelPreparationStatus != status { self.backgroundModelPreparationStatus = status }
+                switch status {
+                case .ready, .failed, .cancelled: self.backgroundPreparationOwner = nil
+                case .submitted, .running, .foregroundOnly: break
+                }
+            })
+        if joining, let progress = modelPreparationProgress {
+            backgroundModelPreparation.updateProgress(ownerID: owner.id, phase: Self.componentStatus(progress.phase),
+                completedComponents: progress.completedComponents, totalComponents: progress.totalComponents)
+        }
+    }
+
+    func cancelSelectedModelPreparation() {
+        guard let owner = backgroundPreparationOwner else { return }
+        backgroundModelPreparation?.cancel(ownerID: owner.id)
+    }
+
+    private static func componentStatus(_ phase: EnginePreparationPhaseTiming.Phase) -> String {
+        switch phase {
+        case .previousModelRelease: "Releasing previous model"
+        case .installationCheck: "Checking installed files"
+        case .integrityVerification: "Verifying model files"
+        case .localCoreMLLoad: "Loading Core ML"
+        case .nativeCPULoad: "Loading CPU runtime"
+        case .vocabularyLoad: "Reading vocabulary"
+        case .preprocessorLoad: "Loading audio preprocessor"
+        case .encoderLoad: "Loading encoder"
+        case .decoderLoad: "Loading decoder"
+        case .jointLoad: "Loading joint model"
+        case .ctcHeadLoad: "Loading CTC head"
+        case .recognizerInitialization: "Starting recognizer"
+        }
     }
 
     private func runtimeReady(_ model: SpeechModel, context: ModelExecutionContext) -> Bool {
@@ -1108,18 +1240,30 @@ final class AppController: ObservableObject {
         }
     }
 
-    private func prepareRuntime(_ model: SpeechModel, context: ModelExecutionContext = .foreground) async throws {
+    private func bindBackgroundPreparation(_ id: UUID?, model: SpeechModel, context: ModelExecutionContext, revision: Int) {
+        guard let id, var owner = backgroundPreparationOwner, owner.id == id,
+              owner.model == model, owner.context == context else { return }
+        guard owner.revision != revision else { return }
+        owner.revision = revision
+        backgroundPreparationOwner = owner
+    }
+
+    private func prepareRuntime(_ model: SpeechModel, context: ModelExecutionContext = .foreground,
+                                backgroundOwnerID: UUID? = nil) async throws {
         let effectiveContext = effectiveExecutionContext(for: model, requested: context)
         if preparedModel == model, preparedExecutionContext == effectiveContext { return }
         if preparationModel == model, preparationExecutionContext == effectiveContext,
            let preparationTask, !preparationTask.isCancelled {
             let revision = preparationRevision
+            bindBackgroundPreparation(backgroundOwnerID, model: model, context: effectiveContext, revision: revision)
             try await preparationTask.value
             try Task.checkCancellation()
             guard preparationRevision == revision else { throw CancellationError() }
             preparedModel = model; preparedExecutionContext = effectiveContext
             preparedAllowsBackground = preparationAllowsBackground
             self.preparationTask = nil; preparationModel = nil; preparationExecutionContext = nil; modelStatus = nil
+            modelPreparationProgress = nil
+            await refreshPerformanceReports()
             return
         }
         let previous = preparationTask
@@ -1129,11 +1273,13 @@ final class AppController: ObservableObject {
         let revision = preparationRevision
         preparationModel = model
         preparationExecutionContext = effectiveContext
+        bindBackgroundPreparation(backgroundOwnerID, model: model, context: effectiveContext, revision: revision)
         // A contextual background request is CPU-only. Other configurations
         // remain conservative until the engine reports its actual capability.
         preparationAllowsBackground = engine is any ContextualLocalTranscriptionEngine && context == .backgroundCapable
         preparedModel = nil; preparedExecutionContext = nil; preparedAllowsBackground = false
         modelStatus = "Loading \(model.name)…"
+        modelPreparationProgress = nil
         let engine = engine
         let task = Task { [self] in
             _ = await previous?.result
@@ -1147,15 +1293,31 @@ final class AppController: ObservableObject {
             let statusTask = Task { [weak self] in
                 guard let reporting = engine as? any ModelPreparationReportingEngine else { return }
                 while !Task.isCancelled {
-                    if let stage = await reporting.preparationStage(),
-                       let self, self.preparationRevision == revision {
-                        switch stage {
-                        case .checkingInstallation: self.modelStatus = "Checking \(model.name)…"
-                        case .verifyingFiles: self.modelStatus = "Verifying \(model.name)…"
-                        case .loadingCoreML: self.modelStatus = "Loading \(model.name)…"
-                        case .initializingRecognizer: self.modelStatus = "Starting \(model.name)…"
-                        case .ready: break
+                    let stage = await reporting.preparationStage()
+                    let progress = await (reporting as? any ComponentPreparationReportingEngine)?.preparationProgress()
+                    if let self, self.preparationRevision == revision {
+                        let status: String?
+                        if let progress, progress.totalComponents > 0, progress.completedComponents >= 0,
+                           progress.completedComponents <= progress.totalComponents {
+                            status = "\(Self.componentStatus(progress.phase)) · \(model.name)…"
+                            if self.modelPreparationProgress != progress {
+                                self.modelPreparationProgress = progress
+                                if let owner = self.backgroundPreparationOwner, owner.revision == revision,
+                                   owner.model == model, owner.context == effectiveContext {
+                                    self.backgroundModelPreparation?.updateProgress(ownerID: owner.id, phase: Self.componentStatus(progress.phase),
+                                        completedComponents: progress.completedComponents, totalComponents: progress.totalComponents)
+                                }
+                            }
+                        } else {
+                            switch stage {
+                            case .checkingInstallation: status = "Checking \(model.name)…"
+                            case .verifyingFiles: status = "Verifying \(model.name)…"
+                            case .loadingCoreML: status = "Loading \(model.name)…"
+                            case .initializingRecognizer: status = "Starting \(model.name)…"
+                            case .ready, nil: status = nil
+                            }
                         }
+                        if let status, self.modelStatus != status { self.modelStatus = status }
                     }
                     do { try await Task.sleep(for: .milliseconds(250)) }
                     catch { return }
@@ -1176,11 +1338,14 @@ final class AppController: ObservableObject {
             preparedModel = model; preparedExecutionContext = effectiveContext
             preparedAllowsBackground = preparationAllowsBackground
             preparationTask = nil; preparationModel = nil; preparationExecutionContext = nil; modelStatus = nil
+            modelPreparationProgress = nil
             await refreshPerformanceReports()
         } catch {
             if revision == preparationRevision {
                 preparationTask = nil; preparationModel = nil; preparationExecutionContext = nil; modelStatus = nil
+                modelPreparationProgress = nil
             }
+            await refreshPerformanceReports()
             throw error
         }
     }
@@ -1199,6 +1364,7 @@ final class AppController: ObservableObject {
         let preparation = preparationTask
         preparationTask = nil; preparationModel = nil; preparationExecutionContext = nil; preparationAllowsBackground = false
         preparedModel = nil; preparedExecutionContext = nil; preparedAllowsBackground = false; modelStatus = nil
+        modelPreparationProgress = nil
         let previous = runtimeReleaseTask
         let engine = engine
         runtimeReleaseTask = Task {
@@ -1211,9 +1377,10 @@ final class AppController: ObservableObject {
 }
 
 private enum AppError: LocalizedError {
-    case modelMissing, emptyTranscript, sessionEnded, historyUnavailable, streamingUnavailable, dictionaryUnavailable, snippetsUnavailable, libraryUnavailable, entryChanged
+    case modelMissing, emptyTranscript, sessionEnded, backgroundPreparationUnavailable, historyUnavailable, streamingUnavailable, dictionaryUnavailable, snippetsUnavailable, libraryUnavailable, entryChanged
     var errorDescription: String? {
         switch self {
+        case .backgroundPreparationUnavailable: "The selected runtime cannot prepare for background CPU dictation. Keep LocalScribe open."
         case .modelMissing: "The downloaded model could not be verified. Please try downloading it again."
         case .emptyTranscript: "No speech was recognized. Try a longer recording in a quieter place."
         case .sessionEnded: "The microphone session ended. Open LocalScribe to start again."

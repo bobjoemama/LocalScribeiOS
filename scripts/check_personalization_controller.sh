@@ -9,5 +9,5 @@ source = open('scripts/checks/AppControllerLifecycleCheck.swift').read().split('
 open(sys.argv[1], 'w').write(source)
 PY
 swiftc -swift-version 6 -emit-library -emit-module -module-name LocalScribeCore Sources/LocalScribeCore/*.swift -o "$check_output/libLocalScribeCore.dylib" -emit-module-path "$check_output/LocalScribeCore.swiftmodule"
-swiftc -swift-version 6 -parse-as-library -I "$check_output" -L "$check_output" -lLocalScribeCore -Xlinker -rpath -Xlinker "$check_output" SharedKeyboard/KeyboardProtocol.swift LocalScribeApp/KeyboardSessionCoordinator.swift LocalScribeApp/AppController.swift "$check_output/Fixtures.swift" scripts/checks/PersonalizationControllerCheck.swift -o "$check_output/personalization-check"
+swiftc -swift-version 6 -parse-as-library -I "$check_output" -L "$check_output" -lLocalScribeCore -Xlinker -rpath -Xlinker "$check_output" LocalScribeApp/LocalModelEngine.swift LocalScribeApp/PerformanceMetrics.swift LocalScribeApp/ModelIntegrity.swift LocalScribeApp/ModelPerformanceStore.swift LocalScribeApp/BackgroundModelPreparation.swift SharedKeyboard/KeyboardProtocol.swift LocalScribeApp/KeyboardSessionCoordinator.swift LocalScribeApp/AppController.swift "$check_output/Fixtures.swift" scripts/checks/PersonalizationControllerCheck.swift -o "$check_output/personalization-check"
 "$check_output/personalization-check"

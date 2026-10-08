@@ -29,5 +29,5 @@ assert source.count(prewarm_needle) == 1, "Production prewarm scheduling boundar
 source = source.replace(prewarm_needle, prewarm_needle.replace("            guard let self", "            await FixturePrewarmGate.wait()\n            guard let self"))
 Path(sys.argv[1]).write_text(source)
 PYFIXTURE
-swiftc -swift-version 6 -parse-as-library -I "$check_output" -L "$check_output" -lLocalScribeCore -Xlinker -rpath -Xlinker "$check_output" SharedKeyboard/KeyboardProtocol.swift LocalScribeApp/KeyboardSessionCoordinator.swift "$check_output/AppController.swift" scripts/checks/AppControllerLifecycleCheck.swift -o "$check_output/controller-check"
+swiftc -swift-version 6 -parse-as-library -I "$check_output" -L "$check_output" -lLocalScribeCore -Xlinker -rpath -Xlinker "$check_output" LocalScribeApp/LocalModelEngine.swift LocalScribeApp/PerformanceMetrics.swift LocalScribeApp/ModelIntegrity.swift LocalScribeApp/ModelPerformanceStore.swift LocalScribeApp/BackgroundModelPreparation.swift SharedKeyboard/KeyboardProtocol.swift LocalScribeApp/KeyboardSessionCoordinator.swift "$check_output/AppController.swift" scripts/checks/AppControllerLifecycleCheck.swift -o "$check_output/controller-check"
 "$check_output/controller-check"

@@ -21,10 +21,6 @@ struct UIBackgroundTaskIdentifier: Equatable {
     }
     func endBackgroundTask(_ id: UIBackgroundTaskIdentifier) { backgroundTaskEnds += 1 }
 }
-struct EnginePerformanceReport: Sendable {}
-protocol PerformanceReportingEngine: LocalTranscriptionEngine {
-    func performanceReports() async -> [EnginePerformanceReport]
-}
 enum RecordingError: LocalizedError {
     case noAudio, conversionFailed
     var errorDescription: String? { "Audio capture failed." }
