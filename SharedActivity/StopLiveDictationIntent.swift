@@ -6,7 +6,11 @@ import OSLog
 /// an unregistered or stale session fails explicitly instead of pretending to stop audio.
 @MainActor
 enum DictationActionRuntime {
-    enum Action: Sendable { case start, startSession(sessionID: UUID), stop(sessionID: UUID?, progress: Progress? = nil), toggle, cancel(sessionID: UUID) }
+    enum Action: Sendable {
+        case start, startSession(sessionID: UUID), toggle, cancel(sessionID: UUID)
+        case stop(sessionID: UUID?, progress: Progress? = nil)
+        case finish(sessionID: UUID, progress: Progress? = nil)
+    }
     typealias Handler = @MainActor @Sendable (Action) async throws -> String?
     static var handler: Handler?
     static var sessionIdentifier: (@MainActor @Sendable () -> UUID?)?
@@ -36,6 +40,9 @@ enum DictationActionRuntime {
         case let .stop(expectedID, progress):
             sessionID = expectedID ?? sessionIdentifier?()
             operation = .stop(sessionID: sessionID, progress: progress)
+        case let .finish(id, _):
+            sessionID = id
+            operation = action
         case .toggle:
             if let id = sessionIdentifier?() {
                 sessionID = id
@@ -100,7 +107,7 @@ struct StopLiveDictationIntent: LiveActivityIntent, AudioRecordingIntent {
         if #available(iOS 27.0, *) {
             progress.totalUnitCount = 1
             let text = try await performBackgroundTask {
-                let result = try await DictationActionRuntime.perform(.stop(sessionID: sessionID, progress: progress))
+                let result = try await DictationActionRuntime.perform(.finish(sessionID: sessionID, progress: progress))
                 return result
             } onCancel: { _ in
                 Task { @MainActor in await DictationActionRuntime.cancel(sessionID: sessionID) }
@@ -108,7 +115,7 @@ struct StopLiveDictationIntent: LiveActivityIntent, AudioRecordingIntent {
             return .result(value: text ?? "")
         }
         #endif
-        let text = try await DictationActionRuntime.perform(.stop(sessionID: sessionID))
+        let text = try await DictationActionRuntime.perform(.finish(sessionID: sessionID))
         return .result(value: text ?? "")
     }
 }

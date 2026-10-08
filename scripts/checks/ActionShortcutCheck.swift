@@ -20,6 +20,7 @@ struct DictationActivityAttributes {
   static var authorized = true
   static var requestSucceeds = true
   static var starts = 0
+  static var finishes = 0
   static var requiredStarts = 0
   static var lastPhase = DictationActivityAttributes.Phase.recording
   static var lastText = ""
@@ -46,6 +47,7 @@ struct DictationActivityAttributes {
     if let transcript { Self.lastText = transcript }
   }
   func finish(transcript: String, elapsed: TimeInterval) {
+    Self.finishes += 1
     Self.lastPhase = .ready
     Self.lastText = transcript
   }
@@ -144,6 +146,52 @@ struct DictationActivityAttributes {
     } catch DictationActionError.noSession { checks += 1 }
     try check(UIPasteboard.general.writes.isEmpty, "Stale Stop never writes the app clipboard")
     _ = try await StartDictationShortcut().perform()
+    let widgetSession = owner!.sessionIdentifier!
+    let activityFinishesBeforeWidgetStop = DictationLiveActivity.finishes
+    recorder.feed(32_000)
+    let widgetResult = try await StopLiveDictationIntent(sessionID: widgetSession).perform()
+    try check(
+      widgetResult.value == "Captured words." && controller.phase == .idle && !recorder.recording,
+      "Widget Stop finalizes the owned microphone and returns its actual transcript")
+    try check(
+      owner!.sessionIdentifier == widgetSession && DictationLiveActivity.lastPhase == .ready
+        && DictationLiveActivity.finishes == activityFinishesBeforeWidgetStop,
+      "Widget Stop retains its ready result for the Action Button Copy workflow")
+    let armCallsAfterWidgetStop = recorder.armCalls
+    controller.transcript = "Edited after Widget Stop."
+    let widgetCopyResult = try await ToggleDictationShortcut().perform()
+    try check(
+      widgetCopyResult.value == "Captured words." && recorder.armCalls == armCallsAfterWidgetStop,
+      "Next toggle returns the widget snapshot for native Copy without starting a microphone")
+    try check(
+      owner!.sessionIdentifier == nil && UIPasteboard.general.writes.isEmpty
+        && DictationLiveActivity.finishes == activityFinishesBeforeWidgetStop + 1,
+      "Native Copy output consumes the widget result once without app clipboard access")
+    do {
+      _ = try await StopDictationShortcut().perform()
+      throw Failure.check("Widget result consumed by Toggle must not be returned twice")
+    } catch DictationActionError.noSession { checks += 1 }
+    controller.setForeground(true)
+    await controller.startRecording()
+    do {
+      _ = try await StopLiveDictationIntent(sessionID: widgetSession).perform()
+      throw Failure.check("Stale Widget Stop must fail")
+    } catch DictationActionError.noSession { checks += 1 }
+    let cancelledStaleWidgetStop = Task {
+      try await StopLiveDictationIntent(sessionID: widgetSession).perform()
+    }
+    cancelledStaleWidgetStop.cancel()
+    do {
+      _ = try await cancelledStaleWidgetStop.value
+      throw Failure.check("Cancelled stale Widget Stop must fail")
+    } catch is CancellationError { checks += 1 }
+    try await Task.sleep(for: .milliseconds(20))
+    try check(
+      controller.phase == .recording && recorder.recording,
+      "Stale or cancelled Widget Stop cannot end a later foreground recording")
+    await controller.cancelRecording()
+    controller.setForeground(false)
+    _ = try await StartDictationShortcut().perform()
     let interruptedSession = owner!.sessionIdentifier!
     recorder.feed(32_000)
     recorder.onInterruption?()
@@ -164,13 +212,19 @@ struct DictationActivityAttributes {
     _ = try await StartDictationShortcut().perform()
     let completedSession = owner!.sessionIdentifier!
     recorder.feed(32_000)
-    await controller.stopRecording(endKeyboardSession: true)
+    _ = try await StopLiveDictationIntent(sessionID: completedSession).perform()
     controller.setForeground(true)
     await controller.startRecording()
+    let repeatedWidgetResult = try await StopLiveDictationIntent(sessionID: completedSession)
+      .perform()
+    try check(
+      repeatedWidgetResult.value == "Captured words." && controller.phase == .recording
+        && recorder.recording,
+      "Repeating Widget Stop returns its retained snapshot without stopping unrelated capture")
     await DictationActionRuntime.cancel(sessionID: completedSession)
     try check(
       controller.phase == .recording && recorder.recording && owner!.sessionIdentifier == nil,
-      "Canceling a pending shortcut result cannot cancel a later foreground recording")
+      "Canceling a pending Widget Stop result cannot cancel a later foreground recording")
     await controller.cancelRecording()
     controller.setForeground(false)
     _ = try await StartDictationShortcut().perform()

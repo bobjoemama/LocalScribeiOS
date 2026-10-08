@@ -84,6 +84,9 @@ final class DictationActionBridge {
       return nil
     case .stop(let expectedID, let progress):
       return try await stop(controller, expectedID: expectedID, progress: progress)
+    case .finish(let expectedID, let progress):
+      return try await stop(
+        controller, expectedID: expectedID, progress: progress, consumeResult: false)
     case .toggle:
       if activeSessionID == nil {
         try await start(controller)
@@ -143,9 +146,10 @@ final class DictationActionBridge {
     }
   }
 
-  private func stop(_ controller: AppController, expectedID: UUID?, progress: Progress? = nil)
-    async throws -> String
-  {
+  private func stop(
+    _ controller: AppController, expectedID: UUID?, progress: Progress? = nil,
+    consumeResult: Bool = true
+  ) async throws -> String {
     guard let id = activeSessionID, expectedID == nil || expectedID == id else {
       throw DictationActionError.noSession
     }
@@ -168,10 +172,16 @@ final class DictationActionBridge {
     else {
       throw DictationActionError.failed(controller.errorMessage ?? "No speech was recognized.")
     }
-    pendingResult = nil
-    activeSessionID = nil
-    liveActivity.finish(transcript: result, elapsed: pendingElapsed)
-    logger.notice("Shortcut result returned for system clipboard action")
+    if consumeResult {
+      pendingResult = nil
+      activeSessionID = nil
+      liveActivity.finish(transcript: result, elapsed: pendingElapsed)
+      logger.notice("Shortcut result returned for system clipboard action")
+    } else {
+      // Island Stop has no Copy action behind it. Retain this exact result so
+      // the next Action Button hold returns it instead of starting new capture.
+      logger.notice("Widget result retained for Action Button clipboard action")
+    }
     return result
   }
 
