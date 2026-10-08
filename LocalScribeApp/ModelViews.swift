@@ -3,6 +3,7 @@ import LocalScribeCore
 
 struct ModelsView: View {
     @ObservedObject var controller: AppController
+    var showsDone = true
     @State private var detailModel: SpeechModel?
     @State private var startingDownload = false
     @Environment(\.dismiss) private var dismiss
@@ -24,8 +25,10 @@ struct ModelsView: View {
                 }
             }
             .scribeForm().navigationTitle("Models")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-            .sheet(item: $detailModel) { model in ModelDetailsView(model: model) }
+            .toolbar {
+                if showsDone { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            }
+            .sheet(item: $detailModel) { model in ModelDetailsView(model: model, controller: controller) }
         }
     }
 
@@ -92,11 +95,16 @@ struct ModelsView: View {
         let loaded = controller.preparedModel == model
         let downloading = controller.downloadingModel == model
         let failed = controller.failedDownloadModel == model
+        let measurement = ModelMeasurementPresentation.latestLoad(for: model, reports: controller.modelPreparationReports)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(model.name).foregroundStyle(AppTheme.ink).fixedSize(horizontal: false, vertical: true)
                     Text(SpeechModelPresentation.size(model) + " · " + (model.languages == "English" ? "English" : "25 languages") + (model == .parakeetRealtimeEOU ? " · no punctuation" : ""))
+                        .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
+                    Text("Latest load · " + ModelMeasurementPresentation.loadTime(measurement))
+                        .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
+                    Text("App peak RAM during load · " + ModelMeasurementPresentation.peakMemory(measurement))
                         .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                     if selected && installed {
                         Text("Action Button · " + SpeechModelPresentation.actionButtonState(controller))
@@ -137,18 +145,64 @@ struct ModelsView: View {
                 .disabled(!canStartDownload)
                 .accessibilityLabel(installed ? "Use \(model.name)" : "Download \(model.name)")
             }
+            if selected && installed { BackgroundModelPreparationControls(controller: controller) }
         }.padding(.vertical, 4).listRowBackground(AppTheme.surface)
+    }
+}
+
+struct BackgroundModelPreparationControls: View {
+    @ObservedObject var controller: AppController
+    private var canPrepare: Bool {
+        controller.phase == .idle && controller.recordingModel == nil && !controller.keyboardSessionActive
+            && controller.downloadingModel == nil && controller.installedModels.contains(controller.selectedModel)
+    }
+    var body: some View {
+        if canPrepare {
+            VStack(alignment: .leading, spacing: 4) {
+                if controller.backgroundModelPreparationActive {
+                    if let status = controller.backgroundModelPreparationStatus {
+                        Text(statusText(status)).font(.footnote).foregroundStyle(AppTheme.inkSecondary)
+                    }
+                    Button("Cancel loading") { controller.cancelSelectedModelPreparation() }
+                        .buttonStyle(.borderless).frame(minHeight: 44)
+                } else if !controller.actionButtonModelReady {
+                    Button(controller.actionButtonModelLoading ? "Continue in Background" : "Load in Background") {
+                        controller.prepareSelectedModelInBackground()
+                    }.buttonStyle(.borderless).frame(minHeight: 44)
+                }
+            }
+        }
+    }
+    private func statusText(_ status: BackgroundModelPreparation.Status) -> String {
+        switch status {
+        case .submitted: "Requesting background loading…"
+        case .running: "Background loading allowed"
+        case .foregroundOnly(let reason): "Foreground only · " + reason
+        case .ready: "Ready"
+        case .failed(let reason): "Loading failed · " + reason
+        case .cancelled(let reason): "Loading cancelled · " + reason
+        }
     }
 }
 
 private struct ModelDetailsView: View {
     let model: SpeechModel
+    @ObservedObject var controller: AppController
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    LabeledContent("Download size", value: SpeechModelPresentation.size(model))
+                    LabeledContent("Download files", value: SpeechModelPresentation.exactDownloadSize(model))
+                    LabeledContent("Installed disk size", value: "Not measured")
+                    LabeledContent("Installation", value: controller.installedModels.contains(model) ? "Installed" : "Not downloaded")
+                    LabeledContent("Runtime", value: controller.preparedModel == model ? "Loaded" : "Not loaded")
+                    if controller.preparedModel == model {
+                        LabeledContent("Configured processors", value: SpeechModelPresentation.loadedProcessing(model, controller: controller))
+                    }
+                    if controller.selectedModel == model {
+                        LabeledContent("Action Button state", value: SpeechModelPresentation.actionButtonState(controller))
+                    }
                     LabeledContent("Languages", value: model.languages)
                     LabeledContent("Recognition", value: SpeechModelPresentation.isStreaming(model) ? "Streaming" : "Overlapping windows")
                     Text(SpeechModelPresentation.isStreaming(model)
@@ -162,6 +216,7 @@ private struct ModelDetailsView: View {
                 } footer: {
                     Text("Keep model loaded prepares the same files for CPU-only Dictate and Action Button use. With it off, cold in-app loads use the processing path above. Performance shows the loaded configuration. Recognition speed depends on the model; iOS controls background execution and microphone activation.")
                 }
+                ModelLoadMeasurementView(report: ModelMeasurementPresentation.latestLoad(for: model, reports: controller.modelPreparationReports))
                 if model.languages != "English" {
                     Section("Supported languages") {
                         Text("Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish, Ukrainian.")
@@ -171,6 +226,84 @@ private struct ModelDetailsView: View {
             }
             .scribeForm().navigationTitle(model.name).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+}
+
+private struct ModelLoadMeasurementView: View {
+    let report: ModelPreparationReport?
+    var body: some View {
+        Section {
+            LabeledContent("Load time", value: ModelMeasurementPresentation.loadTime(report))
+            LabeledContent("App peak RAM during load", value: ModelMeasurementPresentation.peakMemory(report))
+            if let measurement = report {
+                let operation = measurement.report
+                LabeledContent("Result", value: operation.successful ? "Completed" : "Failed")
+                LabeledContent("Measured", value: operation.date.formatted(date: .abbreviated, time: .shortened))
+                LabeledContent("Device", value: measurement.hardwareIdentifier ?? "Not recorded")
+                LabeledContent("iOS version", value: measurement.operatingSystemVersion ?? "Not recorded")
+                LabeledContent("App version", value: measurement.appVersion ?? "Not recorded")
+                LabeledContent("Execution configuration", value: ModelMeasurementPresentation.contextName(operation.executionContext))
+                DisclosureGroup("Requested processors") {
+                    Text(operation.requestedBackend).font(.footnote).foregroundStyle(AppTheme.inkSecondary)
+                }
+                if let phases = operation.preparationPhases, !phases.isEmpty {
+                    PreparationPhaseMeasurements(phases: phases)
+                }
+            }
+        } header: { Text("Latest load measurement") } footer: {
+            Text("RAM is the sampled peak for the whole app, including its interface and loading work. Brief spikes may be missed. Download file totals exclude compiled caches; installed disk usage is not measured.")
+        }
+    }
+}
+
+struct PreparationPhaseMeasurements: View {
+    let phases: [EnginePreparationPhaseTiming]
+    var body: some View {
+        DisclosureGroup("Loading phases") {
+            ForEach(Array(phases.enumerated()), id: \.offset) { _, timing in
+                LabeledContent(ModelMeasurementPresentation.phaseName(timing.phase)) {
+                    Text(ModelMeasurementPresentation.duration(timing.elapsedSeconds) + (timing.completed ? "" : " · stopped"))
+                        .foregroundStyle(AppTheme.inkSecondary)
+                }
+            }
+        }
+    }
+}
+
+enum ModelMeasurementPresentation {
+    static func latestLoad(for model: SpeechModel, reports: [ModelPreparationReport]) -> ModelPreparationReport? {
+        reports.filter { $0.report.model == model }.max { $0.report.date < $1.report.date }
+    }
+    static func duration(_ seconds: Double) -> String { String(format: "%.2f s", seconds) }
+    static func loadTime(_ report: ModelPreparationReport?) -> String {
+        guard let report else { return "Not measured" }
+        return duration(report.report.resources.elapsedSeconds) + (report.report.successful ? "" : " · failed")
+    }
+    static func peakMemory(_ report: ModelPreparationReport?) -> String {
+        guard let peak = report?.report.resources.sampledPeakPhysicalFootprintBytes else { return "Not measured" }
+        return String(format: "%.1f MiB", Double(peak) / 1_048_576)
+    }
+    static func phaseName(_ phase: EnginePreparationPhaseTiming.Phase) -> String {
+        switch phase {
+        case .previousModelRelease: "Previous model release"
+        case .installationCheck: "Installation check"
+        case .integrityVerification: "File verification"
+        case .localCoreMLLoad: "Core ML loading"
+        case .nativeCPULoad: "CPU runtime loading"
+        case .vocabularyLoad: "Vocabulary loading"
+        case .preprocessorLoad: "Preprocessor loading"
+        case .encoderLoad: "Encoder loading"
+        case .decoderLoad: "Decoder loading"
+        case .jointLoad: "Joint loading"
+        case .recognizerInitialization: "Recognizer setup"
+        }
+    }
+    static func contextName(_ context: ModelExecutionContext?) -> String {
+        switch context {
+        case .foreground: "Foreground defaults"
+        case .backgroundCapable: "CPU only"
+        case nil: "Not recorded"
         }
     }
 }
@@ -189,6 +322,10 @@ enum SpeechModelPresentation {
         if isStreaming(model) { return "CPU only" }
         return model == .parakeetPhononLUT3 ? "CPU + GPU / Neural Engine" : "CPU + Neural Engine"
     }
+    @MainActor static func loadedProcessing(_ model: SpeechModel, controller: AppController) -> String {
+        guard controller.preparedModel == model, let context = controller.preparedExecutionContext else { return "Unavailable" }
+        return context == .backgroundCapable ? "CPU only" : inAppProcessing(model)
+    }
     static func backend(_ model: SpeechModel) -> String {
         if model == .moonshineSmall { return "Moonshine native ONNX Runtime · CPU only. GPU and Neural Engine disabled." }
         if model == .parakeetPhononLUT3 { return "Core ML encoder · CPU + GPU requested. Other components · CPU + Neural Engine requested." }
@@ -202,6 +339,9 @@ enum SpeechModelPresentation {
     }()
 
     static func size(_ model: SpeechModel) -> String { bytes(model).map(formattedBytes) ?? model.downloadSize }
+    static func exactDownloadSize(_ model: SpeechModel) -> String {
+        bytes(model).map { formattedBytes($0) + " · " + $0.formatted() + " bytes" } ?? "Not measured"
+    }
     static func formattedBytes(_ bytes: Int64) -> String { ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
     static func totalBytes(for models: [SpeechModel]) -> Int64? {
         var total: Int64 = 0

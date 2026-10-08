@@ -22,7 +22,7 @@ struct LocalScribeRootView: View {
         _notes = ObservedObject(wrappedValue: notes)
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        let names = ["dictate", "history", "library", "settings"]
+        let names = ["dictate", "history", "library", "settings", "models"]
         if let index = arguments.firstIndex(of: "--preview-tab"), index + 1 < arguments.count {
             _tab = State(initialValue: names.firstIndex(of: arguments[index + 1]) ?? 0)
         }
@@ -56,6 +56,8 @@ struct LocalScribeRootView: View {
                 .tabItem { Label("Library", systemImage: "books.vertical") }.tag(2)
             SettingsView(controller: controller, notes: notes, openModels: { showingModels = true })
                 .tabItem { Label("Settings", systemImage: "gearshape") }.tag(3)
+            ModelsView(controller: controller, showsDone: false)
+                .tabItem { Label("Models", systemImage: "square.stack.3d.up") }.tag(4)
         }
         .sheet(isPresented: $showingModels) { ModelsView(controller: controller) }
         .sheet(isPresented: $showingSavedData) {
@@ -86,7 +88,7 @@ struct LocalScribeRootView: View {
         } message: {
             Text(controller.errorMessage ?? "")
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { controller.setForeground(true); startPerformance() }
             else { performance.stop(); developerMetrics.stop() }
             if phase == .background { controller.setForeground(false) }
@@ -103,7 +105,7 @@ struct LocalScribeRootView: View {
             guard url.scheme == "localscribe" else { return }
             switch url.host {
             case "dictation": tab = 0
-            case "models": showingModels = true
+            case "models": tab = 4
             case "dictionary": tab = 2; libraryPath = [.dictionary]
             case "snippets": tab = 2; libraryPath = [.snippets]
             case "notes": tab = 2; libraryPath = [.notes]

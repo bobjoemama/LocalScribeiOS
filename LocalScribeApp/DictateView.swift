@@ -180,6 +180,7 @@ struct DictateView: View {
             }
             if let status = controller.modelStatus { modelLoadingStatus(status) }
             else if controller.phase == .preparing { modelLoadingStatus("Preparing microphone…") }
+            else { BackgroundModelPreparationControls(controller: controller) }
             primaryAction
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) { transcriptActions; Spacer(minLength: 0); discardAction }
@@ -240,10 +241,13 @@ struct DictateView: View {
     }
 
     private func modelLoadingStatus(_ status: String) -> some View {
-        HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            Text(status).font(.footnote).foregroundStyle(AppTheme.inkSecondary)
-        }.accessibilityElement(children: .combine)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(status).font(.footnote).foregroundStyle(AppTheme.inkSecondary)
+            }.accessibilityElement(children: .combine)
+            BackgroundModelPreparationControls(controller: controller)
+        }
     }
 
     @ViewBuilder private var primaryAction: some View {

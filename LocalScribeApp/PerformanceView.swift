@@ -61,6 +61,8 @@ struct PerformanceView: View {
                             Text(item.successful ? "Completed" : "Failed")
                                 .foregroundStyle(item.successful ? AppTheme.success : AppTheme.error)
                         }
+                        LabeledContent("Measured", value: item.date.formatted(date: .abbreviated, time: .shortened))
+                        LabeledContent("Execution configuration", value: ModelMeasurementPresentation.contextName(item.executionContext))
                         LabeledContent("Elapsed time") {
                             Text(String(format: "%.3f s", item.resources.elapsedSeconds)).foregroundStyle(AppTheme.inkSecondary)
                         }
@@ -80,7 +82,7 @@ struct PerformanceView: View {
                             }
                         }
                         if let peak = item.resources.sampledPeakPhysicalFootprintBytes {
-                            LabeledContent("Sampled peak memory") {
+                            LabeledContent("Sampled app peak RAM") {
                                 Text(memory(peak)).foregroundStyle(AppTheme.inkSecondary)
                             }
                         }
@@ -99,6 +101,9 @@ struct PerformanceView: View {
                         }
                         DisclosureGroup("Requested compute configuration") {
                             Text(item.requestedBackend).font(.footnote).foregroundStyle(AppTheme.inkSecondary)
+                        }
+                        if let phases = item.preparationPhases, !phases.isEmpty {
+                            PreparationPhaseMeasurements(phases: phases)
                         }
                     } header: { Text(item.model.name + " · " + stageName(item.stage)).foregroundStyle(AppTheme.inkSecondary) }.listRowBackground(AppTheme.surface)
                 }
