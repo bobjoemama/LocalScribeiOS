@@ -108,7 +108,7 @@ private struct StopDictationButton: View {
     .buttonStyle(.borderedProminent)
     .tint(ActivityColors.recording)
     .foregroundStyle(ActivityColors.onRecording)
-    .accessibilityHint("Finish recording and copy the dictation")
+    .accessibilityHint("Finish recording")
   }
 }
 
