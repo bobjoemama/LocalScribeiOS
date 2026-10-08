@@ -14,8 +14,8 @@ struct ModelsView: View {
         NavigationStack {
             Form {
                 downloadSection
-                catalogSection("Continuous text", models: SpeechModel.allCases.filter(SpeechModelPresentation.isStreaming),
-                    explanation: "Streaming models update text as speech arrives, reusing recognition state.")
+                catalogSection("Streaming", models: SpeechModel.allCases.filter(SpeechModelPresentation.isStreaming),
+                    explanation: "Live text updates incrementally as speech arrives. These models reuse recognition state.")
                 catalogSection("Periodic text", models: SpeechModel.allCases.filter { !SpeechModelPresentation.isStreaming($0) },
                     explanation: "These models recognize overlapping audio windows. Preview starts after 5 seconds of audio, then updates every 3 seconds as processing catches up.")
                 Section {
@@ -123,7 +123,7 @@ struct ModelsView: View {
                     .buttonStyle(.borderless).frame(minHeight: 44).disabled(!canStartDownload)
                     .accessibilityLabel("Retry downloading \(model.name)")
             } else if selected && installed {
-                Label("Dictate model", systemImage: "checkmark").font(.footnote.weight(.medium)).foregroundStyle(AppTheme.ink)
+                Label("Selected", systemImage: "checkmark").font(.footnote.weight(.medium)).foregroundStyle(AppTheme.ink)
             } else {
                 Button(installed ? "Use" : "Download") {
                     if installed { controller.selectedModel = model }
@@ -131,7 +131,7 @@ struct ModelsView: View {
                 }
                 .buttonStyle(.borderless).frame(minHeight: 44)
                 .disabled(!canStartDownload)
-                .accessibilityLabel(installed ? "Use \(model.name) for Dictate" : "Download \(model.name)")
+                .accessibilityLabel(installed ? "Use \(model.name)" : "Download \(model.name)")
             }
         }.padding(.vertical, 4).listRowBackground(AppTheme.surface)
     }
@@ -176,7 +176,7 @@ private struct ModelDetailsView: View {
 /// describe requested compute paths, not measured GPU/Neural Engine occupancy.
 enum SpeechModelPresentation {
     static func isStreaming(_ model: SpeechModel) -> Bool { model == .parakeetRealtimeEOU || model == .moonshineSmall }
-    static func mode(_ model: SpeechModel) -> String { isStreaming(model) ? "Continuous text" : "Text after 5 s, then every 3 s" }
+    static func mode(_ model: SpeechModel) -> String { isStreaming(model) ? "Streaming · live text" : "Periodic text · first 5 s, then every 3 s" }
     static func backend(_ model: SpeechModel) -> String {
         if model == .moonshineSmall { return "Moonshine native ONNX Runtime · CPU only. GPU and Neural Engine disabled." }
         if model == .parakeetPhononLUT3 { return "Core ML encoder · CPU + GPU requested. Other components · CPU + Neural Engine requested." }

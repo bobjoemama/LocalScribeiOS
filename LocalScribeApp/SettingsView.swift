@@ -86,17 +86,17 @@ struct SettingsView: View {
                 } header: {
                     Text("Keyboard").foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("The microphone stays on until you end the session or reach the idle timeout. Audio between dictations is discarded. Keyboard recordings use your Dictate model. Realtime and Moonshine can recognize speech in the background; other models wait until LocalScribe is open.").foregroundStyle(AppTheme.inkSecondary)
+                    Text("The microphone stays on until you end the session or reach the idle timeout. Audio between dictations is discarded. Keyboard recordings use the model selected on Dictate.").foregroundStyle(AppTheme.inkSecondary)
                 }
                 .listRowBackground(AppTheme.surface)
 
                 Section {
-                    BackgroundModelPicker(controller: controller)
+                    LabeledContent("Model", value: controller.selectedModel.name)
                     NavigationLink("Setup") { ActionButtonSetupView(controller: controller) }
                 } header: {
                     Text("Action Button").foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("Shortcut recordings use this model for both preview and final text, replacing the Dictate model for that recording. Live Activities are required. If iOS declines background microphone activation, open LocalScribe and record from Dictate.").foregroundStyle(AppTheme.inkSecondary)
+                    Text("Dictate and Action Button recordings use the same selected model. Live Activities are required for the shortcut. If iOS declines background microphone activation, open LocalScribe and record from Dictate.").foregroundStyle(AppTheme.inkSecondary)
                 }
                 .listRowBackground(AppTheme.surface)
 
@@ -145,17 +145,6 @@ struct SettingsView: View {
     }
 }
 
-private struct BackgroundModelPicker: View {
-    @ObservedObject var controller: AppController
-    var body: some View {
-        Picker("Action Button model", selection: $controller.selectedBackgroundModel) {
-            ForEach([SpeechModel.parakeetRealtimeEOU, .moonshineSmall], id: \.self) { model in
-                Text(model.name).tag(model)
-            }
-        }.disabled(controller.phase != .idle || controller.keyboardSessionActive)
-    }
-}
-
 private struct ActionButtonSetupView: View {
     @ObservedObject var controller: AppController
     @StateObject private var shortcutInstaller = ActionButtonShortcutInstaller()
@@ -163,9 +152,9 @@ private struct ActionButtonSetupView: View {
     var body: some View {
         Form {
             Section {
-                BackgroundModelPicker(controller: controller)
+                LabeledContent("Model", value: controller.selectedModel.name)
             } footer: {
-                Text("These CPU runtimes can transcribe while another app is open. This choice replaces the Dictate model for shortcut recordings and provides both preview and final text.").foregroundStyle(AppTheme.inkSecondary)
+                Text("Action Button recordings use the model selected on Dictate. Change it on Dictate or in Settings → Choose model.").foregroundStyle(AppTheme.inkSecondary)
             }
             .listRowBackground(AppTheme.surface)
             Section {
@@ -201,7 +190,7 @@ private struct ActionButtonSetupView: View {
             }
             Section {
                 Text("The Dynamic Island shows a recording timer while the microphone is active.")
-                Text("Touch and hold the Dynamic Island to see the live preview and Stop button. To copy, finish with the Action Button shortcut. Transcript text is never shown on the Lock Screen.")
+                Text("Touch and hold the Dynamic Island to see the model and Stop button. Streaming models also show live text; periodic models show recording status. To copy, finish with the Action Button shortcut. Transcript text is never shown on the Lock Screen.")
             } header: {
                 Text("Live Activity").foregroundStyle(AppTheme.inkSecondary)
             } footer: {
@@ -209,7 +198,7 @@ private struct ActionButtonSetupView: View {
             }
             .listRowBackground(AppTheme.surface)
             Section {
-                Text("GPU and Neural Engine models remain available on Dictate. Action Button recordings use the selected background model.")
+                Text("One selected model recognizes each recording, including any text preview and the final transcript.")
                 Text("There is no fixed recording duration. If recognition cannot keep up, recording stops and reports the problem instead of silently dropping audio.")
             } header: { Text("Local transcription").foregroundStyle(AppTheme.inkSecondary) }
             .listRowBackground(AppTheme.surface)
