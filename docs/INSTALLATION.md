@@ -74,6 +74,6 @@ Allow microphone access in LocalScribe, enable Live Activities, and choose a dow
 
 The bare **Dictate and Copy** app action returns text to Shortcuts; it does not copy by itself. Use the supplied workflow, which copies only a nonempty result and leaves the clipboard unchanged when recording starts. Local Only keeps this workflow’s clipboard item from syncing to other devices.
 
-**Settings → Action Button → Last run** reports the app intent’s action, outcome, whether it returned nonempty text, elapsed time, app context and cancellation reason. It does not confirm that the native clipboard action ran, and contains no speech or clipboard contents.
+**Settings → Action Button → Setup → Last run** reports the app intent’s action, outcome, whether it returned nonempty text, elapsed time, app context and cancellation reason. It does not confirm that the native clipboard action ran, and contains no speech or clipboard contents.
 
 First-hold recording is user-confirmed, but the user reported that the manually created wrapper did not copy. The cause remains unresolved. The supplied signed workflow and its action/result bindings passed static review, and the Mac importer accepted its schema; actual iPhone action resolution and clipboard delivery still need user verification. If recording cannot start, use **Dictate → Record / Stop / Copy** in LocalScribe as the foreground fallback.
