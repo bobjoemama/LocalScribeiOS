@@ -1,7 +1,6 @@
 import SwiftUI
 import UIKit
 import LocalScribeCore
-import AppIntents
 
 struct SettingsView: View {
     @ObservedObject var controller: AppController
@@ -159,6 +158,7 @@ private struct BackgroundModelPicker: View {
 
 private struct ActionButtonSetupView: View {
     @ObservedObject var controller: AppController
+    @State private var shortcutImportError: String?
     var body: some View {
         Form {
             Section {
@@ -168,19 +168,19 @@ private struct ActionButtonSetupView: View {
             }
             .listRowBackground(AppTheme.surface)
             Section {
-                Text("1. Open iPhone Settings → Action Button → Shortcut → Choose a Shortcut.")
-                Text("2. Choose LocalScribe → Dictate and Copy.")
-                Text("3. Hold once to record, release and speak, then hold again to stop and copy. Paste in your current app.")
-                ShortcutsLink().shortcutsLinkStyle(.automatic)
-            } header: {
-                Text("Action Button").foregroundStyle(AppTheme.inkSecondary)
+                ActionButtonShortcutInstallButton { shortcutImportError = $0 }
+                    .frame(minHeight: 44)
+                Text("1. Tap Add Action Button Shortcut, choose Shortcuts, then tap Add Shortcut.")
+                Text("2. Open iPhone Settings → Action Button → Shortcut and choose LocalScribe Action Button.")
+                Text("3. Hold and release to record, then hold and release again to finish and copy. Paste in your destination app.")
+                Link("Open Shortcuts", destination: URL(string: "shortcuts://")!)
             } footer: {
-                Text("Allow microphone access in LocalScribe once before using the shortcut. Releasing the button does not stop recording. iOS may decline background microphone activation; open LocalScribe and record from Dictate if this happens.").foregroundStyle(AppTheme.inkSecondary)
+                Text("Allow microphone access in LocalScribe before using the shortcut. Releasing the button does not stop recording. Keep the shortcut's Copy to Clipboard action: it copies the finished transcript and leaves the clipboard unchanged when recording starts.").foregroundStyle(AppTheme.inkSecondary)
             }
             .listRowBackground(AppTheme.surface)
             Section {
                 Text("The Dynamic Island shows a recording timer while the microphone is active.")
-                Text("Touch and hold the Dynamic Island to see the live preview and Stop button. Transcript text is never shown on the Lock Screen.")
+                Text("Touch and hold the Dynamic Island to see the live preview and Stop button. To copy, finish with the Action Button shortcut. Transcript text is never shown on the Lock Screen.")
             } header: {
                 Text("Live Activity").foregroundStyle(AppTheme.inkSecondary)
             } footer: {
@@ -195,6 +195,12 @@ private struct ActionButtonSetupView: View {
         }
         .scribeForm()
         .navigationTitle("Action Button").navigationBarTitleDisplayMode(.inline)
+        .alert("Shortcut could not be opened", isPresented: Binding(
+            get: { shortcutImportError != nil },
+            set: { if !$0 { shortcutImportError = nil } }
+        )) {
+            Button("OK") { shortcutImportError = nil }
+        } message: { Text(shortcutImportError ?? "") }
     }
 }
 

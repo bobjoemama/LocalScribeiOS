@@ -66,6 +66,12 @@ The app owns the microphone because custom keyboards cannot record audio. An arm
 
 ## Action Button
 
-Set **iPhone Settings → Action Button → Shortcut → LocalScribe → Dictate and Copy**. Allow microphone access in LocalScribe, enable Live Activities, and choose a downloaded CPU background model in **LocalScribe Settings → Action Button**. Hold and release to start; hold and release again to finish and copy. Touch and hold Dynamic Island to view its expanded preview.
+1. In **LocalScribe Settings → Action Button → Setup**, tap **Add Action Button Shortcut**. Choose **Shortcuts** in the Open In menu, then tap **Add Shortcut**. The installed shortcut is named **LocalScribe Action Button**.
+2. Open **iPhone Settings → Action Button → Shortcut** and select **LocalScribe Action Button**.
+3. Hold and release to start recording, then hold and release again to finish and copy. Paste in your destination app.
+
+Allow microphone access in LocalScribe, enable Live Activities, and choose a downloaded CPU background model in **LocalScribe Settings → Action Button**. Touch and hold Dynamic Island to view its expanded preview. If you finish using its Stop button, run the Action Button shortcut again to copy the result.
+
+Keep the installed shortcut's **Copy to Clipboard** action. LocalScribe's **Dictate and Copy** app action returns the finished transcript to Shortcuts; the wrapper copies that text only when it is nonempty. Selecting the app action directly in Action Button settings omits that clipboard step. Adding the shortcut and assigning the Action Button require your confirmation in Apple's interfaces; LocalScribe does not mark them complete automatically.
 
 Cold background recording, Dynamic Island presentation and background clipboard delivery still need physical verification. If the shortcut cannot start recording, open LocalScribe and use **Dictate → Record / Stop / Copy** as the foreground fallback.
