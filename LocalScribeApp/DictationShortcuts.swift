@@ -30,9 +30,9 @@ struct StopDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
             let text = try await performBackgroundTask {
                 let result = try await DictationActionRuntime.perform(.stop(sessionID: sessionID, progress: progress))
                 return result
-            } onCancel: { _ in
+            } onCancel: { reason in
                 guard let sessionID else { return }
-                Task { @MainActor in await DictationActionRuntime.cancel(sessionID: sessionID) }
+                Task { @MainActor in await DictationActionRuntime.cancel(sessionID: sessionID, reason: .init(reason)) }
             }
             return .result(value: text ?? "")
         }
@@ -58,8 +58,8 @@ struct ToggleDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
             let text = try await performBackgroundTask {
                 let result = try await DictationActionRuntime.perform(.stop(sessionID: sessionID, progress: progress))
                 return result
-            } onCancel: { _ in
-                Task { @MainActor in await DictationActionRuntime.cancel(sessionID: sessionID) }
+            } onCancel: { reason in
+                Task { @MainActor in await DictationActionRuntime.cancel(sessionID: sessionID, reason: .init(reason)) }
             }
             return .result(value: text ?? "")
         }

@@ -12,7 +12,23 @@ import OSLog
 /// The calling Shortcut copies this output using the system Copy to Clipboard action;
 /// background pasteboard writes have no success acknowledgement from UIKit.
 @MainActor
-final class DictationActionBridge {
+final class DictationActionBridge: ObservableObject {
+  struct ActionDiagnostic: Equatable {
+    enum Action: String { case start, stop, widgetFinish }
+    enum Outcome: String { case running, completed, cancelled, failed }
+    enum ExecutionContext: String { case foreground, background, inactive, unavailable }
+    let action: Action
+    let outcome: Outcome
+    let resultNonempty: Bool
+    let durationSeconds: TimeInterval
+    let executionContext: ExecutionContext
+    let cancellationReason: DictationActionRuntime.CancellationReason?
+  }
+  /// In-memory operational status only; never contains speech, clipboard text or identifiers.
+  @Published private(set) var diagnostic: ActionDiagnostic?
+  private var diagnosticStartedAt: ContinuousClock.Instant?
+  private var diagnosticSessionID: UUID?
+
   private let logger = Logger(
     subsystem: "com.devesh.localscribe.ios", category: "DictationShortcut")
   private weak var controller: AppController?
@@ -57,8 +73,18 @@ final class DictationActionBridge {
 
   private func perform(_ action: DictationActionRuntime.Action) async throws -> String? {
     guard let controller else { throw DictationActionError.notReady }
-    if case .cancel(let sessionID) = action {
-      guard activeSessionID == sessionID else { return nil }
+    if case .cancel(let sessionID, let reason) = action {
+      // The platform reason can arrive after Swift task cancellation already
+      // cleaned up audio. Correlate it only to this diagnostic operation.
+      guard activeSessionID == sessionID else {
+        if diagnosticSessionID == sessionID, let diagnostic, diagnostic.outcome == .cancelled {
+          recordDiagnostic(action: diagnostic.action, outcome: .cancelled, reason: reason)
+        }
+        return nil
+      }
+      if let diagnostic {
+        recordDiagnostic(action: diagnostic.action, outcome: .cancelled, reason: reason)
+      }
       let needsRecordingCancellation = pendingResult == nil
       didBeginRecording = false
       activeSessionID = nil
@@ -71,6 +97,70 @@ final class DictationActionBridge {
     guard !handlingAction else { throw DictationActionError.busy }
     handlingAction = true
     defer { handlingAction = false }
+    let diagnosticAction: ActionDiagnostic.Action
+    switch action {
+    case .start, .startSession: diagnosticAction = .start
+    case .finish: diagnosticAction = .widgetFinish
+    case .toggle: diagnosticAction = activeSessionID == nil ? .start : .stop
+    case .stop: diagnosticAction = .stop
+    case .cancel: return nil
+    }
+    switch action {
+    case .startSession(let id), .finish(let id, _): diagnosticSessionID = id
+    case .stop(let id, _): diagnosticSessionID = id ?? activeSessionID
+    default: diagnosticSessionID = activeSessionID
+    }
+    diagnosticStartedAt = .now
+    logger.notice("Shortcut invocation action=\(diagnosticAction.rawValue, privacy: .public) session_present=\(self.activeSessionID != nil, privacy: .public)")
+    recordDiagnostic(action: diagnosticAction, outcome: .running)
+    do {
+      let result = try await performOwnedAction(action, controller: controller)
+      recordDiagnostic(action: diagnosticAction, outcome: .completed, result: result)
+      return result
+    } catch {
+      let cancelled = error is CancellationError || Task.isCancelled
+      recordDiagnostic(
+        action: diagnosticAction, outcome: cancelled ? .cancelled : .failed,
+        reason: cancelled ? diagnostic?.cancellationReason ?? .taskCancelled : nil)
+      throw error
+    }
+  }
+
+  private func recordDiagnostic(
+    action: ActionDiagnostic.Action, outcome: ActionDiagnostic.Outcome, result: String? = nil,
+    reason: DictationActionRuntime.CancellationReason? = nil
+  ) {
+    let duration = diagnosticStartedAt?.duration(to: .now) ?? .zero
+    let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+    let context: ActionDiagnostic.ExecutionContext
+    #if canImport(UIKit)
+      switch UIApplication.shared.applicationState {
+      case .active: context = .foreground
+      case .background: context = .background
+      case .inactive: context = .inactive
+      @unknown default: context = .unavailable
+      }
+    #else
+      context = .unavailable
+    #endif
+    let nonempty = result.map { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? false
+    let effectiveReason: DictationActionRuntime.CancellationReason?
+    if outcome == .cancelled, let previousReason = diagnostic?.cancellationReason,
+       previousReason == .timeout || previousReason == .userCancelled,
+       reason == .taskCancelled || reason == .requested {
+      effectiveReason = previousReason
+    } else {
+      effectiveReason = reason
+    }
+    diagnostic = ActionDiagnostic(
+      action: action, outcome: outcome, resultNonempty: nonempty, durationSeconds: seconds,
+      executionContext: context, cancellationReason: effectiveReason)
+    logger.notice("Shortcut action=\(action.rawValue, privacy: .public) outcome=\(outcome.rawValue, privacy: .public) result_nonempty=\(nonempty, privacy: .public) seconds=\(seconds, privacy: .public) context=\(context.rawValue, privacy: .public)")
+  }
+
+  private func performOwnedAction(
+    _ action: DictationActionRuntime.Action, controller: AppController
+  ) async throws -> String? {
     switch action {
     case .start:
       try await start(controller)
@@ -153,6 +243,8 @@ final class DictationActionBridge {
     guard let id = activeSessionID, expectedID == nil || expectedID == id else {
       throw DictationActionError.noSession
     }
+    let progressUpdates = controller.monitorActionCompletionProgress(progress)
+    defer { progressUpdates?.cancel() }
     if pendingResult == nil {
       if controller.phase == .recording {
         await controller.stopActionButtonRecording(progress: progress)

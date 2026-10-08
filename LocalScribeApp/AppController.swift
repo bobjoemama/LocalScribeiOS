@@ -92,6 +92,10 @@ final class AppController: ObservableObject {
     private var streamingTask: Task<Void, Error>?
     private var recordingID: UUID?
     private var capturedSampleCount: Int64 = 0
+    private enum CompletionStage {
+        case drainingRecognition, processingAudio, finalizingTranscript, savingResult
+    }
+    private var completionStage: CompletionStage?
     private var captureWarning: String?
     private var acceptsLiveUpdates = false
     private var runtimeReleaseTask: Task<Void, Never>?
@@ -415,6 +419,31 @@ final class AppController: ObservableObject {
         await stopRecording(endKeyboardSession: true, streamFailure: nil, progress: progress)
     }
 
+    /// Reports observed work and elapsed waiting time while an App Intent awaits the
+    /// owned pipeline. Work units advance only at real checkpoints in stopRecording.
+    func monitorActionCompletionProgress(_ progress: Progress?) -> Task<Void, Never>? {
+        guard let progress, let id = recordingID else { return nil }
+        let began = ContinuousClock.now
+        return Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.recordingID == id,
+                      self.phase == .recording || self.phase == .transcribing else { return }
+                switch self.completionStage {
+                case .processingAudio: progress.localizedDescription = "Processing captured audio"
+                case .finalizingTranscript: progress.localizedDescription = "Finalizing transcript"
+                case .savingResult: progress.localizedDescription = "Saving result"
+                case .drainingRecognition, nil:
+                    progress.localizedDescription = self.preparedModel == nil
+                        ? "Preparing recognition" : "Finishing live recognition"
+                }
+                let seconds = max(0, began.duration(to: .now).components.seconds)
+                progress.localizedAdditionalDescription = "Elapsed \(seconds) s"
+                do { try await Task.sleep(for: .seconds(1)) }
+                catch { return }
+            }
+        }
+    }
+
     private func waitForInferenceForeground(backgroundAllowed: Bool, recordingID id: UUID) async throws {
         // The active engine reports its configured backend, which is frozen for this
         // recording. Unknown engines wait for foreground; model names confer no permission.
@@ -453,6 +482,7 @@ final class AppController: ObservableObject {
         defer {
             guardRecordingCompletion(id)
         }
+        completionStage = .drainingRecognition
         var failure = streamFailure
         do { try await streamingTask?.value; progress?.completedUnitCount += 1 }
         catch { if failure == nil { failure = error } }
@@ -463,6 +493,7 @@ final class AppController: ObservableObject {
             guard let streaming = engine as? any StreamingLocalTranscriptionEngine else { throw AppError.streamingUnavailable }
             // Final queued audio is bounded by the recorder backlog, with small awaited
             // chunks so no unbounded asynchronous audio queue is introduced.
+            completionStage = .processingAudio
             var offset = 0
             while offset < tail.count {
                 try await waitForInferenceForeground(backgroundAllowed: backgroundAllowed, recordingID: id)
@@ -472,6 +503,7 @@ final class AppController: ObservableObject {
                 progress?.completedUnitCount += 1
             }
             try await waitForInferenceForeground(backgroundAllowed: backgroundAllowed, recordingID: id)
+            completionStage = .finalizingTranscript
             let recognized = try await streaming.finishStreaming()
             try Task.checkCancellation()
             guard recordingID == id else { return }
@@ -494,6 +526,7 @@ final class AppController: ObservableObject {
             if let streaming = engine as? any StreamingLocalTranscriptionEngine { await streaming.cancelStreaming() }
         }
         guard recordingID == id else { return }
+        completionStage = .savingResult
         if let warning = captureWarning { errorMessage = warning }
         if saveHistory, !transcript.isEmpty {
             let entry = TranscriptEntry(text: transcript, model: model, duration: Double(capturedSampleCount) / 16_000)
@@ -514,6 +547,7 @@ final class AppController: ObservableObject {
 
     private func guardRecordingCompletion(_ id: UUID) {
         guard recordingID == id else { return }
+        completionStage = nil
         streamingTask = nil; recordingID = nil; captureModel = nil; captureBackgroundInferenceAllowed = false; acceptsLiveUpdates = false
         actionButtonRecording = false
         completedRecordingID = id
@@ -529,6 +563,7 @@ final class AppController: ObservableObject {
         if phase == .preparing { await cancelPreparation(); return }
         guard phase == .recording || phase == .transcribing else { return }
         microphoneRevision += 1
+        completionStage = nil
         recordingID = nil
         completedRecordingID = nil
         acceptsLiveUpdates = false

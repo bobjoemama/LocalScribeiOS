@@ -7,9 +7,20 @@ import OSLog
 @MainActor
 enum DictationActionRuntime {
     enum Action: Sendable {
-        case start, startSession(sessionID: UUID), toggle, cancel(sessionID: UUID)
+        case start, startSession(sessionID: UUID), toggle
+        case cancel(sessionID: UUID, reason: CancellationReason = .requested)
         case stop(sessionID: UUID?, progress: Progress? = nil)
         case finish(sessionID: UUID, progress: Progress? = nil)
+    }
+    enum CancellationReason: String, Sendable {
+        case userCancelled, timeout, taskCancelled, requested, other
+
+        #if os(iOS)
+        @available(iOS 26.4, *)
+        init(_ reason: IntentCancellationReason) {
+            self = reason == .timeout ? .timeout : reason == .userCancelled ? .userCancelled : .other
+        }
+        #endif
     }
     typealias Handler = @MainActor @Sendable (Action) async throws -> String?
     static var handler: Handler?
@@ -52,7 +63,7 @@ enum DictationActionRuntime {
                 sessionID = id
                 operation = .startSession(sessionID: id)
             }
-        case let .cancel(id):
+        case let .cancel(id, _):
             sessionID = id
             operation = action
         }
@@ -68,11 +79,12 @@ enum DictationActionRuntime {
             }
         } onCancel: {
             guard let sessionID else { return }
-            Task { @MainActor in await cancel(sessionID: sessionID) }
+            Task { @MainActor in await cancel(sessionID: sessionID, reason: .taskCancelled) }
         }
     }
-    static func cancel(sessionID: UUID) async {
-        _ = try? await handler?(.cancel(sessionID: sessionID))
+    static func cancel(sessionID: UUID, reason: CancellationReason = .requested) async {
+        logger.notice("Shortcut cancellation: \(reason.rawValue, privacy: .public)")
+        _ = try? await handler?(.cancel(sessionID: sessionID, reason: reason))
     }
 }
 
@@ -109,8 +121,8 @@ struct StopLiveDictationIntent: LiveActivityIntent, AudioRecordingIntent {
             let text = try await performBackgroundTask {
                 let result = try await DictationActionRuntime.perform(.finish(sessionID: sessionID, progress: progress))
                 return result
-            } onCancel: { _ in
-                Task { @MainActor in await DictationActionRuntime.cancel(sessionID: sessionID) }
+            } onCancel: { reason in
+                Task { @MainActor in await DictationActionRuntime.cancel(sessionID: sessionID, reason: .init(reason)) }
             }
             return .result(value: text ?? "")
         }
