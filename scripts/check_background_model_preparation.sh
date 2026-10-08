@@ -69,15 +69,24 @@ xcrun swiftc -swift-version 6 -enable-actor-data-race-checks -parse-as-library -
 # including debug runtime actor checks. The outer imported callback must be
 # nonisolated; only its asynchronous inner Task may require MainActor.
 xcrun --sdk iphoneos swiftc -swift-version 6 -enable-actor-data-race-checks -target arm64-apple-ios27.0 -sdk "$ios_sdk" -parse-as-library -Onone -emit-sil LocalScribeApp/BackgroundModelPreparation.swift -o "$check_output/native.sil"
-python3 - "$check_output/native.sil" <<'SIL'
+python3 - "$check_output/UnsafeCallback.swift" <<'UNSAFE'
+from pathlib import Path
+import sys
+source = Path('LocalScribeApp/BackgroundModelPreparation.swift').read_text()
+safe = 'task.expirationHandler = { @Sendable in Task { @MainActor in handler() } }'
+assert source.count(safe) == 1
+Path(sys.argv[1]).write_text(source.replace(safe, 'task.expirationHandler = { Task { @MainActor in handler() } }'))
+UNSAFE
+xcrun --sdk iphoneos swiftc -swift-version 6 -enable-actor-data-race-checks -target arm64-apple-ios27.0 -sdk "$ios_sdk" -parse-as-library -Onone -emit-sil "$check_output/UnsafeCallback.swift" -o "$check_output/unsafe-native.sil"
+python3 - "$check_output/native.sil" "$check_output/unsafe-native.sil" <<'SIL'
 from pathlib import Path
 import sys
 sil = Path(sys.argv[1]).read_text()
-def closure(name):
+def closure(name, source=sil):
     marker = '// ' + name + '\n'
-    start = sil.index(marker)
-    end = sil.index('} // end sil function', start)
-    return sil[start:end]
+    start = source.index(marker)
+    end = source.index('} // end sil function', start)
+    return source[start:end]
 outer = closure('closure #1 in NativeModelPreparationGrant.setExpiration(_:)')
 assert '// Isolation: nonisolated' in outer
 assert '@convention(thin) @Sendable' in outer
@@ -86,7 +95,11 @@ assert '_checkExpectedExecutor' not in outer
 inner = closure('closure #1 in closure #1 in NativeModelPreparationGrant.setExpiration(_:)')
 assert '// Isolation: global_actor. type: MainActor' in inner
 assert 'hop_to_executor' in inner
+unsafe = closure('closure #1 in NativeModelPreparationGrant.setExpiration(_:)', Path(sys.argv[2]).read_text())
+assert '// Isolation: global_actor. type: MainActor' in unsafe
+assert 'swift_task_isCurrentExecutor' in unsafe
 print('PASS: actual iOS SDK SIL proves expiration outer block nonisolated and inner Task hops to MainActor')
+print('PASS: native SDK SIL negative control detects inherited MainActor check when @Sendable is removed')
 SIL
 
 python3 - <<'PY'
