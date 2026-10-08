@@ -94,10 +94,53 @@ def check_fixtures(source):
         assert actions[1:] == expected_body, 'Fixture differs from shipped conditional/copy bindings'
 
 
+def load_app_intent_actions(bundle):
+    metadata_path = bundle / 'Metadata.appintents/extract.actionsdata'
+    try:
+        metadata = json.loads(metadata_path.read_text())
+    except (OSError, ValueError) as error:
+        raise ValueError(f'{bundle}: cannot read App Intent metadata at {metadata_path}: {error}') from error
+    if not isinstance(metadata, dict) or not isinstance(metadata.get('actions'), dict) or not metadata['actions']:
+        raise ValueError(f'{bundle}: {metadata_path}: expected a nonempty actions object')
+    return metadata['actions']
+
+
+def description_string_leaves(value, path):
+    if isinstance(value, str):
+        yield path, value
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            yield from description_string_leaves(child, f'{path}.{key}')
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from description_string_leaves(child, f'{path}[{index}]')
+
+
+def check_app_intent_descriptions(bundle, actions):
+    widget = bundle / 'PlugIns/LocalScribeActivityWidget.appex'
+    failures = []
+    for action_bundle, action_metadata in [(bundle, actions), (widget, load_app_intent_actions(widget))]:
+        for identifier, action in action_metadata.items():
+            context = f'{action_bundle}: intent {identifier}'
+            description = action.get('descriptionMetadata') if isinstance(action, dict) else None
+            text = description.get('descriptionText') if isinstance(description, dict) else None
+            if not isinstance(text, dict) or not isinstance(text.get('key'), str) or not text['key'].strip():
+                failures.append(f'{context}: expected descriptionMetadata.descriptionText.key to contain description text')
+            # ITMS-90626 rejected "iPhone" in this app's descriptions. Check the
+            # confirmed keyword, including localized alternatives and keywords;
+            # do not invent a broader ban on feature names or the app's own name.
+            for path, value in description_string_leaves(description, 'descriptionMetadata'):
+                if 'iphone' in value.casefold():
+                    failures.append(f'{context}: {path}: prohibited description text "iPhone"')
+    if failures:
+        raise ValueError('App Intent description metadata failed validation:\n' + '\n'.join(failures))
+
+
 def check_app(bundle, descriptor, require_bundled=False):
     info = plistlib.loads((bundle / 'Info.plist').read_bytes())
     assert info['CFBundleIdentifier'] == descriptor['BundleIdentifier'], 'App bundle ID differs'
-    actions = json.loads((bundle / 'Metadata.appintents/extract.actionsdata').read_text())['actions']
+    actions = load_app_intent_actions(bundle)
+    check_app_intent_descriptions(bundle, actions)
     action = actions[descriptor['AppIntentIdentifier']]
     assert action['identifier'] == descriptor['AppIntentIdentifier']
     assert action['parameters'] == []
@@ -139,6 +182,7 @@ def main():
     check_recipe(decoded)
     print('PASS: signed payload matches reviewed five-action recipe and explicit output bindings')
     if args.app_bundle:
+        print('PASS: app and widget intent descriptions contain no rejected iPhone text')
         print('PASS: compiled app intent result type, identity and signature match shortcut descriptor')
     if args.require_bundled:
         print('PASS: built app includes the exact signed shortcut resource')
