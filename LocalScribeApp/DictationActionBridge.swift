@@ -218,7 +218,7 @@ final class DictationActionBridge: ObservableObject {
     sessionModelName = model.name
     let previewCapability: DictationLiveActivity.PreviewCapability =
       model == .parakeetRealtimeEOU || model == .moonshineSmall ? .streamingText : .statusOnly
-    recordingActivityStarted = await liveActivity.start(
+    let didStartActivity = await liveActivity.start(
       sessionID: sessionID, modelName: sessionModelName, startedAt: Date(),
       previewCapability: previewCapability, required: true)
     guard activeSessionID == sessionID else { throw CancellationError() }
@@ -226,6 +226,7 @@ final class DictationActionBridge: ObservableObject {
       _ = try await perform(.cancel(sessionID: sessionID, reason: .taskCancelled))
       throw CancellationError()
     }
+    recordingActivityStarted = didStartActivity
     guard recordingActivityStarted else {
       activeSessionID = nil
       await controller.cancelActionButtonRecording(requestID: sessionID)
@@ -251,13 +252,14 @@ final class DictationActionBridge: ObservableObject {
       )
     }
     guard controller.phase == .recording, controller.actionButtonRecording, didBeginRecording else {
+      let message = controller.errorMessage
       activeSessionID = nil
-      await controller.cancelActionButtonRecording(requestID: sessionID)
-      liveActivity.fail(message: controller.errorMessage, elapsed: 0)
+      liveActivity.fail(message: message, elapsed: 0)
       recordingActivityStarted = false
       logger.error("Shortcut microphone capture did not start")
+      await controller.cancelActionButtonRecording(requestID: sessionID)
       throw DictationActionError.failed(
-        controller.errorMessage
+        message
           ?? "Dictation could not start. Open LocalScribe to check microphone access and your selected model."
       )
     }

@@ -17,6 +17,19 @@ public struct ActivityAuthorizationInfo {
   public init() {}
   public var areActivitiesEnabled: Bool { true }
 }
+public actor ActivityEndGate {
+  public static let shared = ActivityEndGate()
+  private var holdNext = false
+  private var continuation: CheckedContinuation<Void, Never>?
+  public func holdNextEnd() { holdNext = true }
+  public func isHeld() -> Bool { continuation != nil }
+  public func release() { continuation?.resume(); continuation = nil }
+  func wait() async {
+    guard holdNext else { return }
+    holdNext = false
+    await withCheckedContinuation { continuation = $0 }
+  }
+}
 private enum Registry {
   static let lock = NSLock()
   nonisolated(unsafe) static var values: [AnyObject] = []
@@ -47,6 +60,7 @@ public final class Activity<Attributes: ActivityAttributes>: @unchecked Sendable
   public func end(
     _ content: ActivityContent<Attributes.ContentState>?, dismissalPolicy: ActivityUIDismissalPolicy
   ) async {
+    await ActivityEndGate.shared.wait()
     lock.withLock {
       ended = content
       policy = dismissalPolicy

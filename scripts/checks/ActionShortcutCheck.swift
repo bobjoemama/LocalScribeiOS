@@ -20,6 +20,10 @@ struct DictationActivityAttributes {
   enum PreviewCapability { case streamingText, statusOnly }
   private var previewCapability = PreviewCapability.statusOnly
   static var lastModelName = ""
+  static var holdNextStart = false
+  static var heldStart: CheckedContinuation<Void, Never>?
+  private var startingSessionID: UUID?
+  static func releaseStart() { heldStart?.resume(); heldStart = nil }
   static var authorized = true
   static var requestSucceeds = true
   static var starts = 0
@@ -35,6 +39,13 @@ struct DictationActivityAttributes {
     sessionID: UUID, modelName: String, startedAt: Date,
     previewCapability: PreviewCapability, required: Bool = false
   ) async -> Bool {
+    startingSessionID = sessionID
+    defer { if startingSessionID == sessionID { startingSessionID = nil } }
+    if Self.holdNextStart {
+      Self.holdNextStart = false
+      await withCheckedContinuation { Self.heldStart = $0 }
+    }
+    guard startingSessionID == sessionID, !Task.isCancelled else { return false }
     self.previewCapability = previewCapability
     Self.lastModelName = modelName
     Self.starts += 1
@@ -63,6 +74,7 @@ struct DictationActivityAttributes {
     Self.lastText = ""
   }
   func cancel(elapsed: TimeInterval) {
+    startingSessionID = nil
     Self.lastPhase = .cancelled
     Self.lastText = ""
   }

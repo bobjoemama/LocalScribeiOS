@@ -238,6 +238,36 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
         await controller.cancelRecording()
         controller.setForeground(false)
 
+        // Activity startup can suspend while a prior platform end finishes.
+        // Cancellation retires it; the action gate excludes a concurrent start,
+        // and a replacement after unwind must acquire a fresh recording contract.
+        DictationLiveActivity.holdNextStart = true
+        let heldActivitySession = UUID()
+        let heldActivityStart = Task {
+            try await DictationActionRuntime.perform(.startSession(sessionID: heldActivitySession))
+        }
+        try await waitFor { DictationLiveActivity.heldStart != nil }
+        await DictationActionRuntime.cancel(sessionID: heldActivitySession)
+        do {
+            _ = try await DictationActionRuntime.perform(.startSession(sessionID: UUID()))
+            throw Failure.check("Pending Activity start must retain the action gate until unwind")
+        } catch DictationActionError.busy { checks += 1 }
+        DictationLiveActivity.releaseStart()
+        do {
+            _ = try await heldActivityStart.value
+            throw Failure.check("Cancelled Activity startup must not resume capture")
+        } catch is CancellationError { checks += 1 }
+        let replacementAfterHeldStart = try await ToggleDictationShortcut().perform()
+        let replacementAfterHeldID = bridge.sessionIdentifier!
+        try check(replacementAfterHeldStart.value == ""
+                  && controller.phase == .recording && controller.actionButtonRecording
+                  && recorder.recording && replacementAfterHeldID != heldActivitySession,
+                  "Replacement after cancelled Activity startup owns its fresh recording contract")
+        await DictationActionRuntime.cancel(sessionID: heldActivitySession)
+        try check(controller.phase == .recording && recorder.recording,
+                  "Old Activity startup cleanup cannot cancel the replacement")
+        await DictationActionRuntime.cancel(sessionID: replacementAfterHeldID)
+
         // Change the preference during discovery. This Action must retain its
         // original model for capture, initial Island name and preview policy.
         controller.selectedModel = .parakeetRealtimeEOU

@@ -132,6 +132,43 @@ import Foundation
       "Recording revisions keep one active Activity identity")
     activity.cancel(elapsed: 0)
     try await waitForEnd(replacement)
+    let sourceStarted = await activity.start(
+      sessionID: UUID(), modelName: "Realtime", startedAt: Date(), previewCapability: .streamingText)
+    try check(sourceStarted, "Cancellation interleaving has an active source Activity")
+    await ActivityEndGate.shared.holdNextEnd()
+    activity.finish(transcript: "Completed source.", elapsed: 1)
+    let gateDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+    while !(await ActivityEndGate.shared.isHeld()), ContinuousClock.now < gateDeadline {
+      await Task.yield()
+    }
+    let endIsHeld = await ActivityEndGate.shared.isHeld()
+    try check(endIsHeld, "Fixture holds the previous platform end")
+    var enteredCancelledStart = false
+    let cancelledStart = Task { @MainActor in
+      enteredCancelledStart = true
+      return await activity.start(
+        sessionID: UUID(), modelName: "Old startup", startedAt: Date(), previewCapability: .streamingText)
+    }
+    while !enteredCancelledStart { await Task.yield() }
+    activity.cancel(elapsed: 0)
+    let replacementSession = UUID()
+    var enteredReplacementStart = false
+    let replacementStart = Task { @MainActor in
+      enteredReplacementStart = true
+      return await activity.start(
+        sessionID: replacementSession, modelName: "Replacement", startedAt: Date(),
+        previewCapability: .statusOnly)
+    }
+    while !enteredReplacementStart { await Task.yield() }
+    await ActivityEndGate.shared.release()
+    let oldStartSucceeded = await cancelledStart.value
+    let newStartSucceeded = await replacementStart.value
+    try check(!oldStartSucceeded && newStartSucceeded,
+      "Cancelled suspended Activity start cannot consume the replacement reservation")
+    try check(Activity<DictationActivityAttributes>.activities.last?.attributes.sessionID == replacementSession,
+      "Only the replacement session requests an Activity after the held end")
+    activity.cancel(elapsed: 0)
+    try await waitForEnd(Activity<DictationActivityAttributes>.activities.last!)
     print("PASS: \(checks) production Activity state/lifecycle checks")
   }
 }
