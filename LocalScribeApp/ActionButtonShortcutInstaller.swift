@@ -8,6 +8,7 @@ final class ActionButtonShortcutInstaller: NSObject, ObservableObject {
   @Published private(set) var errorMessage: String?
   weak var anchor: UIView?
   private var document: UIDocumentInteractionController?
+  private var shareSheet: UIActivityViewController?
 
   func present() {
     errorMessage = nil
@@ -37,11 +38,41 @@ final class ActionButtonShortcutInstaller: NSObject, ObservableObject {
       document.name = "LocalScribe Action Button"
       self.document = document
       if !document.presentOpenInMenu(from: anchor.bounds, in: anchor, animated: true) {
-        errorMessage = "Install Apple's Shortcuts app, then try Add Shortcut again."
+        presentShareSheet(for: file, from: anchor)
       }
     } catch {
       errorMessage = "The shortcut file could not be prepared. Try again."
     }
+  }
+
+  private func presentShareSheet(for file: URL, from anchor: UIView) {
+    var responder: UIResponder? = anchor
+    var nearestController: UIViewController?
+    while let current = responder {
+      if let controller = current as? UIViewController {
+        nearestController = controller
+        break
+      }
+      responder = current.next
+    }
+    guard var presenter = nearestController ?? anchor.window?.rootViewController else {
+      errorMessage = "The shortcut menu could not be opened. Try again."
+      return
+    }
+    while let presented = presenter.presentedViewController, !presented.isBeingDismissed {
+      presenter = presented
+    }
+    guard presenter.viewIfLoaded?.window === anchor.window,
+      !presenter.isBeingDismissed, !presenter.isBeingPresented
+    else {
+      errorMessage = "The shortcut menu could not be opened. Try again."
+      return
+    }
+    let shareSheet = UIActivityViewController(activityItems: [file], applicationActivities: nil)
+    shareSheet.popoverPresentationController?.sourceView = anchor
+    shareSheet.popoverPresentationController?.sourceRect = anchor.bounds
+    self.shareSheet = shareSheet
+    presenter.present(shareSheet, animated: true)
   }
 }
 

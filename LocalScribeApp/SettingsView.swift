@@ -174,7 +174,8 @@ private struct ActionButtonSetupView: View {
                 if let error = shortcutInstaller.errorMessage {
                     Text(error).font(.footnote).foregroundStyle(AppTheme.error)
                 }
-                Text("1. Choose Shortcuts in the Open In menu, then tap Add Shortcut. The recording and copy steps are already configured.")
+                Text("1. Choose Shortcuts in Apple’s menu, then tap Add Shortcut. The recording and copy steps are already configured.")
+                Text("If the menu offers Save to Files, save the shortcut and open that file in Files to add it.")
                 Text("2. In iPhone Settings → Action Button → Shortcut, choose LocalScribe Action Button.")
                 Text("If you already created a shortcut manually, choose this new shortcut instead.")
             } footer: {
