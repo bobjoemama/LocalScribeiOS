@@ -158,7 +158,6 @@ private struct BackgroundModelPicker: View {
 
 private struct ActionButtonSetupView: View {
     @ObservedObject var controller: AppController
-    @State private var shortcutImportError: String?
     var body: some View {
         Form {
             Section {
@@ -168,14 +167,13 @@ private struct ActionButtonSetupView: View {
             }
             .listRowBackground(AppTheme.surface)
             Section {
-                ActionButtonShortcutInstallButton { shortcutImportError = $0 }
-                    .frame(minHeight: 44)
-                Text("1. Tap Add Action Button Shortcut, choose Shortcuts, then tap Add Shortcut.")
-                Text("2. Open iPhone Settings → Action Button → Shortcut and choose LocalScribe Action Button.")
-                Text("3. Hold and release to record, then hold and release again to finish and copy. Paste in your destination app.")
                 Link("Open Shortcuts", destination: URL(string: "shortcuts://")!)
+                Text("1. Create a shortcut named LocalScribe Action Button. Add LocalScribe’s Dictate and Copy action.")
+                Text("2. Add If, select the Dictate and Copy result, and choose has any value.")
+                Text("3. Inside If, add Copy to Clipboard using that same result. Leave Otherwise empty.")
+                Text("4. In iPhone Settings → Action Button → Shortcut, choose LocalScribe Action Button.")
             } footer: {
-                Text("Allow microphone access in LocalScribe before using the shortcut. Releasing the button does not stop recording. Keep the shortcut's Copy to Clipboard action: it copies the finished transcript and leaves the clipboard unchanged when recording starts.").foregroundStyle(AppTheme.inkSecondary)
+                Text("Hold and release to record, then hold and release again to finish and copy. Releasing the button does not stop recording. Allow microphone access in LocalScribe first. The If step leaves your clipboard unchanged when recording starts.").foregroundStyle(AppTheme.inkSecondary)
             }
             .listRowBackground(AppTheme.surface)
             Section {
@@ -195,12 +193,6 @@ private struct ActionButtonSetupView: View {
         }
         .scribeForm()
         .navigationTitle("Action Button").navigationBarTitleDisplayMode(.inline)
-        .alert("Shortcut could not be opened", isPresented: Binding(
-            get: { shortcutImportError != nil },
-            set: { if !$0 { shortcutImportError = nil } }
-        )) {
-            Button("OK") { shortcutImportError = nil }
-        } message: { Text(shortcutImportError ?? "") }
     }
 }
 
