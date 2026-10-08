@@ -8,11 +8,11 @@ A public TestFlight invitation is not available yet. For now, [build and install
 
 ## Use
 
-1. Open **Models** and download **Parakeet Realtime**. Keep the app open during setup.
+1. Open **Models** and download a model. Keep the app open during setup.
 2. In **Dictate**, tap **Record**, allow microphone access and speak.
 3. Tap **Stop**, edit your transcript, then **Copy** or **Share**.
 
-Choose Phonon-2 for formatted text; Realtime produces English without punctuation or capitalization. **Library** contains Dictionary, Snippets and Notes; **History** contains saved transcripts.
+Realtime and Moonshine stream live text. Phonon-2 gives formatted text with periodic previews; Realtime produces English without punctuation or capitalization. **Library** contains Dictionary, Snippets and Notes; **History** contains saved transcripts.
 
 Optional: [set up the keyboard](docs/INSTALLATION.md#keyboard) for dictation in other apps, or [configure the Action Button](docs/INSTALLATION.md#action-button). Background shortcut behavior still needs physical verification; ordinary Dictate remains the foreground fallback.
 
