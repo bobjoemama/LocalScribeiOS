@@ -277,7 +277,7 @@ private final class NativeModelPreparationGrant: ModelPreparationGrant {
     init(task: BGContinuedProcessingTask) { self.task = task }
 
     func setExpiration(_ handler: @escaping @MainActor @Sendable () -> Void) {
-        task.expirationHandler = { Task { @MainActor in handler() } }
+        task.expirationHandler = { @Sendable in Task { @MainActor in handler() } }
     }
 
     func update(title: String, phase: String, completedComponents: Int, totalComponents: Int) {
