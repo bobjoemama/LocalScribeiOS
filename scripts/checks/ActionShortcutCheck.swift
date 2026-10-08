@@ -17,6 +17,9 @@ struct DictationActivityAttributes {
   enum Phase: Equatable { case recording, transcribing, ready, cancelled, failed }
 }
 @MainActor final class DictationLiveActivity {
+  enum PreviewCapability { case streamingText, statusOnly }
+  private var previewCapability = PreviewCapability.statusOnly
+  static var lastModelName = ""
   static var authorized = true
   static var requestSucceeds = true
   static var starts = 0
@@ -29,8 +32,11 @@ struct DictationActivityAttributes {
   var canStartRecordingActivity: Bool { Self.authorized }
   func clearOrphanedActivities() {}
   @discardableResult func start(
-    sessionID: UUID, modelName: String, startedAt: Date, required: Bool = false
-  ) -> Bool {
+    sessionID: UUID, modelName: String, startedAt: Date,
+    previewCapability: PreviewCapability, required: Bool = false
+  ) async -> Bool {
+    self.previewCapability = previewCapability
+    Self.lastModelName = modelName
     Self.starts += 1
     Self.lastPhase = .recording
     Self.lastText = ""
@@ -44,12 +50,12 @@ struct DictationActivityAttributes {
   ) {
     if Self.lastPhase == .transcribing && phase == .recording { Self.regressedToRecording = true }
     Self.lastPhase = phase
-    if let transcript { Self.lastText = transcript }
+    if previewCapability == .streamingText, let transcript { Self.lastText = transcript }
   }
   func finish(transcript: String, elapsed: TimeInterval) {
     Self.finishes += 1
     Self.lastPhase = .ready
-    Self.lastText = transcript
+    Self.lastText = previewCapability == .streamingText ? transcript : ""
   }
   func fail(message: String?, elapsed: TimeInterval) {
     Self.lastPhase = .failed

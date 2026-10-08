@@ -18,10 +18,17 @@ import Foundation
   }
   @MainActor static func main() async throws {
     let activity = DictationLiveActivity()
+    let orphan = try Activity<DictationActivityAttributes>.request(
+      attributes: DictationActivityAttributes(sessionID: UUID(), startedAt: Date(), modelName: "Old"),
+      content: ActivityContent(
+        state: DictationActivityAttributes.ContentState(phase: .recording, elapsed: 0, message: nil),
+        staleDate: nil), pushType: nil)
+    activity.clearOrphanedActivities()
     let cancelID = UUID()
-    try check(
-      activity.start(sessionID: cancelID, modelName: "Realtime", startedAt: Date()),
-      "Start creates an Activity")
+    let started = await activity.start(
+      sessionID: cancelID, modelName: "Realtime", startedAt: Date(), previewCapability: .streamingText)
+    try check(started, "Start creates an Activity")
+    try check(orphan.dismissalPolicy == .immediate, "Orphan cleanup finishes before a new request")
     let cancelled = Activity<DictationActivityAttributes>.activities.last!
     activity.update(phase: .recording, elapsed: 12, transcript: "Private captured words.")
     let cancelTime = Date()
@@ -44,9 +51,9 @@ import Foundation
     let decoded = try JSONDecoder().decode(
       DictationActivityAttributes.ContentState.self, from: encoded)
     try check(decoded.phase == .cancelled, "Cancelled state round-trips across app/widget boundary")
-    try check(
-      activity.start(sessionID: UUID(), modelName: "Realtime", startedAt: Date()),
-      "A new Activity can start after cancellation")
+    let startedAfterCancel = await activity.start(
+      sessionID: UUID(), modelName: "Realtime", startedAt: Date(), previewCapability: .streamingText)
+    try check(startedAfterCancel, "A new Activity can start after cancellation")
     let failed = Activity<DictationActivityAttributes>.activities.last!
     activity.update(
       phase: .transcribing, elapsed: 3, transcript: "Private speech should not survive failure.")
@@ -56,9 +63,9 @@ import Foundation
       failed.finalState?.phase == .failed && failed.finalState?.status == "Microphone unavailable",
       "Failure shows its short cause")
     try check(failed.finalState?.transcriptTail == nil, "Failed Activity contains no transcript")
-    try check(
-      activity.start(sessionID: UUID(), modelName: "Realtime", startedAt: Date()),
-      "A new Activity can start after failure")
+    let startedAfterFailure = await activity.start(
+      sessionID: UUID(), modelName: "Realtime", startedAt: Date(), previewCapability: .streamingText)
+    try check(startedAfterFailure, "A new Activity can start after failure")
     let completed = Activity<DictationActivityAttributes>.activities.last!
     let finalText = "One. Two. Three. Four."
     activity.finish(transcript: finalText, elapsed: 7)
@@ -76,6 +83,55 @@ import Foundation
     try check(
       completed.finalState?.phase == .ready,
       "An already ended Activity cannot be overwritten by late cancellation")
+    let statusStarted = await activity.start(
+      sessionID: UUID(), modelName: "Phonon-2", startedAt: Date(), previewCapability: .statusOnly)
+    try check(statusStarted, "Status-only Activity starts with the chosen model")
+    let statusOnly = Activity<DictationActivityAttributes>.activities.last!
+    try check(statusOnly.attributes.modelName == "Phonon-2", "Model name survives into initial attributes")
+    for elapsed in 1...10 {
+      activity.update(phase: .recording, elapsed: Double(elapsed), transcript: "Window \(elapsed).")
+    }
+    await Task.yield()
+    try check(statusOnly.updateStates.isEmpty,
+      "Discarded text and timer ticks do not send redundant recording updates")
+    for phase in [DictationActivityAttributes.Phase.transcribing, .ready] {
+      let previousCount = statusOnly.updateStates.count
+      activity.update(phase: phase, elapsed: 9, transcript: "Private windowed result.")
+      let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+      while statusOnly.updateStates.count == previousCount, ContinuousClock.now < deadline {
+        await Task.yield()
+      }
+      try check(statusOnly.updateStates.last?.phase == phase
+        && statusOnly.updateStates.last?.transcriptTail == nil,
+        "Status-only \(phase) update reaches the platform without text")
+    }
+    activity.finish(transcript: "Full result still returned outside Island.", elapsed: 9)
+    // Immediate replacement must await the queued end, rather than request
+    // another recording while the former one is still active at ActivityKit.
+    let replacementStarted = await activity.start(
+      sessionID: UUID(), modelName: "Moonshine Small", startedAt: Date(),
+      previewCapability: .streamingText)
+    try check(replacementStarted && statusOnly.finalState?.phase == .ready,
+      "Queued previous end completes before replacement request")
+    try check(statusOnly.finalState?.transcriptTail == nil
+      && statusOnly.updateStates.allSatisfy { $0.transcriptTail == nil },
+      "Status-only policy gates every update and final ready content")
+    let replacement = Activity<DictationActivityAttributes>.activities.last!
+    for index in 0..<100 {
+      activity.update(phase: .recording, elapsed: 0, transcript: "Revision \(index).")
+    }
+    let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+    while replacement.updateStates.isEmpty, ContinuousClock.now < deadline {
+      await Task.yield()
+    }
+    try check(replacement.updateStates.count == 1
+      && replacement.updateStates.last?.transcriptTail == "Revision 99.",
+      "A burst coalesces into one latest snapshot without replacing the Activity")
+    try check(Activity<DictationActivityAttributes>.activities.last?.id == replacement.id
+      && replacement.dismissalPolicy == nil,
+      "Recording revisions keep one active Activity identity")
+    activity.cancel(elapsed: 0)
+    try await waitForEnd(replacement)
     print("PASS: \(checks) production Activity state/lifecycle checks")
   }
 }

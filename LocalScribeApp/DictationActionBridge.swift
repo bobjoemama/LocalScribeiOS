@@ -196,6 +196,12 @@ final class DictationActionBridge: ObservableObject {
         "Enable Live Activities for LocalScribe in iPhone Settings to record through shortcuts. You can still record directly in LocalScribe."
       )
     }
+    // Freeze once before discovery or any other suspension. The recorder,
+    // activity name and preview policy all refer to this exact session model.
+    let model = controller.selectedModel
+    guard controller.reserveActionButtonRecording(requestID: sessionID, model: model) else {
+      throw DictationActionError.busy
+    }
     recordingActivityStarted = false
     activeSessionID = sessionID
     diagnosticSessionID = sessionID
@@ -203,23 +209,32 @@ final class DictationActionBridge: ObservableObject {
     didBeginRecording = false
     // Discovery suspends before microphone activation. Reserve ownership first
     // so a matching platform cancellation can retire this start while it waits.
-    await controller.refreshInstalledModels()
+    await controller.refreshInstalledModels(prewarm: false)
     guard activeSessionID == sessionID else { throw CancellationError() }
     if Task.isCancelled {
       _ = try await perform(.cancel(sessionID: sessionID, reason: .taskCancelled))
       throw CancellationError()
     }
-    sessionModelName = controller.selectedBackgroundModel.name
-    recordingActivityStarted = liveActivity.start(
-      sessionID: sessionID, modelName: sessionModelName, startedAt: Date(), required: true)
+    sessionModelName = model.name
+    let previewCapability: DictationLiveActivity.PreviewCapability =
+      model == .parakeetRealtimeEOU || model == .moonshineSmall ? .streamingText : .statusOnly
+    recordingActivityStarted = await liveActivity.start(
+      sessionID: sessionID, modelName: sessionModelName, startedAt: Date(),
+      previewCapability: previewCapability, required: true)
+    guard activeSessionID == sessionID else { throw CancellationError() }
+    if Task.isCancelled {
+      _ = try await perform(.cancel(sessionID: sessionID, reason: .taskCancelled))
+      throw CancellationError()
+    }
     guard recordingActivityStarted else {
       activeSessionID = nil
+      await controller.cancelActionButtonRecording(requestID: sessionID)
       throw DictationActionError.failed(
         "iOS could not start the recording Live Activity. Check Live Activities in iPhone Settings."
       )
     }
     logger.notice("Shortcut microphone start requested")
-    await controller.startActionButtonRecording(requestID: sessionID)
+    await controller.startReservedActionButtonRecording(requestID: sessionID)
     guard activeSessionID == sessionID else { throw CancellationError() }
     logger.notice(
       "Shortcut start returned; recording=\(controller.phase == .recording, privacy: .public) activity=\(self.recordingActivityStarted, privacy: .public)"
@@ -235,8 +250,9 @@ final class DictationActionBridge: ObservableObject {
         "iOS could not start the recording Live Activity. Open LocalScribe to record directly, or check Live Activities in iPhone Settings."
       )
     }
-    guard controller.phase == .recording, didBeginRecording else {
+    guard controller.phase == .recording, controller.actionButtonRecording, didBeginRecording else {
       activeSessionID = nil
+      await controller.cancelActionButtonRecording(requestID: sessionID)
       liveActivity.fail(message: controller.errorMessage, elapsed: 0)
       recordingActivityStarted = false
       logger.error("Shortcut microphone capture did not start")

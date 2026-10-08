@@ -57,6 +57,12 @@ struct LocalScribeLiveActivity: Widget {
         }
         DynamicIslandExpandedRegion(.bottom) {
           VStack(alignment: .leading, spacing: 12) {
+            Text(context.attributes.modelName)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+              .accessibilityLabel("Dictation model")
+              .accessibilityValue(context.attributes.modelName)
             if let tail = context.state.transcriptTail, !tail.isEmpty {
               Text(tail)
                 .font(.subheadline)

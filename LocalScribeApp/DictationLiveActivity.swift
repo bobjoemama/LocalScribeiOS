@@ -3,7 +3,13 @@ import Foundation
 
 @MainActor
 final class DictationLiveActivity {
-  private var activityID: String?
+  enum PreviewCapability: Equatable { case streamingText, statusOnly }
+  private struct Session {
+    let activityID: String
+    let previewCapability: PreviewCapability
+  }
+  private var session: Session?
+  private var startingSessionID: UUID?
   private var updates = Task<Void, Never> {}
   private var drainActivityID: String?
   private var pendingState: DictationActivityAttributes.ContentState?
@@ -15,27 +21,41 @@ final class DictationLiveActivity {
   var isEnabled: Bool { canStartRecordingActivity }
 
   @discardableResult
-  func start(sessionID: UUID, modelName: String, startedAt: Date, required: Bool = false) -> Bool {
+  func start(
+    sessionID: UUID, modelName: String, startedAt: Date,
+    previewCapability: PreviewCapability, required: Bool = false
+  ) async -> Bool {
     guard required ? canStartRecordingActivity : isEnabled else { return false }
-    if let activityID {
-      return Activity<DictationActivityAttributes>.activities.first(where: { $0.id == activityID })?
+    if let session {
+      return Activity<DictationActivityAttributes>.activities.first(where: { $0.id == session.activityID })?
         .attributes.sessionID == sessionID
     }
+    guard startingSessionID == nil else { return false }
+    startingSessionID = sessionID
+    defer {
+      if startingSessionID == sessionID { startingSessionID = nil }
+    }
+    // Finish the previous session and launch-time cleanup before requesting a
+    // replacement. During recording, updates never end or recreate this activity.
+    let previous = updates
+    await previous.value
+    guard startingSessionID == sessionID, !Task.isCancelled else { return false }
     let attributes = DictationActivityAttributes(
       sessionID: sessionID, startedAt: startedAt, modelName: modelName)
     let state = DictationActivityAttributes.ContentState(
       phase: .recording, elapsed: 0, message: nil)
     do {
-      activityID = try Activity.request(
+      let activity = try Activity.request(
         attributes: attributes, content: ActivityContent(state: state, staleDate: nil),
         pushType: nil
-      ).id
+      )
+      session = Session(activityID: activity.id, previewCapability: previewCapability)
       transcriptTail = nil
       lastState = state
       pendingState = nil
       return true
     } catch {
-      activityID = nil
+      session = nil
       return false
     }
   }
@@ -44,14 +64,23 @@ final class DictationLiveActivity {
     phase: DictationActivityAttributes.Phase, elapsed: TimeInterval, message: String? = nil,
     transcript: String? = nil
   ) {
-    guard let activityID else { return }
-    if let transcript {
+    guard let session else { return }
+    let activityID = session.activityID
+    if session.previewCapability == .statusOnly {
+      transcriptTail = nil
+    } else if let transcript {
       let tail = DictationTranscriptTail.make(from: transcript)
       transcriptTail = tail.isEmpty ? nil : tail
     }
     let state = DictationActivityAttributes.ContentState(
       phase: phase, elapsed: elapsed, message: message, transcriptTail: transcriptTail)
     guard state != lastState else { return }
+    // The system renders the recording timer from startedAt. Elapsed-only
+    // changes (including discarded windowed text) need no ActivityKit update.
+    if phase == .recording, let lastState, lastState.phase == .recording,
+      lastState.message == message, lastState.transcriptTail == transcriptTail {
+      return
+    }
     lastState = state
     pendingState = state
     // At most one in-flight update and one replacing snapshot. Rapid live
@@ -61,7 +90,7 @@ final class DictationLiveActivity {
     let previous = updates
     updates = Task { [weak self] in
       await previous.value
-      while let self, self.activityID == activityID, let state = self.pendingState {
+      while let self, self.session?.activityID == activityID, let state = self.pendingState {
         self.pendingState = nil
         await Self.sendUpdate(id: activityID, state: state)
       }
@@ -70,7 +99,8 @@ final class DictationLiveActivity {
   }
 
   func finish(transcript: String, elapsed: TimeInterval) {
-    let tail = DictationTranscriptTail.make(from: transcript)
+    let tail = session?.previewCapability == .streamingText
+      ? DictationTranscriptTail.make(from: transcript) : ""
     end(
       phase: .ready, elapsed: elapsed, transcriptTail: tail.isEmpty ? nil : tail, dismissalAfter: 10
     )
@@ -93,13 +123,16 @@ final class DictationLiveActivity {
     phase: DictationActivityAttributes.Phase, elapsed: TimeInterval, message: String? = nil,
     transcriptTail: String? = nil, dismissalAfter: TimeInterval
   ) {
-    guard let activityID else { return }
-    self.activityID = nil
+    startingSessionID = nil
+    guard let session else { return }
+    let activityID = session.activityID
+    self.session = nil
     pendingState = nil
     drainActivityID = nil
     let previous = updates
     let state = DictationActivityAttributes.ContentState(
-      phase: phase, elapsed: elapsed, message: message, transcriptTail: transcriptTail)
+      phase: phase, elapsed: elapsed, message: message,
+      transcriptTail: session.previewCapability == .streamingText ? transcriptTail : nil)
     self.transcriptTail = nil
     lastState = nil
     updates = Task {
@@ -111,7 +144,9 @@ final class DictationLiveActivity {
   /// Relaunch cannot continue a microphone session from a terminated process.
   func clearOrphanedActivities() {
     let previous = updates
+    // Capture only launch-time IDs; cleanup can never reach a later request.
     let orphanedIDs = Set(Activity<DictationActivityAttributes>.activities.map(\.id))
+      .subtracting(session.map { [$0.activityID] } ?? [])
     updates = Task {
       await previous.value
       for id in orphanedIDs {

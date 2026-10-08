@@ -237,6 +237,32 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
                   "Cancelled Action startup and its late cancellation preserve a newer manual capture")
         await controller.cancelRecording()
         controller.setForeground(false)
+
+        // Change the preference during discovery. This Action must retain its
+        // original model for capture, initial Island name and preview policy.
+        controller.selectedModel = .parakeetRealtimeEOU
+        let preparationCountBeforeFreeze = await engine.engine.preparations().count
+        await engine.holdModelDiscovery()
+        let frozenSession = UUID()
+        let frozenStart = Task {
+            try await DictationActionRuntime.perform(.startSession(sessionID: frozenSession))
+        }
+        try await waitFor { await engine.discovering() }
+        controller.selectedModel = .parakeetPhonon
+        await engine.releaseDiscovery()
+        _ = try await frozenStart.value
+        try check(controller.phase == .recording && controller.actionButtonRecording
+                  && controller.recordingModel == .parakeetRealtimeEOU
+                  && controller.selectedModel == .parakeetPhonon
+                  && DictationLiveActivity.lastModelName == SpeechModel.parakeetRealtimeEOU.name,
+                  "Preference changes during discovery cannot change the frozen capture or initial Island name")
+        recorder.feed(32_000)
+        let frozenResult = try await ToggleDictationShortcut().perform()
+        let frozenPreparations = await engine.engine.preparations()
+        try check(frozenResult.value == "Retry words."
+                  && frozenPreparations.dropFirst(preparationCountBeforeFreeze).allSatisfy { $0 == .parakeetRealtimeEOU },
+                  "Discovery never prewarms the changed preference or switches final transcription")
+        controller.selectedModel = .parakeetRealtimeEOU
         try check(UIPasteboard.general.writes.isEmpty && controller.history.isEmpty,
                   "Repeated/empty/cancelled sessions use no app clipboard access or history writes")
         print("PASS: \(checks) repeated Action Button session checks")
