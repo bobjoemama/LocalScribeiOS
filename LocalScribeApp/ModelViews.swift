@@ -98,7 +98,11 @@ struct ModelsView: View {
                     Text(model.name).foregroundStyle(AppTheme.ink).fixedSize(horizontal: false, vertical: true)
                     Text(SpeechModelPresentation.size(model) + " · " + (model.languages == "English" ? "English" : "25 languages") + (model == .parakeetRealtimeEOU ? " · no punctuation" : ""))
                         .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
-                    if loaded { Text("Loaded").font(.footnote).foregroundStyle(AppTheme.success) }
+                    if selected && installed {
+                        Text("Action Button · " + SpeechModelPresentation.actionButtonState(controller))
+                            .font(.footnote).foregroundStyle(controller.actionButtonModelReady ? AppTheme.success : AppTheme.inkSecondary)
+                    }
+                    else if loaded { Text("Loaded").font(.footnote).foregroundStyle(AppTheme.success) }
                     else if installed { Text("Installed").font(.footnote).foregroundStyle(AppTheme.inkSecondary) }
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 Button { detailModel = model } label: { Image(systemName: "info.circle").frame(width: 44, height: 44) }
@@ -151,12 +155,12 @@ private struct ModelDetailsView: View {
                         ? "Updates text incrementally as speech arrives, reusing recognition state. The same model provides preview and final text."
                         : "First preview after 5 seconds of audio, then updates every 3 seconds as processing catches up. The same model provides preview and final text.")
                         .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
-                    LabeledContent("Default in-app processing", value: SpeechModelPresentation.inAppProcessing(model))
+                    LabeledContent("On-demand processing", value: SpeechModelPresentation.inAppProcessing(model))
                     Text(SpeechModelPresentation.backend(model)).font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                     LabeledContent("Action Button", value: "CPU only · same model")
                     Text(model.detail).foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("Action Button uses the same model files with CPU-only processing and may prepare them separately. Preparation and recognition speed depend on the model. iOS controls background execution and microphone activation.")
+                    Text("Keep model loaded prepares the same files for CPU-only Dictate and Action Button use. With it off, cold in-app loads use the processing path above. Performance shows the loaded configuration. Recognition speed depends on the model; iOS controls background execution and microphone activation.")
                 }
                 if model.languages != "English" {
                     Section("Supported languages") {
@@ -176,6 +180,11 @@ private struct ModelDetailsView: View {
 enum SpeechModelPresentation {
     static func isStreaming(_ model: SpeechModel) -> Bool { model == .parakeetRealtimeEOU || model == .moonshineSmall }
     static func mode(_ model: SpeechModel) -> String { isStreaming(model) ? "Streaming · live text" : "Periodic text · first 5 s, then every 3 s" }
+    @MainActor static func actionButtonState(_ controller: AppController) -> String {
+        if controller.actionButtonModelReady { return "Ready" }
+        if controller.actionButtonModelLoading { return "Loading…" }
+        return "Not loaded"
+    }
     static func inAppProcessing(_ model: SpeechModel) -> String {
         if isStreaming(model) { return "CPU only" }
         return model == .parakeetPhononLUT3 ? "CPU + GPU / Neural Engine" : "CPU + Neural Engine"

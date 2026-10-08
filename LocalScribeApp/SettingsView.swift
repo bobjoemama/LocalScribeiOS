@@ -18,7 +18,7 @@ struct SettingsView: View {
                 Section {
                     Button("Choose model", action: openModels)
                     Toggle("Keep model loaded", isOn: $controller.keepModelLoaded).tint(.green)
-                        .disabled(controller.phase != .idle || controller.keyboardSessionActive)
+                        .disabled(controller.phase != .idle || controller.recordingModel != nil || controller.keyboardSessionActive)
                     Toggle("Use built-in microphone", isOn: $controller.preferBuiltInMicrophone).tint(.green)
                         .disabled(controller.phase != .idle || controller.keyboardSessionActive)
                     Toggle("Haptic feedback", isOn: $controller.hapticFeedback).tint(.green)
@@ -26,7 +26,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Dictation").foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("Preloads your Dictate model and keeps the last-used model ready between dictations and when you switch apps. Force quit releases it; iOS may reclaim memory, and turning this off releases it after dictation.").foregroundStyle(AppTheme.inkSecondary)
+                    Text("Prepares your selected model for CPU-only Dictate and Action Button use and retains it when you switch apps. Wait for Ready before using the shortcut. This does not keep the microphone on or keep the app running. Turning it off releases an idle model; iOS may reclaim memory. CPU recognition speed depends on the model.").foregroundStyle(AppTheme.inkSecondary)
                 }
                 .listRowBackground(AppTheme.surface)
 
@@ -92,11 +92,12 @@ struct SettingsView: View {
 
                 Section {
                     LabeledContent("Model", value: controller.selectedModel.name)
+                    LabeledContent("Model state", value: SpeechModelPresentation.actionButtonState(controller))
                     NavigationLink("Setup") { ActionButtonSetupView(controller: controller) }
                 } header: {
                     Text("Action Button").foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("Dictate and Action Button recordings use the same selected model. The shortcut uses CPU-only processing and requires Live Activities. If iOS declines background microphone activation, open LocalScribe and record from Dictate.").foregroundStyle(AppTheme.inkSecondary)
+                    Text("Dictate and Action Button use the same selected model. Open LocalScribe, turn on Keep model loaded, and wait for Ready before using the shortcut. Live Activities are required. iOS may still decline background microphone activation.").foregroundStyle(AppTheme.inkSecondary)
                 }
                 .listRowBackground(AppTheme.surface)
 
@@ -153,8 +154,9 @@ private struct ActionButtonSetupView: View {
         Form {
             Section {
                 LabeledContent("Model", value: controller.selectedModel.name)
+                LabeledContent("Model state", value: SpeechModelPresentation.actionButtonState(controller))
             } footer: {
-                Text("Action Button uses the same selected model files with CPU-only processing. Change the model on Dictate or in Settings → Choose model.").foregroundStyle(AppTheme.inkSecondary)
+                Text("Open LocalScribe, turn on Keep model loaded in Settings, and wait for Ready before using the shortcut. Action Button uses the same model files on CPU. Change the model on Dictate or in Settings → Choose model.").foregroundStyle(AppTheme.inkSecondary)
             }
             .listRowBackground(AppTheme.surface)
             Section {

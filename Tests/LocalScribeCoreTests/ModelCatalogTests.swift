@@ -13,8 +13,8 @@ struct ModelCatalogTests {
             #expect(!model.name.isEmpty && !model.downloadSize.isEmpty && !model.detail.isEmpty)
         }
         let lut3Detail = SpeechModel.parakeetPhononLUT3.detail
-        #expect(lut3Detail.contains("Default in-app encoder requests CPU and GPU"))
-        #expect(lut3Detail.contains("Action Button uses the same files on CPU"))
+        #expect(lut3Detail.contains("On-demand in-app encoder requests CPU and GPU"))
+        #expect(lut3Detail.contains("Keep model loaded prepares the same files on CPU for Dictate and Action Button"))
         #expect(SpeechModel.moonshineSmall.detail.contains("CPU"))
     }
 
@@ -28,8 +28,8 @@ struct ModelCatalogTests {
             }
         }
         for model in [SpeechModel.parakeetUltra, .parakeetPhononLUT6] {
-            #expect(model.detail.contains("Default in-app execution requests CPU and Neural Engine"))
-            #expect(model.detail.contains("Action Button uses the same files on CPU"))
+            #expect(model.detail.contains("On-demand in-app execution requests CPU and Neural Engine"))
+            #expect(model.detail.contains("Keep model loaded prepares the same files on CPU for Dictate and Action Button"))
         }
     }
 }

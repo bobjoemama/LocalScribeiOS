@@ -116,7 +116,11 @@ struct DictateView: View {
     }
 
     private var modelModeState: String {
-        SpeechModelPresentation.mode(displayedModel) + (controller.preparedModel == displayedModel ? " · loaded" : "")
+        let mode = SpeechModelPresentation.mode(displayedModel)
+        if displayedModel == controller.selectedModel {
+            return mode + " · Action Button " + SpeechModelPresentation.actionButtonState(controller)
+        }
+        return mode + (controller.preparedModel == displayedModel ? " · loaded" : "")
     }
 
     @ViewBuilder private var transcriptWorkspace: some View {
