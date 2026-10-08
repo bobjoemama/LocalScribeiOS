@@ -48,7 +48,9 @@ final class LivePerformanceMonitor: ObservableObject {
         systemCPU.reset()
         pressure = .unknown
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: .global(qos: .utility))
-        source.setEventHandler { [weak self, weak source] in
+        // Dispatch executes this callback on its utility queue. Explicit Sendable
+        // prevents inherited MainActor isolation before the actor hop below.
+        source.setEventHandler { @Sendable [weak self, weak source] in
             guard let events = source?.data else { return }
             let level: LiveMemoryPressure = events.contains(.critical) ? .critical
                 : events.contains(.warning) ? .warning : events.contains(.normal) ? .normal : .unknown
