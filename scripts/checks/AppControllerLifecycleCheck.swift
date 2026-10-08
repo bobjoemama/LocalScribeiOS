@@ -96,7 +96,23 @@ struct FixtureCaptureSnapshot {
 
 actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine {
     var cpuBackgroundEnabled = true
-    func supportsBackgroundInference(for model: SpeechModel) async -> Bool { cpuBackgroundEnabled && model == .parakeetRealtimeEOU }
+    private var capabilityCalls = 0
+    private var heldCapabilityCall: Int?
+    private var capabilityContinuation: CheckedContinuation<Void, Never>?
+    func holdNextBackgroundCapability(skip: Int = 0) { heldCapabilityCall = capabilityCalls + 1 + skip }
+    func backgroundCapabilityIsHeld() -> Bool { capabilityContinuation != nil }
+    func releaseBackgroundCapability() {
+        heldCapabilityCall = nil
+        capabilityContinuation?.resume()
+        capabilityContinuation = nil
+    }
+    func supportsBackgroundInference(for model: SpeechModel) async -> Bool {
+        capabilityCalls += 1
+        if heldCapabilityCall == capabilityCalls {
+            await withCheckedContinuation { capabilityContinuation = $0 }
+        }
+        return cpuBackgroundEnabled && model == .parakeetRealtimeEOU
+    }
     func disableCPUBackground() { cpuBackgroundEnabled = false }
     var installed: Set<SpeechModel> = [.parakeetPhonon, .parakeetPhononG4, .parakeetRealtimeEOU]
     var holdPreparation = true
@@ -150,7 +166,18 @@ actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRep
         if holdFinish { await withCheckedContinuation { finishContinuation = $0 } }
         return "Captured words."
     }
-    func cancelStreaming() async { oldCallback = callback; callback = nil }
+    private var holdCancellation = false
+    private var cancellationContinuation: CheckedContinuation<Void, Never>?
+    func holdNextStreamCancellation() { holdCancellation = true }
+    func streamCancellationIsHeld() -> Bool { cancellationContinuation != nil }
+    func releaseStreamCancellation() { cancellationContinuation?.resume(); cancellationContinuation = nil }
+    func cancelStreaming() async {
+        if holdCancellation {
+            holdCancellation = false
+            await withCheckedContinuation { cancellationContinuation = $0 }
+        }
+        oldCallback = callback; callback = nil
+    }
     func transcribe(samples: [Float]) async throws -> String { "Unused offline API" }
     func unload() async { unloadCalls += 1 }
     func emitStale() { oldCallback?(.init(confirmedText: "Stale", volatileText: "utterance")) }
@@ -270,6 +297,73 @@ extension SharedKeyboardStore {
         cancelRecorder.captureSnapshot.processingFailureCount = 1
         await cancelController.stopRecording()
         try check(cancelController.errorMessage?.contains("conversion failed") == true, "Stop observes conversion failures even before callback delivery")
+
+        let startupEngine = LifecycleEngine()
+        await startupEngine.releasePreparation()
+        let startupController = await fixture(startupEngine, model: .parakeetRealtimeEOU)
+        let startupRecorder = AudioRecorder.latest!
+        for skip in [0, 1] {
+            let requestID = UUID()
+            let initialArmCalls = startupRecorder.armCalls
+            await startupEngine.holdNextBackgroundCapability(skip: skip)
+            let pendingStart = Task { await startupController.startActionButtonRecording(requestID: requestID) }
+            try await eventually { await startupEngine.backgroundCapabilityIsHeld() }
+            try check(!startupRecorder.recording && startupController.currentRecordingID == nil,
+                      "Held Action capability discovery has no capture owner")
+            await startupController.cancelActionButtonRecording(requestID: requestID)
+            await startupEngine.releaseBackgroundCapability()
+            await pendingStart.value
+            try check(startupController.phase == .idle && !startupController.actionButtonRecording && !startupRecorder.recording && !startupRecorder.armed,
+                      "Cancellation before capability await \(skip + 1) resumes leaves no orphan Action capture")
+            try check(startupRecorder.armCalls == initialArmCalls && startupController.completedRecordingID == nil && startupController.history.isEmpty,
+                      "Cancelled startup opens no microphone and saves no result")
+        }
+
+        await startupController.startRecording()
+        await startupEngine.holdNextStreamCancellation()
+        let previousCleanup = Task { await startupController.cancelRecording() }
+        try await eventually { await startupEngine.streamCancellationIsHeld() }
+        let cleanupWaitRequestID = UUID()
+        let initialCleanupArmCalls = startupRecorder.armCalls
+        let cleanupWaitStart = Task { await startupController.startActionButtonRecording(requestID: cleanupWaitRequestID) }
+        try await eventually { startupController.phase == .idle && startupController.actionButtonRecording }
+        await startupController.cancelActionButtonRecording(requestID: cleanupWaitRequestID)
+        await startupEngine.releaseStreamCancellation()
+        await previousCleanup.value
+        await cleanupWaitStart.value
+        try check(startupController.phase == .idle && !startupController.actionButtonRecording && !startupRecorder.recording && !startupRecorder.armed
+                  && startupRecorder.armCalls == initialCleanupArmCalls,
+                  "Action startup canceled while awaiting previous cleanup cannot activate capture afterward")
+
+        let retiredActionID = UUID()
+        await startupEngine.holdNextBackgroundCapability()
+        let retiredAction = Task { await startupController.startActionButtonRecording(requestID: retiredActionID) }
+        try await eventually { await startupEngine.backgroundCapabilityIsHeld() }
+        await startupController.cancelActionButtonRecording(requestID: retiredActionID)
+        let replacementActionID = UUID()
+        await startupController.startActionButtonRecording(requestID: replacementActionID)
+        let replacementRecordingID = startupController.currentRecordingID
+        await startupEngine.releaseBackgroundCapability()
+        await retiredAction.value
+        await startupController.cancelActionButtonRecording(requestID: retiredActionID)
+        try check(startupController.phase == .recording && startupController.actionButtonRecording && startupRecorder.recording
+                  && startupController.currentRecordingID == replacementRecordingID,
+                  "Cancelled pending Action A and late A cleanup cannot retire Action B")
+        await startupController.cancelActionButtonRecording(requestID: replacementActionID)
+
+        let pendingActionID = UUID()
+        await startupEngine.holdNextBackgroundCapability()
+        let pendingAction = Task { await startupController.startActionButtonRecording(requestID: pendingActionID) }
+        try await eventually { await startupEngine.backgroundCapabilityIsHeld() }
+        await startupController.startRecording()
+        let manualRecordingID = startupController.currentRecordingID
+        await startupController.cancelActionButtonRecording(requestID: pendingActionID)
+        await startupEngine.releaseBackgroundCapability()
+        await pendingAction.value
+        try check(startupController.phase == .recording && !startupController.actionButtonRecording && startupRecorder.recording
+                  && startupController.currentRecordingID == manualRecordingID,
+                  "Pending Action A cancellation and continuation cannot stop unrelated manual B")
+        await startupController.cancelRecording()
 
         let eventEngine = LifecycleEngine()
         await eventEngine.releasePreparation()

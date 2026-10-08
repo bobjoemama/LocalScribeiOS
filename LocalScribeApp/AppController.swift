@@ -91,6 +91,7 @@ final class AppController: ObservableObject {
     @Published private(set) var preparedModel: SpeechModel?
     private var streamingTask: Task<Void, Error>?
     private var recordingID: UUID?
+    private var actionRecordingRequestID: UUID?
     private var capturedSampleCount: Int64 = 0
     private enum CompletionStage {
         case drainingRecognition, processingAudio, finalizingTranscript, savingResult
@@ -322,16 +323,25 @@ final class AppController: ObservableObject {
         await startRecording(model: selectedModel)
     }
 
-    private func startRecording(model: SpeechModel) async {
+    private func startRecording(model: SpeechModel, actionRequestID: UUID? = nil) async {
+        if let actionRequestID, actionRecordingRequestID != actionRequestID { return }
         await recordingCleanupTask?.value
+        if let actionRequestID, actionRecordingRequestID != actionRequestID { return }
         guard !verificationMode, phase == .idle, downloadingModel == nil else { return }
+        // A foreground recording takes ownership from an idle Action startup.
+        if actionRequestID == nil { actionRecordingRequestID = nil; actionButtonRecording = false }
         guard foreground || keyboardSessionActive || actionButtonRecording else { errorMessage = "Open LocalScribe to start a microphone session."; return }
         guard installedModels.contains(model) else { errorMessage = "Download your selected model in Models before dictating."; return }
         errorMessage = nil
         phase = .preparing
         let revision = microphoneRevision
         let backgroundAllowed = await (engine as? any BackgroundInferenceReportingEngine)?.supportsBackgroundInference(for: model) ?? false
-        guard revision == microphoneRevision, phase == .preparing else { return }
+        guard revision == microphoneRevision, phase == .preparing,
+              actionRequestID == nil || actionRecordingRequestID == actionRequestID else { return }
+        if Task.isCancelled, actionRequestID != nil {
+            await cancelPreparation()
+            return
+        }
         guard !actionButtonRecording || backgroundAllowed else {
             errorMessage = "The selected runtime cannot transcribe in the background."
             phase = .idle
@@ -342,7 +352,9 @@ final class AppController: ObservableObject {
             // while the ordered recognition pump waits for the model.
             try Task.checkCancellation()
             try await recorder.arm(requireExistingPermission: actionButtonRecording, mixWithOtherAudio: actionButtonRecording)
-            guard revision == microphoneRevision, foreground || keyboardSessionActive || actionButtonRecording else {
+            guard revision == microphoneRevision,
+                  actionRequestID == nil || actionRecordingRequestID == actionRequestID,
+                  foreground || keyboardSessionActive || actionButtonRecording else {
                 if recordingID == nil { recorder.shutdown() }
                 if revision == microphoneRevision, phase == .preparing {
                     phase = .idle
@@ -406,22 +418,43 @@ final class AppController: ObservableObject {
     }
 
     /// The shortcut freezes its own CPU model without changing Dictate's selection.
-    func startActionButtonRecording() async {
+    func startActionButtonRecording(requestID: UUID = UUID()) async {
         guard phase == .idle, !verificationMode else { return }
+        actionRecordingRequestID = requestID
+        defer {
+            if actionRecordingRequestID == requestID, phase != .recording {
+                actionRecordingRequestID = nil
+                actionButtonRecording = false
+            }
+        }
         let model = selectedBackgroundModel
-        guard model == .parakeetRealtimeEOU || model == .moonshineSmall,
-              await (engine as? any BackgroundInferenceReportingEngine)?.supportsBackgroundInference(for: model) == true else {
+        guard model == .parakeetRealtimeEOU || model == .moonshineSmall else {
             errorMessage = "Choose a CPU background model in Settings for Action Button dictation."
             return
         }
-        guard phase == .idle, !verificationMode else { return }
+        let backgroundAllowed = await (engine as? any BackgroundInferenceReportingEngine)?.supportsBackgroundInference(for: model) == true
+        guard actionRecordingRequestID == requestID, !Task.isCancelled,
+              phase == .idle, !verificationMode else { return }
+        guard backgroundAllowed else {
+            errorMessage = "Choose a CPU background model in Settings for Action Button dictation."
+            return
+        }
         guard recorder.microphonePermissionGranted else {
             errorMessage = "Open LocalScribe and allow microphone access before using the Action Button."
             return
         }
         actionButtonRecording = true
-        await startRecording(model: model)
-        if phase != .recording { actionButtonRecording = false }
+        await startRecording(model: model, actionRequestID: requestID)
+    }
+
+    /// Cancellation may arrive before capability discovery creates any recording.
+    /// Match the Action request so its late cleanup cannot cancel a replacement.
+    func cancelActionButtonRecording(requestID: UUID) async {
+        guard actionRecordingRequestID == requestID else { return }
+        actionRecordingRequestID = nil
+        let ownsRecording = actionButtonRecording
+        actionButtonRecording = false
+        if ownsRecording { await cancelRecording() }
     }
 
     func stopActionButtonRecording(progress: Progress? = nil) async {
@@ -560,6 +593,7 @@ final class AppController: ObservableObject {
         completionStage = nil
         streamingTask = nil; recordingID = nil; captureModel = nil; captureBackgroundInferenceAllowed = false; acceptsLiveUpdates = false
         actionButtonRecording = false
+        actionRecordingRequestID = nil
         completedRecordingID = id
         phase = .idle
         onDictationFinished?()
@@ -570,6 +604,8 @@ final class AppController: ObservableObject {
     /// Explicit cancellation discards this utterance and never finalizes it into
     /// history or a clipboard result. The keyboard's armed microphone may remain.
     func cancelRecording() async {
+        actionRecordingRequestID = nil
+        actionButtonRecording = false
         if phase == .preparing { await cancelPreparation(); return }
         guard phase == .recording || phase == .transcribing else { return }
         microphoneRevision += 1
@@ -611,6 +647,8 @@ final class AppController: ObservableObject {
 
     func cancelPreparation() async {
         guard phase == .preparing else { return }
+        actionRecordingRequestID = nil
+        actionButtonRecording = false
         microphoneRevision += 1
         preparationTask?.cancel()
         recorder.shutdown()
