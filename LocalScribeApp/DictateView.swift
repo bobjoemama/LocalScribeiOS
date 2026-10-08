@@ -21,7 +21,7 @@ struct DictateView: View {
     private var displayedModel: SpeechModel { controller.recordingModel ?? controller.selectedModel }
     private var textToCopy: String { recording || controller.phase == .transcribing ? controller.partialText : controller.transcript }
     private var canSelectModel: Bool {
-        controller.phase == .idle && controller.downloadingModel == nil && !controller.keyboardSessionActive
+        controller.phase == .idle && controller.recordingModel == nil && controller.downloadingModel == nil && !controller.keyboardSessionActive
     }
 
     var body: some View {
@@ -249,6 +249,7 @@ struct DictateView: View {
             }.buttonStyle(.borderedProminent).tint(AppTheme.accent).controlSize(.large).disabled(true)
         } else {
             let stopping = recording || controller.phase == .preparing
+            let starting = controller.phase == .idle && controller.recordingModel != nil
             Button {
                 editing = false
                 if controller.phase == .idle { controller.saveTranscriptEdits() }
@@ -258,13 +259,13 @@ struct DictateView: View {
                 else if !ready { openModels() }
                 else { Task { await controller.startRecording() } }
             } label: {
-                Label(stopping ? "Stop" : ready ? "Record" : "Choose model", systemImage: stopping ? "stop.fill" : ready ? "mic.fill" : "arrow.down.circle")
+                Label(stopping ? "Stop" : starting ? "Starting…" : ready ? "Record" : "Choose model", systemImage: stopping ? "stop.fill" : starting ? "hourglass" : ready ? "mic.fill" : "arrow.down.circle")
                     .frame(maxWidth: .infinity).padding(.vertical, 4)
                     .foregroundStyle(stopping ? AppTheme.onRecording : AppTheme.onAccent)
             }
             .buttonStyle(.borderedProminent).tint(stopping ? AppTheme.recording : AppTheme.accent).controlSize(.large)
-            .disabled(!stopping && controller.downloadingModel != nil)
-            .accessibilityLabel(stopping ? "Stop recording" : ready ? "Record" : "Choose model")
+            .disabled(!stopping && (controller.downloadingModel != nil || starting))
+            .accessibilityLabel(stopping ? "Stop recording" : starting ? "Starting recording" : ready ? "Record" : "Choose model")
         }
     }
 

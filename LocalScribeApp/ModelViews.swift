@@ -7,7 +7,7 @@ struct ModelsView: View {
     @State private var startingDownload = false
     @Environment(\.dismiss) private var dismiss
     private var missingModels: [SpeechModel] { SpeechModel.allCases.filter { !controller.installedModels.contains($0) } }
-    private var canChangeModels: Bool { controller.phase == .idle && !controller.keyboardSessionActive }
+    private var canChangeModels: Bool { controller.phase == .idle && controller.recordingModel == nil && !controller.keyboardSessionActive }
     private var canStartDownload: Bool { canChangeModels && controller.downloadingModel == nil && !startingDownload }
 
     var body: some View {
@@ -151,7 +151,7 @@ private struct ModelDetailsView: View {
                         ? "Updates text incrementally as speech arrives, reusing recognition state. The same model provides preview and final text."
                         : "First preview after 5 seconds of audio, then updates every 3 seconds as processing catches up. The same model provides preview and final text.")
                         .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
-                    LabeledContent("In-app processing", value: SpeechModelPresentation.inAppProcessing(model))
+                    LabeledContent("Default in-app processing", value: SpeechModelPresentation.inAppProcessing(model))
                     Text(SpeechModelPresentation.backend(model)).font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                     LabeledContent("Action Button", value: "CPU only · same model")
                     Text(model.detail).foregroundStyle(AppTheme.inkSecondary)

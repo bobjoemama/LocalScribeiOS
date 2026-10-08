@@ -210,7 +210,11 @@ struct LivePerformanceView: View {
                         Text(runtime(model)).foregroundStyle(AppTheme.inkSecondary)
                     }
                 }
-            } header: { Text("Device").foregroundStyle(AppTheme.inkSecondary) }.listRowBackground(AppTheme.surface)
+            } header: {
+                Text("Device").foregroundStyle(AppTheme.inkSecondary)
+            } footer: {
+                Text("Configured processors describe the prepared runtime’s processing path, not measured processor usage.").foregroundStyle(AppTheme.inkSecondary)
+            }.listRowBackground(AppTheme.surface)
             Section {
                 NavigationLink("Accuracy") { PerformanceView(controller: controller) }
                 NavigationLink("Developer profiling") { developerProfiling }
@@ -366,10 +370,12 @@ struct LivePerformanceView: View {
     }
 
     private func runtime(_ model: SpeechModel) -> String {
+        guard let context = controller.preparedExecutionContext else { return "Unavailable" }
+        if context == .backgroundCapable { return "CPU only" }
         switch model {
-        case .moonshineSmall, .parakeetRealtimeEOU: "CPU"
-        case .parakeetPhononLUT3: "CPU, GPU encoder, Neural Engine"
-        default: "CPU & Neural Engine"
+        case .moonshineSmall, .parakeetRealtimeEOU: return "CPU only"
+        case .parakeetPhononLUT3: return "CPU, GPU encoder, Neural Engine"
+        default: return "CPU & Neural Engine"
         }
     }
 
