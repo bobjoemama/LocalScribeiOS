@@ -38,9 +38,6 @@ final class AppController: ObservableObject {
             prewarmSelectedModel()
         }
     }
-    @Published var selectedBackgroundModel: SpeechModel {
-        didSet { defaults.set(selectedBackgroundModel.rawValue, forKey: "selectedBackgroundModel") }
-    }
     @Published var keepModelLoaded: Bool {
         didSet {
             defaults.set(keepModelLoaded, forKey: "keepModelLoaded")
@@ -57,6 +54,7 @@ final class AppController: ObservableObject {
     @Published private(set) var completedRecordingID: UUID?
     @Published private(set) var historyRetentionDays = 0
     var currentRecordingID: UUID? { recordingID }
+    var actionButtonModel: SpeechModel { selectedModel }
     var canEditDictionary: Bool { dictionaryWritable && snippetsWritable }
     var canEditSnippets: Bool { dictionaryWritable && snippetsWritable }
     var canEditHistory: Bool { historyWritable && phase == .idle }
@@ -147,17 +145,20 @@ final class AppController: ObservableObject {
         switch state {
         case .idle: break
         case .recording:
+            recordingModel = selectedModel
             phase = .recording
             partialText = DesignPreviewConfiguration.liveTranscript
             level = 0.62
             elapsed = 42
         case .preparing:
             selectedModel = .parakeetPhonon
+            recordingModel = selectedModel
             preparedModel = nil
             phase = .preparing
             modelStatus = "Loading Phonon-2…"
             elapsed = 4
         case .transcribing:
+            recordingModel = selectedModel
             phase = .transcribing
             partialText = DesignPreviewConfiguration.liveTranscript
             elapsed = 42
@@ -188,7 +189,6 @@ final class AppController: ObservableObject {
         foreground = UIApplication.shared.applicationState == .active
         #endif
         selectedModel = SpeechModel(rawValue: defaults.string(forKey: "selectedModel") ?? "") ?? .parakeetRealtimeEOU
-        selectedBackgroundModel = SpeechModel(rawValue: defaults.string(forKey: "selectedBackgroundModel") ?? "") ?? .parakeetRealtimeEOU
         keepModelLoaded = defaults.object(forKey: "keepModelLoaded") as? Bool ?? true
         saveHistory = defaults.object(forKey: "saveHistory") as? Bool ?? true
         let idle = defaults.integer(forKey: "keyboardIdleMinutes")
@@ -345,6 +345,7 @@ final class AppController: ObservableObject {
         guard installedModels.contains(model) else { errorMessage = "Download your selected model in Models before dictating."; return }
         errorMessage = nil
         prewarmRevision += 1
+        cancelMismatchedPrewarm(model)
         recordingModel = model
         phase = .preparing
         microphoneRevision += 1
@@ -356,12 +357,13 @@ final class AppController: ObservableObject {
             await cancelPreparation()
             return
         }
-        guard !actionButtonRecording || backgroundAllowed else {
-            errorMessage = "The selected runtime cannot transcribe in the background."
+        guard !actionButtonRecording || backgroundAllowed || foreground else {
+            errorMessage = "\(model.name) requires LocalScribe to stay open. Select a model that supports background dictation to use the Action Button from another app."
             phase = .idle
             recordingModel = nil
             return
         }
+        captureBackgroundInferenceAllowed = backgroundAllowed
         do {
             // Capture does not wait for Core ML compilation/loading. Stop remains available
             // while the ordered recognition pump waits for the model.
@@ -433,13 +435,28 @@ final class AppController: ObservableObject {
         }
     }
 
-    /// The shortcut freezes its own CPU model without changing Dictate's selection.
-    func startActionButtonRecording(requestID: UUID = UUID(), model requestedModel: SpeechModel? = nil) async {
-        guard phase == .idle, !verificationMode else { return }
+    /// Reserve the actual model before installation or Live Activity work can
+    /// suspend. A matching cancellation can retire this startup without capture.
+    func reserveActionButtonRecording(requestID: UUID, model: SpeechModel) -> Bool {
+        guard phase == .idle, !verificationMode, actionRecordingRequestID == nil else { return false }
         actionRecordingRequestID = requestID
         prewarmRevision += 1
-        let model = requestedModel ?? selectedBackgroundModel
         recordingModel = model
+        cancelMismatchedPrewarm(model)
+        return true
+    }
+
+    /// The shortcut freezes the same selected model used by Dictate.
+    func startActionButtonRecording(requestID: UUID = UUID(), model requestedModel: SpeechModel? = nil) async {
+        guard reserveActionButtonRecording(requestID: requestID, model: requestedModel ?? actionButtonModel) else { return }
+        await startReservedActionButtonRecording(requestID: requestID)
+    }
+
+    /// Continue only the existing reservation; a cancelled startup is never
+    /// recreated when an earlier installation or Activity await finally returns.
+    func startReservedActionButtonRecording(requestID: UUID) async {
+        guard actionRecordingRequestID == requestID, phase == .idle,
+              !verificationMode, let model = recordingModel else { return }
         defer {
             if actionRecordingRequestID == requestID, phase != .recording {
                 actionRecordingRequestID = nil
@@ -447,21 +464,18 @@ final class AppController: ObservableObject {
                 recordingModel = nil
             }
         }
-        guard model == .parakeetRealtimeEOU || model == .moonshineSmall else {
-            errorMessage = "Choose a CPU background model in Settings for Action Button dictation."
-            return
-        }
         let backgroundAllowed = await (engine as? any BackgroundInferenceReportingEngine)?.supportsBackgroundInference(for: model) == true
         guard actionRecordingRequestID == requestID, !Task.isCancelled,
               phase == .idle, !verificationMode else { return }
-        guard backgroundAllowed else {
-            errorMessage = "Choose a CPU background model in Settings for Action Button dictation."
+        guard backgroundAllowed || foreground else {
+            errorMessage = "\(model.name) requires LocalScribe to stay open. Select a model that supports background dictation to use the Action Button from another app."
             return
         }
         guard recorder.microphonePermissionGranted else {
             errorMessage = "Open LocalScribe and allow microphone access before using the Action Button."
             return
         }
+        captureBackgroundInferenceAllowed = backgroundAllowed
         actionButtonRecording = true
         await startRecording(model: model, actionRequestID: requestID)
     }
@@ -736,7 +750,7 @@ final class AppController: ObservableObject {
 
     func setForeground(_ active: Bool) {
         foreground = active
-        if !active && !keyboardSessionActive && !actionButtonRecording {
+        if !active && !keyboardSessionActive && (!actionButtonRecording || !captureBackgroundInferenceAllowed) {
             if phase == .recording { queueRecordingStop(endKeyboardSession: false) }
             else if phase == .preparing { queuePreparationCancellation() }
             else {
@@ -928,6 +942,11 @@ final class AppController: ObservableObject {
 
     private func refreshPerformanceReports() async {
         if let measured = engine as? any PerformanceReportingEngine { performanceReports = await measured.performanceReports() }
+    }
+
+    private func cancelMismatchedPrewarm(_ model: SpeechModel) {
+        guard let preparationModel, preparationModel != model else { return }
+        releaseRuntime()
     }
 
     private func prewarmSelectedModel() {

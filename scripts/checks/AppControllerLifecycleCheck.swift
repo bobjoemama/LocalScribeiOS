@@ -524,7 +524,7 @@ extension SharedKeyboardStore {
         let actionEngine = LifecycleEngine()
         await actionEngine.releasePreparation()
         let actionController = await fixture(actionEngine)
-        actionController.selectedBackgroundModel = .parakeetPhonon
+        actionController.setForeground(false)
         await actionController.startActionButtonRecording()
         try check(actionController.phase == .idle && !actionController.actionButtonRecording, "Background Action rejects accelerated model before capture")
         let rejectedBeginCount = await actionEngine.counts().1
@@ -562,6 +562,7 @@ extension SharedKeyboardStore {
         await restrictedEngine.disableCPUBackground()
         let restrictedController = await fixture(restrictedEngine, model: .parakeetRealtimeEOU)
         let restrictedRecorder = AudioRecorder.latest!
+        restrictedController.setForeground(false)
         await restrictedController.startActionButtonRecording()
         try check(restrictedController.phase == .idle && !restrictedRecorder.recording, "CPU model name grants no background permission when runtime denies it")
 
@@ -764,6 +765,7 @@ extension SharedKeyboardStore {
         FixturePrewarmGate.held = true
         ownershipController.keepModelLoaded = true
         try await eventually { !FixturePrewarmGate.continuations.isEmpty }
+        ownershipController.selectedModel = .parakeetRealtimeEOU
         await ownershipEngine.holdNextBackgroundCapability()
         let actionOwner = UUID()
         let ownedStart = Task { await ownershipController.startActionButtonRecording(requestID: actionOwner) }
@@ -771,7 +773,7 @@ extension SharedKeyboardStore {
         try check(ownershipController.recordingModel == .parakeetRealtimeEOU,
                   "Action publishes its frozen model during idle capability discovery")
         ownershipController.selectedModel = .parakeetPhononG4
-        ownershipController.selectedBackgroundModel = .moonshineSmall
+        ownershipDefaults.set(SpeechModel.moonshineSmall.rawValue, forKey: "selectedBackgroundModel")
         ownershipController.setForeground(true)
         await ownershipController.refreshInstalledModels()
         FixturePrewarmGate.release()
@@ -783,7 +785,7 @@ extension SharedKeyboardStore {
         await ownedStart.value
         try await eventually { ownershipController.preparedModel == .parakeetRealtimeEOU }
         try check(ownershipController.recordingModel == .parakeetRealtimeEOU && ownershipController.actionButtonRecording,
-                  "Action capture keeps the background model frozen before both capability awaits")
+                  "Action capture keeps the unified selected model frozen before both capability awaits")
         ownershipRecorder.feed(8_000)
         await ownershipController.stopActionButtonRecording()
         ownershipController.setForeground(false)
@@ -792,7 +794,7 @@ extension SharedKeyboardStore {
         for _ in 0..<10 { await Task.yield() }
         let retainedActionPreparations = await ownershipEngine.preparations()
         try check(retainedActionPreparations == [.parakeetRealtimeEOU] && ownershipController.preparedModel == .parakeetRealtimeEOU,
-                  "Returning from Action dictation and discovery retain its ready runtime without loading Dictate's different selection")
+                  "Returning from Action dictation and discovery retain its ready runtime after a selection change during capture")
         ownershipController.selectedModel = .parakeetPhonon
         try await eventually { ownershipController.preparedModel == .parakeetPhonon }
         let explicitPreparations = await ownershipEngine.preparations()
@@ -823,6 +825,55 @@ extension SharedKeyboardStore {
                   "Cancelled Action reservation clears frozen attribution")
         try check(cancelledPreparations.isEmpty,
                   "A prewarm queued before cancelled Action startup cannot resurrect a retired model intent")
+
+        let unifiedEngine = LifecycleEngine()
+        await unifiedEngine.releasePreparation()
+        let unifiedDefaults = UserDefaults(suiteName: "LocalScribeUnifiedModelCheck-\(UUID())")!
+        unifiedDefaults.set(false, forKey: "keepModelLoaded")
+        unifiedDefaults.set(SpeechModel.parakeetRealtimeEOU.rawValue, forKey: "selectedBackgroundModel")
+        let unifiedController = await fixture(unifiedEngine, model: .parakeetPhonon, preferences: unifiedDefaults)
+        let unifiedRecorder = AudioRecorder.latest!
+        try check(unifiedController.actionButtonModel == .parakeetPhonon,
+                  "Action Button resolves the main model even when an older separate preference exists")
+        await unifiedController.startActionButtonRecording()
+        try await eventually { unifiedController.preparedModel == .parakeetPhonon }
+        try check(unifiedController.phase == .recording && unifiedController.recordingModel == .parakeetPhonon,
+                  "Foreground Action uses selected Phonon without a hidden CPU fallback")
+        unifiedRecorder.feed(8_000)
+        await unifiedController.stopActionButtonRecording()
+        unifiedController.setForeground(false)
+        let unifiedArmCalls = unifiedRecorder.armCalls
+        await unifiedController.startActionButtonRecording()
+        try check(unifiedController.phase == .idle && unifiedRecorder.armCalls == unifiedArmCalls
+                  && unifiedController.errorMessage?.contains("requires LocalScribe to stay open") == true,
+                  "Background Action reports the selected runtime's restriction before arming microphone")
+        let unifiedPreparations = await unifiedEngine.preparations()
+        try check(unifiedPreparations == [.parakeetPhonon],
+                  "Unsupported background request never loads Realtime or another fallback runtime")
+        try check(unifiedDefaults.string(forKey: "selectedBackgroundModel") == SpeechModel.parakeetRealtimeEOU.rawValue,
+                  "Unified selection leaves the retired preference value untouched")
+
+        unifiedController.setForeground(true)
+        let reservedID = UUID()
+        try check(unifiedController.reserveActionButtonRecording(requestID: reservedID, model: .parakeetPhonon),
+                  "Bridge can reserve its frozen model synchronously before discovery and Activity awaits")
+        try check(unifiedController.recordingModel == .parakeetPhonon && !unifiedRecorder.recording,
+                  "Reserved Action model is visible before capture begins")
+        await unifiedController.cancelActionButtonRecording(requestID: reservedID)
+        await unifiedController.startReservedActionButtonRecording(requestID: reservedID)
+        try check(unifiedController.phase == .idle && unifiedController.recordingModel == nil
+                  && unifiedRecorder.armCalls == unifiedArmCalls,
+                  "Late reserved-start continuation cannot resurrect a cancelled Action request")
+        await unifiedController.startActionButtonRecording()
+        unifiedRecorder.feed(8_000)
+        unifiedController.setForeground(false)
+        try await eventually { unifiedController.phase == .transcribing }
+        try check(!unifiedRecorder.recording,
+                  "Foreground-only selected Action model stops capture immediately on background transition")
+        unifiedController.setForeground(true)
+        try await eventually { unifiedController.phase == .idle }
+        try check(unifiedController.transcript == "Captured words.",
+                  "Returning to foreground finishes the captured selected-model utterance")
 
         print("PASS: \(checks) actual AppController lifecycle checks")
     }

@@ -90,7 +90,7 @@ struct DictationActivityAttributes {
     try await Task.sleep(for: .milliseconds(150))
     let engine = LifecycleEngine()
     let controller = await fixture(engine: engine)
-    controller.selectedModel = .parakeetPhonon
+    controller.selectedModel = .parakeetRealtimeEOU
     controller.setForeground(false)
     UIApplication.shared.applicationState = .background
     let recorder = AudioRecorder.latest!
@@ -102,9 +102,9 @@ struct DictationActivityAttributes {
       controller.phase == .recording && recorder.recording,
       "Cold registration starts capture before successful intent result")
     try check(
-      controller.selectedModel == .parakeetPhonon
-        && controller.selectedBackgroundModel == .parakeetRealtimeEOU,
-      "Background shortcut keeps Dictate model selection independent")
+      controller.selectedModel == .parakeetRealtimeEOU
+        && controller.recordingModel == controller.selectedModel,
+      "Background shortcut uses the same selected model as Dictate")
     try check(
       !StartDictationShortcut.openAppWhenRun && !ToggleDictationShortcut.openAppWhenRun
         && !StopDictationShortcut.openAppWhenRun && !StopLiveDictationIntent.openAppWhenRun,
@@ -334,11 +334,12 @@ struct DictationActivityAttributes {
     let blockedEngine = LifecycleEngine()
     await blockedEngine.disableCPUBackground()
     let blockedController = await fixture(engine: blockedEngine)
+    blockedController.setForeground(false)
     await blockedController.startActionButtonRecording()
     try check(
       blockedController.phase == .idle && !blockedController.actionButtonRecording,
       "Runtime denial prevents CPU-named model from background execution")
-    controller.selectedBackgroundModel = .parakeetPhonon
+    controller.selectedModel = .parakeetPhonon
     do {
       _ = try await StartDictationShortcut().perform()
       throw Failure.check("Accelerated background model must fail")
@@ -346,7 +347,7 @@ struct DictationActivityAttributes {
     try check(
       controller.phase == .idle && !recorder.recording,
       "Unsupported background model never starts microphone")
-    controller.selectedBackgroundModel = .parakeetRealtimeEOU
+    controller.selectedModel = .parakeetRealtimeEOU
     recorder.microphonePermissionGranted = false
     do {
       _ = try await StartDictationShortcut().perform()
