@@ -165,7 +165,7 @@ enum DictationActionError: LocalizedError {
 
 struct StopLiveDictationIntent: LiveActivityIntent, AudioRecordingIntent {
     static let title: LocalizedStringResource = "Stop and Copy Dictation"
-    static let description = IntentDescription("Finish this recording on your iPhone in the background. Your transcript is available in LocalScribe.")
+    static let description = IntentDescription("Finish this recording in the background. Your transcript is available in LocalScribe.")
     static let openAppWhenRun = false
     static let isDiscoverable = false
     @available(iOS 26.0, macOS 26.0, *)
