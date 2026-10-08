@@ -158,6 +158,8 @@ private struct BackgroundModelPicker: View {
 
 private struct ActionButtonSetupView: View {
     @ObservedObject var controller: AppController
+    @StateObject private var shortcutInstaller = ActionButtonShortcutInstaller()
+    @ObservedObject private var actionBridge = AppContext.shared.actionBridge
     var body: some View {
         Form {
             Section {
@@ -167,15 +169,35 @@ private struct ActionButtonSetupView: View {
             }
             .listRowBackground(AppTheme.surface)
             Section {
-                Link("Open Shortcuts", destination: URL(string: "shortcuts://")!)
-                Text("1. Create a shortcut named LocalScribe Action Button. Add LocalScribe’s Dictate and Copy action.")
-                Text("2. Add If, select the Dictate and Copy result, and choose has any value.")
-                Text("3. Inside If, add Copy to Clipboard using that same result. Leave Otherwise empty.")
-                Text("4. In iPhone Settings → Action Button → Shortcut, choose LocalScribe Action Button.")
+                Button("Add Shortcut") { shortcutInstaller.present() }
+                    .background(ActionButtonShortcutAnchor(installer: shortcutInstaller))
+                if let error = shortcutInstaller.errorMessage {
+                    Text(error).font(.footnote).foregroundStyle(AppTheme.error)
+                }
+                Text("1. Choose Shortcuts in the Open In menu, then tap Add Shortcut. The recording and copy steps are already configured.")
+                Text("2. In iPhone Settings → Action Button → Shortcut, choose LocalScribe Action Button.")
+                Text("If you already created a shortcut manually, choose this new shortcut instead.")
             } footer: {
-                Text("Hold and release to record, then hold and release again to finish and copy. Releasing the button does not stop recording. Allow microphone access in LocalScribe first. The If step leaves your clipboard unchanged when recording starts.").foregroundStyle(AppTheme.inkSecondary)
+                Text("Hold and release to record, then hold and release again to finish and copy. Releasing the button does not stop recording. Allow microphone access in LocalScribe first. Starting leaves your clipboard unchanged. Finishing returns your transcript to Shortcuts, which copies it.").foregroundStyle(AppTheme.inkSecondary)
             }
             .listRowBackground(AppTheme.surface)
+            if let diagnostic = actionBridge.diagnostic {
+                Section {
+                    DisclosureGroup("Last run") {
+                        LabeledContent("Action", value: diagnostic.action == .start ? "Start" : diagnostic.action == .stop ? "Stop" : "Live Activity Stop")
+                        LabeledContent("State", value: diagnostic.outcome.rawValue.capitalized)
+                        LabeledContent("App returned text", value: diagnostic.resultNonempty ? "Yes" : "No")
+                        LabeledContent("App state", value: diagnostic.executionContext.rawValue.capitalized)
+                        LabeledContent("Elapsed", value: String(format: "%.1f s", diagnostic.durationSeconds))
+                        if let reason = diagnostic.cancellationReason {
+                            LabeledContent("Cancellation", value: reason == .timeout ? "Timed out" : reason == .userCancelled ? "User cancelled" : reason == .taskCancelled ? "Task cancelled" : reason == .requested ? "Requested" : "Other")
+                        }
+                    }
+                } footer: {
+                    Text("This reports the app action only. Shortcuts performs Copy to Clipboard afterward; LocalScribe cannot confirm that copy. No transcript is included in this diagnostic.").foregroundStyle(AppTheme.inkSecondary)
+                }
+                .listRowBackground(AppTheme.surface)
+            }
             Section {
                 Text("The Dynamic Island shows a recording timer while the microphone is active.")
                 Text("Touch and hold the Dynamic Island to see the live preview and Stop button. To copy, finish with the Action Button shortcut. Transcript text is never shown on the Lock Screen.")

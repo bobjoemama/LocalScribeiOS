@@ -16,12 +16,14 @@ obj('benchmark','isa = PBXFileReference; lastKnownFileType = folder; path = Reso
 obj('benchmarkBuild',f'isa = PBXBuildFile; fileRef = {ref("benchmark")};')
 obj('legal','isa = PBXFileReference; lastKnownFileType = folder; path = Resources/legal; sourceTree = "<group>";')
 obj('legalBuild',f'isa = PBXBuildFile; fileRef = {ref("legal")};')
+obj('shortcuts','isa = PBXFileReference; lastKnownFileType = folder; path = Resources/shortcuts; sourceTree = "<group>";')
+obj('shortcutsBuild',f'isa = PBXBuildFile; fileRef = {ref("shortcuts")};')
 obj('manifestBuild',f'isa = PBXBuildFile; fileRef = {ref("manifest")};')
 obj('appProduct','isa = PBXFileReference; explicitFileType = wrapper.application; path = LocalScribe.app; sourceTree = BUILT_PRODUCTS_DIR;')
 obj('keyboardProduct','isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = LocalScribeKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR;')
 obj('widgetProduct','isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = LocalScribeActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR;')
 obj('products',f'isa = PBXGroup; children = {arr([ref("appProduct"),ref("keyboardProduct"),ref("widgetProduct")])}; name = Products; sourceTree = "<group>";')
-obj('root',f'isa = PBXGroup; children = {arr([ref(n) for n in ["LocalScribeApp","LocalScribeKeyboard","SharedKeyboard","SharedActivity","LocalScribeActivityWidget","manifest","benchmark","legal","products"]])}; sourceTree = "<group>";')
+obj('root',f'isa = PBXGroup; children = {arr([ref(n) for n in ["LocalScribeApp","LocalScribeKeyboard","SharedKeyboard","SharedActivity","LocalScribeActivityWidget","manifest","benchmark","legal","shortcuts","products"]])}; sourceTree = "<group>";')
 obj('coreRef','isa = XCLocalSwiftPackageReference; relativePath = .;')
 obj('coreProduct',f'isa = XCSwiftPackageProductDependency; package = {ref("coreRef")}; productName = LocalScribeCore;')
 obj('coreBuild',f'isa = PBXBuildFile; productRef = {ref("coreProduct")};')
@@ -43,7 +45,7 @@ for target in ['app','keyboard','widget']:
  obj(target+'Sources','isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;')
  libs=[ref('coreBuild')]+([ref('fluidBuild'), ref('moonshineBuild')] if fluid else []) if target=='app' else []
  obj(target+'Frameworks',f'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = {arr(libs)}; runOnlyForDeploymentPostprocessing = 0;')
- obj(target+'Resources',f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = {arr([ref("manifestBuild"),ref("benchmarkBuild"),ref("legalBuild")] if target=="app" else [])}; runOnlyForDeploymentPostprocessing = 0;')
+ obj(target+'Resources',f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = {arr([ref("manifestBuild"),ref("benchmarkBuild"),ref("legalBuild"),ref("shortcutsBuild")] if target=="app" else [])}; runOnlyForDeploymentPostprocessing = 0;')
  configs=[]
  for mode in ['Debug','Release']:
   prefix={'app':'App','keyboard':'Keyboard','widget':'ActivityWidget'}[target]

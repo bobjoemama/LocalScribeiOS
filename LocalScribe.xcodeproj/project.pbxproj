@@ -15,6 +15,7 @@
 		D8548042BF4146FC550FDCF3 /* LocalScribeCore in Frameworks */ = {isa = PBXBuildFile; productRef = F4B42394554D8DA9A52BF2ED /* LocalScribeCore */; };
 		E65E7E021DEF93851C0559D8 /* Resources/benchmark in Resources */ = {isa = PBXBuildFile; fileRef = 0E89820860C342F2C7EC694D /* Resources/benchmark */; };
 		F0B472AC82841E0D1206272F /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 663AA610A4EC2822AC73308A /* FluidAudio */; };
+		1D4D08745BC383D3F0E54A9D /* Resources/shortcuts in Resources */ = {isa = PBXBuildFile; fileRef = 104330FEB5A242791348DDBA /* Resources/shortcuts */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,6 +57,7 @@
 		76A4701181DB9253A447C9E9 /* LocalScribeActivityWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = LocalScribeActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A708DF92C9E46229E8F1CD50 /* Resources/legal */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/legal; sourceTree = "<group>"; };
 		ABA3E4FA965159A2B78E6E8F /* LocalScribeKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = LocalScribeKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		104330FEB5A242791348DDBA /* Resources/shortcuts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/shortcuts; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -115,6 +117,7 @@
 				05B3ABF2579A5EB66403CD78 /* Resources/model-integrity.json */,
 				0E89820860C342F2C7EC694D /* Resources/benchmark */,
 				A708DF92C9E46229E8F1CD50 /* Resources/legal */,
+				104330FEB5A242791348DDBA /* Resources/shortcuts */,
 				0A3E27B8CA818264D75C8D81 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -276,6 +279,7 @@
 				16CEE5F7108429C717FC7E3B /* Resources/model-integrity.json in Resources */,
 				E65E7E021DEF93851C0559D8 /* Resources/benchmark in Resources */,
 				C366706106140C420F457903 /* Resources/legal in Resources */,
+				1D4D08745BC383D3F0E54A9D /* Resources/shortcuts in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
