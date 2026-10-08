@@ -365,6 +365,74 @@ extension SharedKeyboardStore {
                   "Pending Action A cancellation and continuation cannot stop unrelated manual B")
         await startupController.cancelRecording()
 
+        let lifecycleStops: [(String, () -> Void)] = [
+            ("keyboard shutdown", { startupController.disableKeyboardSession() }),
+            ("foreground exit", { startupController.setForeground(false) })
+        ]
+        for (name, emit) in lifecycleStops {
+            startupController.setForeground(true)
+            if name == "keyboard shutdown" { await startupController.enableKeyboardSession() }
+            await startupController.startRecording()
+            startupRecorder.feed(8_000)
+            FixtureAudioEventGate.held = true
+            emit()
+            try await eventually { FixtureAudioEventGate.continuations.count == 1 }
+            await startupController.stopRecording()
+            let newActionRequest = UUID()
+            await startupController.startActionButtonRecording(requestID: newActionRequest)
+            let newActionRecording = startupController.currentRecordingID
+            FixtureAudioEventGate.release()
+            for _ in 0..<10 { await Task.yield() }
+            try check(startupController.phase == .recording && startupController.actionButtonRecording && startupRecorder.recording
+                      && startupController.currentRecordingID == newActionRecording,
+                      "A's queued \(name) cannot stop newer Action B")
+            await startupController.cancelActionButtonRecording(requestID: newActionRequest)
+
+            startupController.setForeground(true)
+            if name == "keyboard shutdown" { await startupController.enableKeyboardSession() }
+            await startupController.startRecording()
+            startupRecorder.feed(8_000)
+            emit()
+            try await eventually { startupController.phase == .idle }
+            try check(!startupRecorder.recording && !startupRecorder.armed,
+                      "Current \(name) still stops its manual capture")
+        }
+        startupController.setForeground(true)
+        await startupEngine.holdNextBackgroundCapability()
+        let preparingManual = Task { await startupController.startRecording() }
+        try await eventually { await startupEngine.backgroundCapabilityIsHeld() }
+        FixtureAudioEventGate.held = true
+        startupController.setForeground(false)
+        try await eventually { FixtureAudioEventGate.continuations.count == 1 }
+        await startupController.cancelPreparation()
+        await startupEngine.releaseBackgroundCapability()
+        await preparingManual.value
+        startupController.setForeground(true)
+        await startupEngine.holdNextBackgroundCapability(skip: 1)
+        let preparingActionID = UUID()
+        let preparingAction = Task { await startupController.startActionButtonRecording(requestID: preparingActionID) }
+        try await eventually { await startupEngine.backgroundCapabilityIsHeld() }
+        FixtureAudioEventGate.release()
+        for _ in 0..<10 { await Task.yield() }
+        try check(startupController.phase == .preparing && startupController.actionButtonRecording,
+                  "A's queued background preparation cancellation cannot cancel preparing Action B")
+        await startupEngine.releaseBackgroundCapability()
+        await preparingAction.value
+        try check(startupController.phase == .recording && startupController.actionButtonRecording && startupRecorder.recording,
+                  "Replacement Action B still activates after its capability discovery")
+        await startupController.cancelActionButtonRecording(requestID: preparingActionID)
+
+        startupController.setForeground(true)
+        await startupEngine.holdNextBackgroundCapability()
+        let currentManualPreparation = Task { await startupController.startRecording() }
+        try await eventually { await startupEngine.backgroundCapabilityIsHeld() }
+        startupController.setForeground(false)
+        try await eventually { startupController.phase == .idle }
+        await startupEngine.releaseBackgroundCapability()
+        await currentManualPreparation.value
+        try check(startupController.phase == .idle && !startupRecorder.recording && !startupRecorder.armed,
+                  "Current foreground exit still cancels its manual microphone preparation")
+
         let eventEngine = LifecycleEngine()
         await eventEngine.releasePreparation()
         let eventController = await fixture(eventEngine)

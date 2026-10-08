@@ -216,18 +216,18 @@ final class AppController: ObservableObject {
         recorder.onOverflow = { [weak self] droppedSamples in
             guard let self, self.phase == .recording else { return }
             self.captureWarning = "Recognition could not keep up with the microphone. Recording stopped; \(String(format: "%.2f", Double(droppedSamples) / 16_000)) seconds of new audio could not be buffered. Captured text is preserved."
-            self.queueAudioEventStop()
+            self.queueRecordingStop(endKeyboardSession: true)
         }
         recorder.onCaptureFailure = { [weak self] failure in
             guard let self, self.phase == .recording else { return }
             self.captureWarning = failure.localizedDescription
-            self.queueAudioEventStop()
+            self.queueRecordingStop(endKeyboardSession: true)
         }
         recorder.onInterruption = { [weak self] in
             guard let self else { return }
             if self.phase == .recording {
                 self.captureWarning = "The microphone was interrupted. Recording stopped and captured speech is being finished."
-                self.queueAudioEventStop()
+                self.queueRecordingStop(endKeyboardSession: true)
             } else { self.disableKeyboardSession() }
         }
         memoryObserver = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
@@ -246,13 +246,21 @@ final class AppController: ObservableObject {
         Task { await refreshInstalledModels() }
     }
 
-    /// Recorder events are checked at delivery, then checked again after this
-    /// second queue hop so an ended utterance cannot stop its replacement.
-    private func queueAudioEventStop() {
+    /// An event can enqueue a stop before its recording ends. Validate ownership
+    /// again after the queue hop so it cannot stop a replacement recording.
+    private func queueRecordingStop(endKeyboardSession: Bool) {
         guard let id = recordingID else { return }
         Task { @MainActor [weak self] in
             guard let self, self.recordingID == id, self.phase == .recording else { return }
-            await self.stopRecording(endKeyboardSession: true)
+            await self.stopRecording(endKeyboardSession: endKeyboardSession)
+        }
+    }
+
+    private func queuePreparationCancellation() {
+        let revision = microphoneRevision
+        Task { @MainActor [weak self] in
+            guard let self, self.microphoneRevision == revision, self.phase == .preparing else { return }
+            await self.cancelPreparation()
         }
     }
 
@@ -334,6 +342,7 @@ final class AppController: ObservableObject {
         guard installedModels.contains(model) else { errorMessage = "Download your selected model in Models before dictating."; return }
         errorMessage = nil
         phase = .preparing
+        microphoneRevision += 1
         let revision = microphoneRevision
         let backgroundAllowed = await (engine as? any BackgroundInferenceReportingEngine)?.supportsBackgroundInference(for: model) ?? false
         guard revision == microphoneRevision, phase == .preparing,
@@ -661,6 +670,7 @@ final class AppController: ObservableObject {
         guard !verificationMode, phase == .idle, downloadingModel == nil, foreground else { return }
         guard installedModels.contains(selectedModel) else { errorMessage = "Download a model before enabling the keyboard microphone session."; return }
         phase = .preparing; errorMessage = nil
+        microphoneRevision += 1
         let revision = microphoneRevision
         defer { if revision == microphoneRevision { phase = .idle; if !keyboardSessionActive { scheduleModelRelease() } } }
         do {
@@ -696,7 +706,7 @@ final class AppController: ObservableObject {
         sessionTimer?.invalidate(); sessionTimer = nil
         keyboardSessionExpiresAt = nil
         if phase == .recording {
-            Task { await stopRecording(endKeyboardSession: true) }
+            queueRecordingStop(endKeyboardSession: true)
         } else {
             recorder.shutdown()
             if phase == .preparing { preparationTask?.cancel(); phase = .idle }
@@ -713,8 +723,8 @@ final class AppController: ObservableObject {
     func setForeground(_ active: Bool) {
         foreground = active
         if !active && !keyboardSessionActive && !actionButtonRecording {
-            if phase == .recording { Task { await stopRecording() } }
-            else if phase == .preparing { Task { await cancelPreparation() } }
+            if phase == .recording { queueRecordingStop(endKeyboardSession: false) }
+            else if phase == .preparing { queuePreparationCancellation() }
             else {
                 recorder.shutdown()
                 if phase == .idle {
