@@ -27,6 +27,47 @@ enum DictationActionRuntime {
     static var sessionIdentifier: (@MainActor @Sendable () -> UUID?)?
     private static let logger = Logger(subsystem: "com.devesh.localscribe.ios", category: "DictationShortcut")
 
+    /// Platform cancellation belongs to an invocation, not the longer-lived
+    /// recording/result. A delayed callback after Widget Stop must not discard
+    /// the successfully retained result. Explicit session cancellation remains
+    /// available through cancel(sessionID:reason:).
+    @MainActor final class CancellationScope {
+        private let sessionID: UUID
+        private let state = DictationActionCancellationState()
+        init(sessionID: UUID) { self.sessionID = sessionID }
+        func perform(_ action: Action) async throws -> String? {
+            do {
+                let result = try await DictationActionRuntime.perform(action)
+                try Task.checkCancellation()
+                // The callback may have arrived before its MainActor cleanup
+                // task. Never return output from that cancelled invocation.
+                if let reason = state.complete() {
+                    await DictationActionRuntime.cancel(sessionID: sessionID, reason: reason)
+                    throw CancellationError()
+                }
+                return result
+            } catch {
+                if let reason = state.complete() {
+                    await DictationActionRuntime.cancel(sessionID: sessionID, reason: reason)
+                    throw CancellationError()
+                }
+                if error is CancellationError || Task.isCancelled {
+                    await DictationActionRuntime.cancel(sessionID: sessionID, reason: .taskCancelled)
+                    throw CancellationError()
+                }
+                throw error
+            }
+        }
+        nonisolated func cancel(reason: CancellationReason) {
+            // Claim cancellation on the callback's executor, before dispatching
+            // cleanup, to preserve ordering across an occupied MainActor.
+            guard state.requestCancellation(reason) else { return }
+            Task { @MainActor in
+                await DictationActionRuntime.cancel(sessionID: sessionID, reason: reason)
+            }
+        }
+    }
+
     static func perform(_ action: Action) async throws -> String? {
         logger.notice("Shortcut intent perform entered")
         // A background intent can arrive while SwiftUI is constructing AppContext.
@@ -88,6 +129,26 @@ enum DictationActionRuntime {
     }
 }
 
+/// Synchronizes the platform callback with completion; holds no transcript.
+private final class DictationActionCancellationState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completed = false
+    private var cancellation: DictationActionRuntime.CancellationReason?
+    func requestCancellation(_ reason: DictationActionRuntime.CancellationReason) -> Bool {
+        lock.withLock {
+            guard !completed else { return false }
+            cancellation = reason
+            return true
+        }
+    }
+    func complete() -> DictationActionRuntime.CancellationReason? {
+        lock.withLock {
+            completed = true
+            return cancellation
+        }
+    }
+}
+
 enum DictationActionError: LocalizedError {
     case notReady, noSession, busy, failed(String)
     var errorDescription: String? {
@@ -118,11 +179,12 @@ struct StopLiveDictationIntent: LiveActivityIntent, AudioRecordingIntent {
         #if os(iOS)
         if #available(iOS 27.0, *) {
             progress.totalUnitCount = 1
+            let cancellation = await MainActor.run { DictationActionRuntime.CancellationScope(sessionID: sessionID) }
             let text = try await performBackgroundTask {
-                let result = try await DictationActionRuntime.perform(.finish(sessionID: sessionID, progress: progress))
+                let result = try await cancellation.perform(.finish(sessionID: sessionID, progress: progress))
                 return result
             } onCancel: { reason in
-                Task { @MainActor in await DictationActionRuntime.cancel(sessionID: sessionID, reason: .init(reason)) }
+                cancellation.cancel(reason: .init(reason))
             }
             return .result(value: text ?? "")
         }

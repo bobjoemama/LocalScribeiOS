@@ -25,14 +25,16 @@ struct StopDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
         await MainActor.run { _ = AppContext.shared }
         #if os(iOS)
         if #available(iOS 27.0, *) {
-            let sessionID = await MainActor.run { AppContext.shared.actionBridge.sessionIdentifier }
+            guard let sessionID = await MainActor.run(body: { AppContext.shared.actionBridge.sessionIdentifier }) else {
+                throw DictationActionError.noSession
+            }
             progress.totalUnitCount = 1
+            let cancellation = await MainActor.run { DictationActionRuntime.CancellationScope(sessionID: sessionID) }
             let text = try await performBackgroundTask {
-                let result = try await DictationActionRuntime.perform(.stop(sessionID: sessionID, progress: progress))
+                let result = try await cancellation.perform(.stop(sessionID: sessionID, progress: progress))
                 return result
             } onCancel: { reason in
-                guard let sessionID else { return }
-                Task { @MainActor in await DictationActionRuntime.cancel(sessionID: sessionID, reason: .init(reason)) }
+                cancellation.cancel(reason: .init(reason))
             }
             return .result(value: text ?? "")
         }
@@ -55,11 +57,12 @@ struct ToggleDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
         let sessionID = await MainActor.run { AppContext.shared.actionBridge.sessionIdentifier }
         if #available(iOS 27.0, *), let sessionID {
             progress.totalUnitCount = 1
+            let cancellation = await MainActor.run { DictationActionRuntime.CancellationScope(sessionID: sessionID) }
             let text = try await performBackgroundTask {
-                let result = try await DictationActionRuntime.perform(.stop(sessionID: sessionID, progress: progress))
+                let result = try await cancellation.perform(.stop(sessionID: sessionID, progress: progress))
                 return result
             } onCancel: { reason in
-                Task { @MainActor in await DictationActionRuntime.cancel(sessionID: sessionID, reason: .init(reason)) }
+                cancellation.cancel(reason: .init(reason))
             }
             return .result(value: text ?? "")
         }

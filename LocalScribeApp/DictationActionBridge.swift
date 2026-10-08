@@ -118,7 +118,7 @@ final class DictationActionBridge: ObservableObject {
       recordDiagnostic(action: diagnosticAction, outcome: .completed, result: result)
       return result
     } catch {
-      let cancelled = error is CancellationError || Task.isCancelled
+      let cancelled = error is CancellationError || Task.isCancelled || diagnostic?.outcome == .cancelled
       recordDiagnostic(
         action: diagnosticAction, outcome: cancelled ? .cancelled : .failed,
         reason: cancelled ? diagnostic?.cancellationReason ?? .taskCancelled : nil)
@@ -194,12 +194,20 @@ final class DictationActionBridge: ObservableObject {
         "Enable Live Activities for LocalScribe in iPhone Settings to record through shortcuts. You can still record directly in LocalScribe."
       )
     }
-    await controller.refreshInstalledModels()
     recordingActivityStarted = false
     activeSessionID = sessionID
-    sessionModelName = controller.selectedBackgroundModel.name
+    diagnosticSessionID = sessionID
     pendingResult = nil
     didBeginRecording = false
+    // Discovery suspends before microphone activation. Reserve ownership first
+    // so a matching platform cancellation can retire this start while it waits.
+    await controller.refreshInstalledModels()
+    guard activeSessionID == sessionID else { throw CancellationError() }
+    if Task.isCancelled {
+      _ = try await perform(.cancel(sessionID: sessionID, reason: .taskCancelled))
+      throw CancellationError()
+    }
+    sessionModelName = controller.selectedBackgroundModel.name
     recordingActivityStarted = liveActivity.start(
       sessionID: sessionID, modelName: sessionModelName, startedAt: Date(), required: true)
     guard recordingActivityStarted else {
@@ -210,6 +218,7 @@ final class DictationActionBridge: ObservableObject {
     }
     logger.notice("Shortcut microphone start requested")
     await controller.startActionButtonRecording()
+    guard activeSessionID == sessionID else { throw CancellationError() }
     logger.notice(
       "Shortcut start returned; recording=\(controller.phase == .recording, privacy: .public) activity=\(self.recordingActivityStarted, privacy: .public)"
     )
