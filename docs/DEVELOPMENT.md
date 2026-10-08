@@ -25,6 +25,16 @@ Ordinary typing works without Full Access. Full Access is needed to write local 
 
 Word error rate (WER) compares a supplied reference with raw recognition before dictionary corrections, normalizing case and punctuation. Requested Core ML compute units do not establish actual execution placement.
 
+## Models and preparation
+
+The fifth **Models** tab retains the existing Dictate/Settings model shortcuts. Each of the nine profiles shows pinned download bytes, selection/installation/readiness, load progress and its latest measured load time and app peak RAM. Missing measurements display **Not measured**; installed disk size remains unmeasured. Download totals exclude compiled Core ML caches.
+
+Completed and failed model preparations persist as `ModelPreparationReport` records, with model, execution configuration, requested processors, device identifier, iOS/app version and date. RAM is sampled whole-app physical footprint during loading, including the interface and any previous runtime being replaced; it is not the model’s allocation or a RAM requirement. Brief peaks can be missed. Elapsed load time includes pauses. Details retain actual phase timings rather than predicted completion times or generic RAM estimates.
+
+All five Phonon-2 profiles load components sequentially through Core ML’s async loading API, preserving their installed weights, vocabulary, optional CTC head and processor configuration. Progress follows vocabulary/component loading and recognizer initialization. This changes scheduling and exposes actual phases; a phone speedup has not been measured.
+
+With Keep model loaded On, a user tap on **Load in Background** or **Continue in Background** requests continued CPU preparation on iOS 26 or later, joining the same selected runtime’s preparation. Automatic prewarming submits no such request. Apple requires an [explicit user action for continued processing](https://developer.apple.com/videos/play/wwdc2025/227/). The helper registers a unique request under the permitted wildcard identifier, uses immediate-or-fail submission, reports real component progress and cancels the owned load on expiration or cancellation. Unsupported systems or refused requests show the foreground fallback: keep LocalScribe open until Ready. This grant adds neither microphone permission nor background GPU/Neural Engine execution, and does not guarantee completion after force quit or memory reclamation.
+
 ## Live performance
 
 Dictate shows live CPU, app memory and allocation headroom, whether recording or idle. Tap the readout, or open **Settings → Performance**, for recent CPU/memory graphs, peak footprint, CPU core equivalents/count, system CPU per core and VM pages, thermal state and Low Power Mode. These readings work on the phone alone. You can stop an active recording from the performance screen.
@@ -38,7 +48,9 @@ Public Mach readings can be denied; failed readings stay unavailable. **Performa
 
 The companion's **Trace report** tab uses installed Apple Instruments/xctrace to export a selected recording window into a small JSON report. Import it through **Developer profiling → Import Instruments report** for recorded Neural Engine/GPU active time and duty cycle. These are offline, trace-wide measurements; no capacity utilization or occupied-core count is inferred. See [trace processing](../Tools/MetricsTrace/README.md) for supported tables and limits, and [the collector review](../Tools/MetricsCompanion/DEPENDENCY_REVIEW.md) for the restricted connection and package audit.
 
-Completed loading/transcription measurements and word-error-rate comparison remain under **Accuracy**. See Apple’s [app memory allowance](https://developer.apple.com/documentation/os/os_proc_available_memory), [memory-pressure events](https://developer.apple.com/documentation/dispatch/dispatchsourcememorypressure), and [process CPU accounting](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/getrusage.2.html).
+Model loading reports also appear in **Models**. Transcription measurements and word-error-rate comparison remain under **Accuracy**. See Apple’s [app memory allowance](https://developer.apple.com/documentation/os/os_proc_available_memory), [memory-pressure events](https://developer.apple.com/documentation/dispatch/dispatchsourcememorypressure), and [process CPU accounting](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/getrusage.2.html).
+
+The reported build 16 Phonon-loading crash was an executor assertion in the imported Dispatch memory-pressure callback: it inherited MainActor isolation while running on the utility queue. The actual crash report establishes that failure path, not a Jetsam or excessive-model-RAM diagnosis. The callback now uses an explicit Sendable boundary and returns to MainActor to publish state. The [native SDK regression check](../scripts/check_live_performance.sh) reproduces the original abort and accepts the corrected callback. The background-preparation expiration callback uses the same isolation discipline, checked against the imported SDK signature. These checks do not establish physical phone loading or pressure delivery.
 
 ## Dictionary, snippets and notes
 

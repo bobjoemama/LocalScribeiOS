@@ -49,11 +49,11 @@ Maintainers must register each intended device, archive the complete app in Xcod
 
 ## First dictation
 
-1. Open **Models**, download **Parakeet Realtime**, and keep LocalScribe open until setup finishes. It is the default fast live model. Its required files are about **224 MB**; initial preparation can take longer than later loads.
+1. Open the **Models** tab, download **Parakeet Realtime**, and select it. It is the default fast live model; its required files are about **224 MB**. Keep LocalScribe open until **Ready**, or use the selected model’s **Load in Background** / **Continue in Background** control to request CPU preparation while switching apps. If iOS declines the request, keep LocalScribe open. Initial preparation can take longer than later loads.
 2. In **Dictate**, choose your downloaded model and tap **Record**. Allow microphone access when prompted, then speak.
 3. Tap **Stop**, edit the finished transcript, then **Copy** or **Share** it. Live text may change before completion. The pencil action saves a transcript as a note.
 
-Realtime produces English text without punctuation or capitalization. Choose **Phonon-2** for formatted dictation; its first live update needs about five seconds of speech. Other models and their language support are listed in Models. Downloading every model is optional.
+Realtime produces English text without punctuation or capitalization. Choose **Phonon-2** for formatted dictation; its first live update needs about five seconds of speech. Other models and their language support are listed in Models. Downloading every model is optional. Model rows and details show measured load time and whole-app peak RAM when available; unmeasured values say **Not measured**. Download size describes pinned files, not installed disk usage.
 
 ## Keyboard
 
@@ -70,7 +70,7 @@ The app owns the microphone because custom keyboards cannot record audio. An arm
 2. In Apple’s **Open In** or share menu, choose **Shortcuts**, then **Add Shortcut**. If only Files is offered, save the `.shortcut` file and open it from Files. The supplied **LocalScribe Action Button** workflow already contains the Toggle recording action, a nonempty-result check and native **Copy to Clipboard** with **Local Only** enabled.
 3. Open **iPhone Settings → Action Button → Shortcut** and select **LocalScribe Action Button**. Import and assign it once; existing users keep their supplied shortcut and assignment across app updates.
 
-Allow microphone access in LocalScribe, enable Live Activities, and choose a downloaded model on **Dictate**. Action Button uses that same model for the whole recording; its model label in Settings follows Dictate. Leave **Settings → Keep model loaded** On, open LocalScribe and wait for **Ready** before using Action Button from another app. This prepares and retains the selected CPU runtime. If it is unavailable in the background, the shortcut asks you to open the app and wait; it starts neither the microphone nor a recording Live Activity.
+Allow microphone access in LocalScribe, enable Live Activities, and choose a downloaded model on **Dictate**. Action Button uses that same model for the whole recording; its model label in Settings follows Dictate. Leave **Settings → Keep model loaded** On, open LocalScribe and wait for **Ready** before using Action Button from another app. To finish preparing while switching apps, explicitly tap **Load in Background** or **Continue in Background** in the selected model’s controls. The request may be declined or cancelled; wait for Ready before recording. Automatic prewarming does not request this background grant. If the runtime is unavailable in the background, the shortcut asks you to open the app and wait; it starts neither the microphone nor a recording Live Activity.
 
 Hold and release to start recording; hold and release again to finish, then paste in your destination app. Releasing the button does not stop recording. Touch and hold Dynamic Island to see the model, timer, status and Stop button. Realtime and Moonshine also show live text there; Phonon-2, Ultra and Redux show periodic text in the app. iOS controls when the Island expands and collapses. If you finish with its Stop button, invoke the Action Button workflow again to return the retained result for copying without starting another recording.
 
