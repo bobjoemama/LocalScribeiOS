@@ -66,13 +66,14 @@ The app owns the microphone because custom keyboards cannot record audio. An arm
 
 ## Action Button
 
-1. In **LocalScribe Settings → Action Button → Setup**, tap **Open Shortcuts**. Create a shortcut named **LocalScribe Action Button** and add LocalScribe's **Dictate and Copy** action.
-2. Add **If**, select the **Dictate and Copy** result, and choose **has any value**.
-3. Inside **If**, add **Copy to Clipboard**, using that same **Dictate and Copy** result as its input. Leave **Otherwise** empty. You can enable **Local Only** on Copy to Clipboard to keep the clipboard from syncing to other devices.
-4. Open **iPhone Settings → Action Button → Shortcut** and select **LocalScribe Action Button**.
+1. In **LocalScribe Settings → Action Button → Setup**, tap **Add Shortcut**.
+2. In Apple’s **Open In** or share menu, choose **Shortcuts**, then **Add Shortcut**. If only Files is offered, save the `.shortcut` file and open it from Files. The supplied **LocalScribe Action Button** workflow already contains the recording action, a nonempty-result check and native **Copy to Clipboard** with **Local Only** enabled.
+3. Open **iPhone Settings → Action Button → Shortcut** and select **LocalScribe Action Button**. You can keep an older manually created shortcut; select the supplied workflow for this setup.
 
-Allow microphone access in LocalScribe, enable Live Activities, and choose a downloaded CPU background model in **LocalScribe Settings → Action Button**. Hold and release to start recording, then hold and release again to finish and copy. Paste in your destination app. Touch and hold Dynamic Island to view its expanded preview. If you finish using its Stop button, run the Action Button shortcut again to copy the result.
+Allow microphone access in LocalScribe, enable Live Activities, and choose a downloaded CPU background model in **LocalScribe Settings → Action Button**. Hold and release to start recording; hold and release again to finish, then paste in your destination app. Releasing the button does not stop recording. Touch and hold Dynamic Island to view its expanded preview. If you finish with its Stop button, invoke the Action Button workflow again to return the retained result for copying without starting another recording.
 
-LocalScribe's **Dictate and Copy** app action returns the finished transcript to Shortcuts. Your shortcut copies it only when it is nonempty, leaving the clipboard unchanged when recording starts. Selecting the app action directly in Action Button settings omits that clipboard step. You create the shortcut and assign the Action Button in Apple's interfaces.
+The bare **Dictate and Copy** app action returns text to Shortcuts; it does not copy by itself. Use the supplied workflow, which copies only a nonempty result and leaves the clipboard unchanged when recording starts. Local Only keeps this workflow’s clipboard item from syncing to other devices.
 
-Cold background recording, Dynamic Island presentation and background clipboard delivery still need physical verification. If the shortcut cannot start recording, open LocalScribe and use **Dictate → Record / Stop / Copy** as the foreground fallback.
+**Settings → Action Button → Last run** reports the app intent’s action, outcome, whether it returned nonempty text, elapsed time, app context and cancellation reason. It does not confirm that the native clipboard action ran, and contains no speech or clipboard contents.
+
+First-hold recording is user-confirmed, but the user reported that the manually created wrapper did not copy. The cause remains unresolved. The supplied signed workflow and its action/result bindings passed static review, and the Mac importer accepted its schema; actual iPhone action resolution and clipboard delivery still need user verification. If recording cannot start, use **Dictate → Record / Stop / Copy** in LocalScribe as the foreground fallback.
