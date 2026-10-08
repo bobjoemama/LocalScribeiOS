@@ -15,6 +15,9 @@ struct ModelsView: View {
         NavigationStack {
             Form {
                 downloadSection
+                if let error = controller.modelPreparationReportError {
+                    Section { Text(error).font(.footnote).foregroundStyle(AppTheme.error) }
+                }
                 catalogSection("Streaming", models: SpeechModel.allCases.filter(SpeechModelPresentation.isStreaming),
                     explanation: "Live text updates incrementally as speech arrives. These models reuse recognition state.")
                 catalogSection("Periodic text", models: SpeechModel.allCases.filter { !SpeechModelPresentation.isStreaming($0) },
@@ -102,7 +105,7 @@ struct ModelsView: View {
                     Text(model.name).foregroundStyle(AppTheme.ink).fixedSize(horizontal: false, vertical: true)
                     Text(SpeechModelPresentation.size(model) + " · " + (model.languages == "English" ? "English" : "25 languages") + (model == .parakeetRealtimeEOU ? " · no punctuation" : ""))
                         .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
-                    Text("Latest load · " + ModelMeasurementPresentation.loadTime(measurement))
+                    Text("Load elapsed · " + ModelMeasurementPresentation.loadTime(measurement))
                         .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                     Text("App peak RAM during load · " + ModelMeasurementPresentation.peakMemory(measurement))
                         .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
@@ -165,6 +168,9 @@ struct BackgroundModelPreparationControls: View {
                     }
                     Button("Cancel loading") { controller.cancelSelectedModelPreparation() }
                         .buttonStyle(.borderless).frame(minHeight: 44)
+                } else if !controller.keepModelLoaded {
+                    Text("Turn on Keep model loaded in Settings to load in the background.")
+                        .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                 } else if !controller.actionButtonModelReady {
                     Button(controller.actionButtonModelLoading ? "Continue in Background" : "Load in Background") {
                         controller.prepareSelectedModelInBackground()
@@ -234,7 +240,7 @@ private struct ModelLoadMeasurementView: View {
     let report: ModelPreparationReport?
     var body: some View {
         Section {
-            LabeledContent("Load time", value: ModelMeasurementPresentation.loadTime(report))
+            LabeledContent("Load elapsed", value: ModelMeasurementPresentation.loadTime(report))
             LabeledContent("App peak RAM during load", value: ModelMeasurementPresentation.peakMemory(report))
             if let measurement = report {
                 let operation = measurement.report
@@ -244,6 +250,9 @@ private struct ModelLoadMeasurementView: View {
                 LabeledContent("iOS version", value: measurement.operatingSystemVersion ?? "Not recorded")
                 LabeledContent("App version", value: measurement.appVersion ?? "Not recorded")
                 LabeledContent("Execution configuration", value: ModelMeasurementPresentation.contextName(operation.executionContext))
+                if let cpu = operation.resources.processCPUSeconds {
+                    LabeledContent("App CPU time", value: ModelMeasurementPresentation.duration(cpu))
+                }
                 DisclosureGroup("Requested processors") {
                     Text(operation.requestedBackend).font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                 }
@@ -252,7 +261,7 @@ private struct ModelLoadMeasurementView: View {
                 }
             }
         } header: { Text("Latest load measurement") } footer: {
-            Text("RAM is the sampled peak for the whole app, including its interface and loading work. Brief spikes may be missed. Download file totals exclude compiled caches; installed disk usage is not measured.")
+            Text("Elapsed time includes pauses in the background. RAM is the sampled whole-app peak, including the interface, caches and any model being replaced; it is not model-only RAM and brief spikes may be missed. App CPU time excludes separate compiler processes. Download file totals exclude compiled caches; installed disk usage is not measured.")
         }
     }
 }
@@ -296,6 +305,7 @@ enum ModelMeasurementPresentation {
         case .encoderLoad: "Encoder loading"
         case .decoderLoad: "Decoder loading"
         case .jointLoad: "Joint loading"
+        case .ctcHeadLoad: "CTC head"
         case .recognizerInitialization: "Recognizer setup"
         }
     }

@@ -111,7 +111,7 @@ struct PerformanceView: View {
             Section {
                 NavigationLink("Measurement details") { MeasurementDetailsView() }
             } footer: {
-                Text("Measurements cover the whole app and remain in this session. GPU and Neural Engine utilization require device profiling.").foregroundStyle(AppTheme.inkSecondary)
+                Text("Measurements cover the whole app and remain in this session. Elapsed time includes background pauses. GPU and Neural Engine utilization require device profiling.").foregroundStyle(AppTheme.inkSecondary)
             }.listRowBackground(AppTheme.surface)
         }
         .scribeForm()
@@ -136,8 +136,9 @@ private struct MeasurementDetailsView: View {
                 Text("Case and punctuation are ignored. Numbers and contractions are not expanded. Published benchmarks may use different text normalization, so their scores are not directly comparable.")
             } header: { Text("Word error rate").foregroundStyle(AppTheme.inkSecondary) }.listRowBackground(AppTheme.surface)
             Section {
-                Text("CPU time and memory include the interface and measurement overhead. Peak memory is sampled every 50 milliseconds and can miss brief spikes.")
-                Text("One active CPU core means one core’s worth of CPU time during the measurement. A lower time/audio ratio means faster transcription.")
+                Text("App RAM includes the interface, caches and any model being replaced. It is not model-only RAM. Peak memory is sampled every 50 milliseconds and can miss brief spikes.")
+                Text("Elapsed time includes background pauses. CPU time covers this app process and excludes any separate Core ML compiler process.")
+                Text("One active CPU core means one core’s worth of CPU time during the measurement. The time/audio ratio compares elapsed time with audio duration; background pauses affect it.")
             } header: { Text("CPU and memory").foregroundStyle(AppTheme.inkSecondary) }.listRowBackground(AppTheme.surface)
             Section {
                 Text("Use Instruments on a physical device to measure hardware utilization, power, and system memory pressure. The requested compute configuration does not prove which operations ran on the Neural Engine.")
