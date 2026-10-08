@@ -50,6 +50,12 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
         let history = FileManager.default.temporaryDirectory.appendingPathComponent("ActionRepeatCheck-\(UUID())/history.json")
         let controller = AppController(engine: engine, defaults: defaults, historyURL: history)
         await controller.refreshInstalledModels()
+        let preparationID = UUID()
+        guard controller.reserveActionButtonRecording(requestID: preparationID, model: controller.selectedModel),
+              await controller.prepareReservedActionButtonRecording(requestID: preparationID) else {
+            throw Failure.check("Repeat fixture runtime must be ready before background")
+        }
+        await controller.cancelActionButtonRecording(requestID: preparationID)
         controller.setForeground(false)
         let bridge = DictationActionBridge(controller: controller)
         let recorder = AudioRecorder.latest!

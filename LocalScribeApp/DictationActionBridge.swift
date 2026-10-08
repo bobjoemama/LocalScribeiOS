@@ -108,8 +108,8 @@ final class DictationActionBridge: ObservableObject {
     case .cancel: return nil
     }
     switch action {
-    case .startSession(let id), .finish(let id, _): diagnosticSessionID = id
-    case .stop(let id, _): diagnosticSessionID = id ?? activeSessionID
+    case .startSession(let id), .finish(let id, _, _): diagnosticSessionID = id
+    case .stop(let id, _, _): diagnosticSessionID = id ?? activeSessionID
     default: diagnosticSessionID = activeSessionID
     }
     diagnosticStartedAt = .now
@@ -174,11 +174,11 @@ final class DictationActionBridge: ObservableObject {
         throw CancellationError()
       }
       return nil
-    case .stop(let expectedID, let progress):
-      return try await stop(controller, expectedID: expectedID, progress: progress)
-    case .finish(let expectedID, let progress):
+    case .stop(let expectedID, let progress, let execution):
+      return try await stop(controller, expectedID: expectedID, progress: progress, completionExecution: execution)
+    case .finish(let expectedID, let progress, let execution):
       return try await stop(
-        controller, expectedID: expectedID, progress: progress, consumeResult: false)
+        controller, expectedID: expectedID, progress: progress, consumeResult: false, completionExecution: execution)
     case .toggle:
       if activeSessionID == nil {
         try await start(controller)
@@ -214,6 +214,19 @@ final class DictationActionBridge: ObservableObject {
     if Task.isCancelled {
       _ = try await perform(.cancel(sessionID: sessionID, reason: .taskCancelled))
       throw CancellationError()
+    }
+    let runtimeReady = await controller.prepareReservedActionButtonRecording(requestID: sessionID)
+    guard activeSessionID == sessionID else { throw CancellationError() }
+    if Task.isCancelled {
+      _ = try await perform(.cancel(sessionID: sessionID, reason: .taskCancelled))
+      throw CancellationError()
+    }
+    guard runtimeReady else {
+      let message = controller.errorMessage
+        ?? "Model still loading. Open LocalScribe and wait until \(model.name) is Ready before using the Action Button."
+      activeSessionID = nil
+      await controller.cancelActionButtonRecording(requestID: sessionID)
+      throw DictationActionError.failed(message)
     }
     sessionModelName = model.name
     let previewCapability: DictationLiveActivity.PreviewCapability =
@@ -267,7 +280,8 @@ final class DictationActionBridge: ObservableObject {
 
   private func stop(
     _ controller: AppController, expectedID: UUID?, progress: Progress? = nil,
-    consumeResult: Bool = true
+    consumeResult: Bool = true,
+    completionExecution: DictationActionRuntime.CompletionExecution = .application
   ) async throws -> String {
     guard let id = activeSessionID, expectedID == nil || expectedID == id else {
       throw DictationActionError.noSession
@@ -275,8 +289,14 @@ final class DictationActionBridge: ObservableObject {
     let progressUpdates = controller.monitorActionCompletionProgress(progress)
     defer { progressUpdates?.cancel() }
     if pendingResult == nil {
+      if completionExecution == .longRunningIntent {
+        guard controller.adoptPlatformManagedActionCompletion(requestID: id) else {
+          throw DictationActionError.noSession
+        }
+      }
       if controller.phase == .recording {
-        await controller.stopActionButtonRecording(progress: progress)
+        await controller.stopActionButtonRecording(
+          progress: progress, completionIsPlatformManaged: completionExecution == .longRunningIntent)
       } else if controller.phase == .transcribing {
         // A microphone interruption/backpressure stop may already be finishing.
         while activeSessionID == id && controller.phase == .transcribing {

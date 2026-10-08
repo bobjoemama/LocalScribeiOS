@@ -6,11 +6,13 @@ import OSLog
 /// an unregistered or stale session fails explicitly instead of pretending to stop audio.
 @MainActor
 enum DictationActionRuntime {
+    /// Set by the caller only inside an active platform execution extension.
+    enum CompletionExecution: Sendable, Equatable { case application, longRunningIntent }
     enum Action: Sendable {
         case start, startSession(sessionID: UUID), toggle
         case cancel(sessionID: UUID, reason: CancellationReason = .requested)
-        case stop(sessionID: UUID?, progress: Progress? = nil)
-        case finish(sessionID: UUID, progress: Progress? = nil)
+        case stop(sessionID: UUID?, progress: Progress? = nil, completionExecution: CompletionExecution = .application)
+        case finish(sessionID: UUID, progress: Progress? = nil, completionExecution: CompletionExecution = .application)
     }
     enum CancellationReason: String, Sendable {
         case userCancelled, timeout, taskCancelled, requested, other
@@ -89,10 +91,10 @@ enum DictationActionRuntime {
         case let .startSession(id):
             sessionID = id
             operation = action
-        case let .stop(expectedID, progress):
+        case let .stop(expectedID, progress, execution):
             sessionID = expectedID ?? sessionIdentifier?()
-            operation = .stop(sessionID: sessionID, progress: progress)
-        case let .finish(id, _):
+            operation = .stop(sessionID: sessionID, progress: progress, completionExecution: execution)
+        case let .finish(id, _, _):
             sessionID = id
             operation = action
         case .toggle:
@@ -181,7 +183,7 @@ struct StopLiveDictationIntent: LiveActivityIntent, AudioRecordingIntent {
             progress.totalUnitCount = 1
             let cancellation = await MainActor.run { DictationActionRuntime.CancellationScope(sessionID: sessionID) }
             let text = try await performBackgroundTask {
-                let result = try await cancellation.perform(.finish(sessionID: sessionID, progress: progress))
+                let result = try await cancellation.perform(.finish(sessionID: sessionID, progress: progress, completionExecution: .longRunningIntent))
                 return result
             } onCancel: { reason in
                 cancellation.cancel(reason: .init(reason))

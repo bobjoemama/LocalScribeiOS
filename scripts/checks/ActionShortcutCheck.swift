@@ -88,7 +88,7 @@ struct DictationActivityAttributes {
     guard condition() else { throw Failure.check(message) }
     checks += 1
   }
-  @MainActor static func fixture(engine: LifecycleEngine = LifecycleEngine()) async -> AppController
+  @MainActor static func fixture(engine: LifecycleEngine = LifecycleEngine()) async throws -> AppController
   {
     await engine.releasePreparation()
     let defaults = UserDefaults(suiteName: "ShortcutCheck-\(UUID())")!
@@ -98,6 +98,12 @@ struct DictationActivityAttributes {
       "ShortcutCheck-\(UUID())/history.json")
     let controller = AppController(engine: engine, defaults: defaults, historyURL: path)
     await controller.refreshInstalledModels()
+    let preparationID = UUID()
+    guard controller.reserveActionButtonRecording(requestID: preparationID, model: controller.selectedModel),
+          await controller.prepareReservedActionButtonRecording(requestID: preparationID) else {
+      throw Failure.check("Fixture runtime must be ready before entering background")
+    }
+    await controller.cancelActionButtonRecording(requestID: preparationID)
     return controller
   }
   @MainActor static func main() async throws {
@@ -107,7 +113,7 @@ struct DictationActivityAttributes {
     let coldIntent = Task { try await ToggleDictationShortcut().perform() }
     try await Task.sleep(for: .milliseconds(150))
     let engine = LifecycleEngine()
-    let controller = await fixture(engine: engine)
+    let controller = try await fixture(engine: engine)
     controller.selectedModel = .parakeetRealtimeEOU
     controller.setForeground(false)
     UIApplication.shared.applicationState = .background
@@ -351,7 +357,7 @@ struct DictationActivityAttributes {
       "Preparation, drained audio chunks, finalization and completed storage advance real progress")
     let blockedEngine = LifecycleEngine()
     await blockedEngine.disableCPUBackground()
-    let blockedController = await fixture(engine: blockedEngine)
+    let blockedController = try await fixture(engine: blockedEngine)
     blockedController.setForeground(false)
     await blockedController.startActionButtonRecording()
     try check(
@@ -366,6 +372,14 @@ struct DictationActivityAttributes {
       controller.phase == .idle && !recorder.recording,
       "Unsupported background model never starts microphone")
     controller.selectedModel = .parakeetRealtimeEOU
+    controller.setForeground(true)
+    let restoredPreparationID = UUID()
+    guard controller.reserveActionButtonRecording(requestID: restoredPreparationID, model: controller.selectedModel),
+          await controller.prepareReservedActionButtonRecording(requestID: restoredPreparationID) else {
+      throw Failure.check("Restored selected runtime must be prepared before background permission checks")
+    }
+    await controller.cancelActionButtonRecording(requestID: restoredPreparationID)
+    controller.setForeground(false)
     recorder.microphonePermissionGranted = false
     do {
       _ = try await StartDictationShortcut().perform()

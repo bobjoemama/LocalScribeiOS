@@ -2,7 +2,7 @@ import AppIntents
 
 struct StartDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
     static let title: LocalizedStringResource = "Start Dictation"
-    static let description = IntentDescription("Start a background recording using your Action Button CPU model. Use the result of Stop and Copy Dictation with the Shortcuts Copy to Clipboard action.")
+    static let description = IntentDescription("Start a background recording using your selected model. Use the result of Stop and Copy Dictation with the Shortcuts Copy to Clipboard action.")
     static let openAppWhenRun = false
     @available(iOS 26.0, macOS 26.0, *)
     static var supportedModes: IntentModes { .background }
@@ -31,7 +31,7 @@ struct StopDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
             progress.totalUnitCount = 1
             let cancellation = await MainActor.run { DictationActionRuntime.CancellationScope(sessionID: sessionID) }
             let text = try await performBackgroundTask {
-                let result = try await cancellation.perform(.stop(sessionID: sessionID, progress: progress))
+                let result = try await cancellation.perform(.stop(sessionID: sessionID, progress: progress, completionExecution: .longRunningIntent))
                 return result
             } onCancel: { reason in
                 cancellation.cancel(reason: .init(reason))
@@ -59,7 +59,7 @@ struct ToggleDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
             progress.totalUnitCount = 1
             let cancellation = await MainActor.run { DictationActionRuntime.CancellationScope(sessionID: sessionID) }
             let text = try await performBackgroundTask {
-                let result = try await cancellation.perform(.stop(sessionID: sessionID, progress: progress))
+                let result = try await cancellation.perform(.stop(sessionID: sessionID, progress: progress, completionExecution: .longRunningIntent))
                 return result
             } onCancel: { reason in
                 cancellation.cancel(reason: .init(reason))
