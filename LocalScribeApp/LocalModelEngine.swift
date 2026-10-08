@@ -3,7 +3,7 @@ import LocalScribeCore
 
 struct EnginePreparationPhaseTiming: Codable, Sendable {
     enum Phase: String, Codable, Sendable {
-        case previousModelRelease, installationCheck, integrityVerification, localCoreMLLoad, nativeCPULoad, vocabularyLoad, preprocessorLoad, encoderLoad, decoderLoad, jointLoad, recognizerInitialization
+        case previousModelRelease, installationCheck, integrityVerification, localCoreMLLoad, nativeCPULoad, vocabularyLoad, preprocessorLoad, encoderLoad, decoderLoad, jointLoad, ctcHeadLoad, recognizerInitialization
     }
     let phase: Phase
     let elapsedSeconds: Double
@@ -40,9 +40,19 @@ struct EnginePerformanceReport: Codable, Identifiable, Sendable {
     let resources: PerformanceReport
     let requestedBackend: String
     let preparationPhases: [EnginePreparationPhaseTiming]?
+    /// Missing only in older serialized reports that predate execution contexts.
+    var executionContext: ModelExecutionContext? = nil
 }
 protocol PerformanceReportingEngine: LocalTranscriptionEngine {
     func performanceReports() async -> [EnginePerformanceReport]
+}
+struct EnginePreparationProgress: Equatable, Sendable {
+    let phase: EnginePreparationPhaseTiming.Phase
+    let completedComponents: Int
+    let totalComponents: Int
+}
+protocol ComponentPreparationReportingEngine: ModelPreparationReportingEngine {
+    func preparationProgress() async -> EnginePreparationProgress?
 }
 #if canImport(CoreML)
 import CoreML
@@ -87,7 +97,7 @@ import MoonshineVoice
 
 /// The runtime is isolated from the main UI actor. Only explicit installation
 /// uses networking; prepare and transcription load verified local files.
-actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEngine, StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine, ContextualLocalTranscriptionEngine {
+actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEngine, StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine, ContextualLocalTranscriptionEngine, ComponentPreparationReportingEngine {
     private struct PreparedRuntime: Sendable {
         let id = UUID()
         let configuration: LocalModelExecutionConfiguration
@@ -130,6 +140,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
     private var preparation: PreparationFlight?
     private var preparationEpoch = UUID()
     private var stage: ModelPreparationStage?
+    private var componentProgress: EnginePreparationProgress?
     private var releaseTask: Task<Void, Never>?
     private var preparationCleanupTask: Task<Void, Never>?
     private var streamCleanupTask: Task<Void, Never>?
@@ -221,6 +232,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
     }
 
     func preparationStage() async -> ModelPreparationStage? { stage }
+    func preparationProgress() async -> EnginePreparationProgress? { componentProgress }
     func supportsBackgroundInference(for model: SpeechModel) async -> Bool {
         await supportsBackgroundInference(for: model, context: .foreground)
     }
@@ -268,6 +280,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         guard stream == nil, offlineOperation == nil, releaseTask == nil else { throw StreamingEngineError.busy }
         if let current = prepared, current.configuration == execution {
             stage = .ready
+            componentProgress = nil
             let probe = await PerformanceProbe.start()
             let resources = await probe.finish()
             try Task.checkCancellation()
@@ -283,6 +296,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         let id = UUID()
         preparationEpoch = id
         stage = .checkingInstallation
+        componentProgress = nil
         let task = Task.detached(priority: .userInitiated) { [weak self] () throws -> PreparedRuntime in
             let probe = await PerformanceProbe.start()
             var timer = EnginePreparationTimer()
@@ -321,9 +335,11 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                     } catch { await manager.cleanup(); throw error }
                 } else {
                     let models: AsrModels
-                    if model == .parakeetPhononLUT3 || model == .parakeetPhononLUT6 {
-                        models = try Self.loadDensePhonon(directory: directory, execution: execution,
-                            configuration: configuration, timer: &timer)
+                    if asrVersion == .phonon2 {
+                        models = try await Self.loadPhonon(directory: directory, execution: execution,
+                            configuration: configuration, timer: &timer) { [weak self] progress in
+                                await self?.setPreparationProgress(progress, id: id)
+                            }
                     } else {
                         models = try AsrModels.loadLocal(from: directory, version: asrVersion,
                             configuration: configuration, encoderComputeUnits: execution.encoderComputeUnits)
@@ -374,7 +390,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                 }
                 preparationCleanupTask = cleanup
                 await cleanup.value
-                if prepared == nil { stage = nil }
+                if prepared == nil { stage = nil; componentProgress = nil }
             }
             throw error
         }
@@ -385,7 +401,13 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         if cancelIfEmpty, preparation?.waiters.isEmpty == true { preparation?.task.cancel() }
     }
     private func setPreparationStage(_ value: ModelPreparationStage, id: UUID) {
-        if preparationEpoch == id { stage = value }
+        if preparationEpoch == id {
+            stage = value
+            if value != .loadingCoreML { componentProgress = nil }
+        }
+    }
+    private func setPreparationProgress(_ value: EnginePreparationProgress, id: UUID) {
+        if preparationEpoch == id { componentProgress = value }
     }
     private static func installed(_ item: ModelIntegrityManifest.Model, at directory: URL) -> Bool {
         guard (try? String(contentsOf: directory.appendingPathComponent("localscribe-verified-revision"), encoding: .utf8)) == item.revision else { return false }
@@ -394,33 +416,77 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
             return (attributes?[.size] as? NSNumber)?.int64Value == $0.size
         }
     }
-    private static func loadDensePhonon(directory: URL, execution: LocalModelExecutionConfiguration,
-                                        configuration: MLModelConfiguration,
-                                        timer: inout EnginePreparationTimer) throws -> AsrModels {
-        timer.begin(.vocabularyLoad)
-        let data = try Data(contentsOf: directory.appendingPathComponent(ModelNames.ASR.vocabularyFile))
-        let raw = try JSONDecoder().decode([String: String].self, from: data)
-        let vocabulary = Dictionary(uniqueKeysWithValues: raw.compactMap { key, value in Int(key).map { ($0, value) } })
-        guard (0..<AsrModelVersion.phonon2.blankId).allSatisfy({ vocabulary[$0] != nil }) else {
-            throw ModelInstallationError.integrity("incomplete Phonon vocabulary")
+    /// The pinned FluidAudio 0.17.5 phonon2 contract, loaded sequentially using
+    /// Core ML's async API. All five profiles install their chosen encoder at
+    /// the same canonical filename inside distinct verified directories.
+    private static func loadPhonon(directory: URL, execution: LocalModelExecutionConfiguration,
+                                   configuration: MLModelConfiguration,
+                                   timer: inout EnginePreparationTimer,
+                                   progress: @Sendable (EnginePreparationProgress) async -> Void) async throws -> AsrModels {
+        // Matches AsrModels.loadLocal's platform guard for the compressed ops.
+        guard #available(macOS 15, iOS 18, *) else {
+            throw AsrModelsError.loadingFailed("Phonon-2 requires iOS 18 / macOS 15 (its compressed encoder uses iOS 18 Core ML ops). "
+                + "Use AsrModelVersion.ultra on iOS 17 / macOS 14.")
         }
+        let ctcURL = directory.appendingPathComponent(ModelNames.ASR.ctcHeadFile)
+        let hasCTC = FileManager.default.fileExists(atPath: ctcURL.path)
+        let total = hasCTC ? 6 : 5
+        var completed = 0
+        timer.begin(.vocabularyLoad)
+        await progress(.init(phase: .vocabularyLoad, completedComponents: completed, totalComponents: total))
+        try Task.checkCancellation()
+        let vocabularyURL = directory.appendingPathComponent(ModelNames.ASR.vocabularyFile)
+        guard FileManager.default.fileExists(atPath: vocabularyURL.path) else {
+            throw AsrModelsError.modelNotFound(ModelNames.ASR.vocabularyFile, vocabularyURL)
+        }
+        var vocabulary: [Int: String] = [:]
+        do {
+            let json = try JSONSerialization.jsonObject(with: Data(contentsOf: vocabularyURL))
+            if let tokens = json as? [String] {
+                for (index, token) in tokens.enumerated() { vocabulary[index] = token }
+            } else if let tokens = json as? [String: String] {
+                for (key, token) in tokens {
+                    if let index = Int(key) { vocabulary[index] = token }
+                }
+            } else {
+                throw AsrModelsError.loadingFailed("Vocabulary file has unexpected format")
+            }
+        } catch let error as AsrModelsError { throw error }
+        catch { throw AsrModelsError.loadingFailed("Vocabulary parsing failed") }
+        guard (0..<AsrModelVersion.phonon2.blankId).allSatisfy({ vocabulary[$0] != nil }) else {
+            throw AsrModelsError.loadingFailed("Local vocabulary must contain every token before the blank ID")
+        }
+        completed += 1
+        await progress(.init(phase: .vocabularyLoad, completedComponents: completed, totalComponents: total))
         func component(_ name: String, units: MLComputeUnits,
-                       phase: EnginePreparationPhaseTiming.Phase) throws -> MLModel {
+                       phase: EnginePreparationPhaseTiming.Phase) async throws -> MLModel {
             try Task.checkCancellation()
             timer.begin(phase)
+            await progress(.init(phase: phase, completedComponents: completed, totalComponents: total))
+            try Task.checkCancellation()
+            let url = directory.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                throw AsrModelsError.modelNotFound(name, url)
+            }
             let config = MLModelConfiguration()
             config.computeUnits = units
-            return try MLModel(contentsOf: directory.appendingPathComponent(name), configuration: config)
+            config.allowLowPrecisionAccumulationOnGPU = configuration.allowLowPrecisionAccumulationOnGPU
+            let model = try await MLModel.load(contentsOf: url, configuration: config)
+            try Task.checkCancellation()
+            completed += 1
+            await progress(.init(phase: phase, completedComponents: completed, totalComponents: total))
+            return model
         }
-        let preprocessor = try component(ModelNames.ASR.preprocessorFile, units: .cpuOnly, phase: .preprocessorLoad)
-        // Catalog installs the selected dense encoder under FluidAudio's
-        // canonical Encoder.mlmodelc path; no runtime artifact substitution.
-        let encoder = try component(ModelNames.ASR.encoderFile,
+        // Preserve the pinned loader's component order as well as configurations.
+        let encoder = try await component(ModelNames.ASR.encoderFile,
             units: execution.encoderComputeUnits, phase: .encoderLoad)
-        let decoder = try component(ModelNames.ASR.decoderFile, units: execution.computeUnits, phase: .decoderLoad)
-        let joint = try component(ModelNames.ASR.jointV3File, units: execution.computeUnits, phase: .jointLoad)
+        let ctcHead = try await hasCTC
+            ? component(ModelNames.ASR.ctcHeadFile, units: execution.computeUnits, phase: .ctcHeadLoad) : nil
+        let preprocessor = try await component(ModelNames.ASR.preprocessorFile, units: .cpuOnly, phase: .preprocessorLoad)
+        let decoder = try await component(ModelNames.ASR.decoderFile, units: execution.computeUnits, phase: .decoderLoad)
+        let joint = try await component(ModelNames.ASR.jointV3File, units: execution.computeUnits, phase: .jointLoad)
         return AsrModels(encoder: encoder, preprocessor: preprocessor, decoder: decoder, joint: joint,
-                         configuration: configuration, vocabulary: vocabulary, version: .phonon2)
+                         ctcHead: ctcHead, configuration: configuration, vocabulary: vocabulary, version: .phonon2)
     }
 
     private static func cleanup(_ runtime: PreparedRuntime?) async {
@@ -433,7 +499,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                         preparationPhases: [EnginePreparationPhaseTiming]? = nil) {
         reports.append(.init(id: UUID(), date: Date(), model: configuration.model, stage: stage,
                             successful: successful, resources: resources, requestedBackend: backend ?? configuration.backend,
-                            preparationPhases: preparationPhases))
+                            preparationPhases: preparationPhases, executionContext: configuration.context))
         reports = Array(reports.suffix(20))
     }
     func performanceReports() async -> [EnginePerformanceReport] { reports }
@@ -446,6 +512,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         let runtime = prepared
         prepared = nil
         stage = nil
+        componentProgress = nil
         let cancelling = startStreamCleanup()
         let offline = offlineOperation?.task
         let abandonedPreparation = preparationCleanupTask
@@ -738,7 +805,7 @@ private enum StreamingEngineError: LocalizedError {
     }
 }
 #else
-actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEngine, StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine, ContextualLocalTranscriptionEngine {
+actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEngine, StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine, ContextualLocalTranscriptionEngine, ComponentPreparationReportingEngine {
     init() throws {}
     func isInstalled(_ model: SpeechModel) async -> Bool { false }
     func download(_ model: SpeechModel, progress: @escaping @Sendable (Double) -> Void) async throws { throw ModelInstallationError.noRuntime }
@@ -751,6 +818,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
     func cancelStreaming() async {}
     func unload() async {}
     func preparationStage() async -> ModelPreparationStage? { nil }
+    func preparationProgress() async -> EnginePreparationProgress? { nil }
     func supportsBackgroundInference(for model: SpeechModel) async -> Bool { false }
     func supportsBackgroundInference(for model: SpeechModel, context: ModelExecutionContext) async -> Bool { false }
     func performanceReports() async -> [EnginePerformanceReport] { [] }
