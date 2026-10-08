@@ -14,7 +14,7 @@ A public TestFlight invitation is not available yet. For now, [build and install
 
 Realtime and Moonshine stream live text. Phonon-2 gives formatted text with periodic previews; Realtime produces English without punctuation or capitalization. **Library** contains Dictionary, Snippets and Notes; **History** contains saved transcripts.
 
-Optional: [set up the keyboard](docs/INSTALLATION.md#keyboard) for dictation in other apps, or [configure the Action Button](docs/INSTALLATION.md#action-button). Background shortcut behavior still needs physical verification; ordinary Dictate remains the foreground fallback.
+Optional: [set up the keyboard](docs/INSTALLATION.md#keyboard) for dictation in other apps, or [configure the Action Button](docs/INSTALLATION.md#action-button). For Action Button, leave **Keep model loaded** On and wait for **Ready** before switching apps. Physical shortcut delivery still needs verification.
 
 Recognition stays local. Model downloads contact Hugging Face; audio is not saved. Text leaves through your copy, share, export or insertion actions. [Privacy details](docs/PRIVACY.md).
 
