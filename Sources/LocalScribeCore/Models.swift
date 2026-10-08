@@ -64,6 +64,23 @@ public extension LocalTranscriptionEngine {
     func unload() async {}
 }
 
+/// Processor requirements are frozen when a recording starts.
+public enum ModelExecutionContext: String, Codable, Sendable {
+    case foreground, backgroundCapable
+
+    /// These runtimes use the same CPU configuration in either context.
+    public func normalized(for model: SpeechModel) -> Self {
+        model == .parakeetRealtimeEOU || model == .moonshineSmall ? .foreground : self
+    }
+}
+
+/// Loads the selected model with explicit processor requirements, without
+/// granting background execution time or changing the selected model files.
+public protocol ContextualLocalTranscriptionEngine: LocalTranscriptionEngine {
+    func prepare(_ model: SpeechModel, context: ModelExecutionContext) async throws
+    func supportsBackgroundInference(for model: SpeechModel, context: ModelExecutionContext) async -> Bool
+}
+
 /// Reports a runtime capability for its actual configuration of this model.
 /// Hardware eligibility does not grant iOS background execution time or audio
 /// session permission. Engines without this capability are foreground-only.

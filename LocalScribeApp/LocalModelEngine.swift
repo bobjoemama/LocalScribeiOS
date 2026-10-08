@@ -44,18 +44,53 @@ struct EnginePerformanceReport: Codable, Identifiable, Sendable {
 protocol PerformanceReportingEngine: LocalTranscriptionEngine {
     func performanceReports() async -> [EnginePerformanceReport]
 }
+#if canImport(CoreML)
+import CoreML
+
+/// Equal configurations share one preparation flight and one loaded runtime.
+struct LocalModelExecutionConfiguration: Equatable, Sendable {
+    let model: SpeechModel
+    let context: ModelExecutionContext
+
+    init(model: SpeechModel, context: ModelExecutionContext) {
+        self.model = model
+        self.context = context.normalized(for: model)
+    }
+    var computeUnits: MLComputeUnits {
+        if context == .backgroundCapable || model == .parakeetRealtimeEOU || model == .moonshineSmall {
+            return .cpuOnly
+        }
+        return .cpuAndNeuralEngine
+    }
+    var encoderComputeUnits: MLComputeUnits {
+        if computeUnits == .cpuOnly { return .cpuOnly }
+        return model == .parakeetPhononLUT3 ? .cpuAndGPU : computeUnits
+    }
+    var supportsBackgroundInference: Bool {
+        computeUnits == .cpuOnly && encoderComputeUnits == .cpuOnly
+    }
+    var backend: String {
+        if model == .moonshineSmall { return "Moonshine native ONNX Runtime CPU only; GPU and Neural Engine disabled" }
+        if supportsBackgroundInference { return "Core ML CPU only; GPU and Neural Engine disabled" }
+        if encoderComputeUnits == .cpuAndGPU {
+            return "Core ML encoder CPU + GPU; other components CPU + Neural Engine; foreground inference only"
+        }
+        return "Core ML CPU + Neural Engine; GPU disabled; foreground inference only"
+    }
+}
+#endif
+
 #if canImport(FluidAudio)
 @preconcurrency import AVFoundation
-import CoreML
 import FluidAudio
 import MoonshineVoice
 
 /// The runtime is isolated from the main UI actor. Only explicit installation
 /// uses networking; prepare and transcription load verified local files.
-actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEngine, StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine {
+actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEngine, StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine, ContextualLocalTranscriptionEngine {
     private struct PreparedRuntime: Sendable {
         let id = UUID()
-        let model: SpeechModel
+        let configuration: LocalModelExecutionConfiguration
         let models: AsrModels?
         let offline: AsrManager?
         let realtime: StreamingEouAsrManager?
@@ -72,13 +107,13 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
     }
     private struct PreparationFlight {
         let id: UUID
-        let model: SpeechModel
+        let configuration: LocalModelExecutionConfiguration
         let task: Task<PreparedRuntime, Error>
         var waiters: Set<UUID>
     }
     private struct StreamState {
         let id: UUID
-        let model: SpeechModel
+        let configuration: LocalModelExecutionConfiguration
         let windowed: SlidingWindowAsrManager?
         let realtime: StreamingEouAsrManager?
         var moonshine: MoonshineCPUAdapter? = nil
@@ -106,16 +141,6 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
     private var reports: [EnginePerformanceReport] = []
     private let manifest: ModelIntegrityManifest
     private let root: URL
-    private static func computeUnits(for model: SpeechModel) -> MLComputeUnits {
-        model == .parakeetRealtimeEOU || model == .moonshineSmall ? .cpuOnly : model == .parakeetPhononLUT3 ? .cpuAndGPU : .cpuAndNeuralEngine
-    }
-    private static func backend(_ model: SpeechModel) -> String {
-        if model == .moonshineSmall { return "Moonshine native ONNX Runtime CPU only; GPU and Neural Engine disabled" }
-        if model == .parakeetPhononLUT3 { return "Core ML encoder CPU + GPU; other components CPU + Neural Engine; foreground inference only" }
-        return computeUnits(for: model) == .cpuOnly
-            ? "Core ML CPU only; GPU and Neural Engine disabled"
-            : "Core ML CPU + Neural Engine; GPU disabled; foreground inference only"
-    }
     private static let chunkSamples = 3 * 16_000
     private static let firstWindowSamples = 5 * 16_000
 
@@ -197,12 +222,19 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
 
     func preparationStage() async -> ModelPreparationStage? { stage }
     func supportsBackgroundInference(for model: SpeechModel) async -> Bool {
-        Self.computeUnits(for: model) == .cpuOnly
+        await supportsBackgroundInference(for: model, context: .foreground)
+    }
+    func supportsBackgroundInference(for model: SpeechModel, context: ModelExecutionContext) async -> Bool {
+        LocalModelExecutionConfiguration(model: model, context: context).supportsBackgroundInference
+    }
+    func prepare(_ model: SpeechModel) async throws {
+        try await prepare(model, context: .foreground)
     }
 
     /// A single loading flight owns the old/new runtime transition. The synchronous
     /// Core ML load runs away from this actor, so progress and cancellation stay responsive.
-    func prepare(_ model: SpeechModel) async throws {
+    func prepare(_ model: SpeechModel, context: ModelExecutionContext) async throws {
+        let execution = LocalModelExecutionConfiguration(model: model, context: context)
         try Task.checkCancellation()
         if let releaseTask { await releaseTask.value }
         if let preparationCleanupTask { await preparationCleanupTask.value }
@@ -218,7 +250,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                 try Task.checkCancellation()
                 continue
             }
-            if flight.model == model { try await joinPreparation(flight); return }
+            if flight.configuration == execution { try await joinPreparation(flight); return }
             let completed = try? await flight.task.value
             try Task.checkCancellation()
             if flight.task.isCancelled { await Task.yield(); continue }
@@ -232,15 +264,15 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         }
         if let preparationCleanupTask { await preparationCleanupTask.value }
         try Task.checkCancellation()
-        if preparation != nil { try await prepare(model); return }
+        if preparation != nil { try await prepare(model, context: context); return }
         guard stream == nil, offlineOperation == nil, releaseTask == nil else { throw StreamingEngineError.busy }
-        if let current = prepared, current.model == model {
+        if let current = prepared, current.configuration == execution {
             stage = .ready
             let probe = await PerformanceProbe.start()
             let resources = await probe.finish()
             try Task.checkCancellation()
             guard prepared?.id == current.id else { throw CancellationError() }
-            record(model, stage: .alreadyLoaded, successful: true, resources: resources)
+            record(current.configuration, stage: .alreadyLoaded, successful: true, resources: resources)
             return
         }
         let item = try entry(model)
@@ -267,17 +299,16 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                 timer.begin(model == .moonshineSmall ? .nativeCPULoad : .localCoreMLLoad)
                 await self?.setPreparationStage(.loadingCoreML, id: id)
                 let configuration = MLModelConfiguration()
-                // iOS 27 restricts background ANE access without an additional
-                // inference entitlement. Realtime uses CPU throughout, including
-                // encoder, decoder and joint, for the background dictation path.
-                configuration.computeUnits = Self.computeUnits(for: model)
+                // CPU-only is requested for every component when a recording
+                // must continue without background accelerator entitlement.
+                configuration.computeUnits = execution.computeUnits
                 let runtime: PreparedRuntime
                 if model == .moonshineSmall {
                     let manager = try MoonshineCPUAdapter(directory: directory)
                     try Task.checkCancellation()
                     timer.begin(.recognizerInitialization)
                     await self?.setPreparationStage(.initializingRecognizer, id: id)
-                    runtime = PreparedRuntime(model: model, models: nil, offline: nil, realtime: nil, moonshine: manager)
+                    runtime = PreparedRuntime(configuration: execution, models: nil, offline: nil, realtime: nil, moonshine: manager)
                 } else if model == .parakeetRealtimeEOU {
                     let manager = StreamingEouAsrManager(configuration: configuration, chunkSize: .ms320)
                     do {
@@ -286,35 +317,35 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                         timer.begin(.recognizerInitialization)
                         await self?.setPreparationStage(.initializingRecognizer, id: id)
                         await manager.reset()
-                        runtime = PreparedRuntime(model: model, models: nil, offline: nil, realtime: manager)
+                        runtime = PreparedRuntime(configuration: execution, models: nil, offline: nil, realtime: manager)
                     } catch { await manager.cleanup(); throw error }
                 } else {
                     let models: AsrModels
                     if model == .parakeetPhononLUT3 || model == .parakeetPhononLUT6 {
-                        configuration.computeUnits = .cpuAndNeuralEngine
-                        models = try Self.loadDensePhonon(directory: directory, model: model, configuration: configuration, timer: &timer)
+                        models = try Self.loadDensePhonon(directory: directory, execution: execution,
+                            configuration: configuration, timer: &timer)
                     } else {
                         models = try AsrModels.loadLocal(from: directory, version: asrVersion,
-                            configuration: configuration, encoderComputeUnits: configuration.computeUnits)
+                            configuration: configuration, encoderComputeUnits: execution.encoderComputeUnits)
                     }
                     try Task.checkCancellation()
                     timer.begin(.recognizerInitialization)
                     await self?.setPreparationStage(.initializingRecognizer, id: id)
-                    runtime = PreparedRuntime(model: model, models: models, offline: AsrManager(models: models), realtime: nil)
+                    runtime = PreparedRuntime(configuration: execution, models: models, offline: AsrManager(models: models), realtime: nil)
                 }
                 try Task.checkCancellation()
                 timer.finish(completed: true)
-                await self?.record(model, stage: .modelLoad, successful: true,
+                await self?.record(execution, stage: .modelLoad, successful: true,
                                    resources: await probe.finish(), preparationPhases: timer.measurements)
                 return runtime
             } catch {
                 timer.finish(completed: false)
-                await self?.record(model, stage: .modelLoad, successful: false,
+                await self?.record(execution, stage: .modelLoad, successful: false,
                                    resources: await probe.finish(), preparationPhases: timer.measurements)
                 throw error
             }
         }
-        let flight = PreparationFlight(id: id, model: model, task: task, waiters: [])
+        let flight = PreparationFlight(id: id, configuration: execution, task: task, waiters: [])
         preparation = flight
         try await joinPreparation(flight)
     }
@@ -363,7 +394,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
             return (attributes?[.size] as? NSNumber)?.int64Value == $0.size
         }
     }
-    private static func loadDensePhonon(directory: URL, model: SpeechModel,
+    private static func loadDensePhonon(directory: URL, execution: LocalModelExecutionConfiguration,
                                         configuration: MLModelConfiguration,
                                         timer: inout EnginePreparationTimer) throws -> AsrModels {
         timer.begin(.vocabularyLoad)
@@ -385,9 +416,9 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         // Catalog installs the selected dense encoder under FluidAudio's
         // canonical Encoder.mlmodelc path; no runtime artifact substitution.
         let encoder = try component(ModelNames.ASR.encoderFile,
-            units: model == .parakeetPhononLUT3 ? .cpuAndGPU : .cpuAndNeuralEngine, phase: .encoderLoad)
-        let decoder = try component(ModelNames.ASR.decoderFile, units: .cpuAndNeuralEngine, phase: .decoderLoad)
-        let joint = try component(ModelNames.ASR.jointV3File, units: .cpuAndNeuralEngine, phase: .jointLoad)
+            units: execution.encoderComputeUnits, phase: .encoderLoad)
+        let decoder = try component(ModelNames.ASR.decoderFile, units: execution.computeUnits, phase: .decoderLoad)
+        let joint = try component(ModelNames.ASR.jointV3File, units: execution.computeUnits, phase: .jointLoad)
         return AsrModels(encoder: encoder, preprocessor: preprocessor, decoder: decoder, joint: joint,
                          configuration: configuration, vocabulary: vocabulary, version: .phonon2)
     }
@@ -397,11 +428,11 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         await runtime?.realtime?.cleanup()
         await runtime?.moonshine?.unload()
     }
-    private func record(_ model: SpeechModel, stage: EnginePerformanceReport.Stage, successful: Bool,
+    private func record(_ configuration: LocalModelExecutionConfiguration, stage: EnginePerformanceReport.Stage, successful: Bool,
                         resources: PerformanceReport, backend: String? = nil,
                         preparationPhases: [EnginePreparationPhaseTiming]? = nil) {
-        reports.append(.init(id: UUID(), date: Date(), model: model, stage: stage,
-                            successful: successful, resources: resources, requestedBackend: backend ?? Self.backend(model),
+        reports.append(.init(id: UUID(), date: Date(), model: configuration.model, stage: stage,
+                            successful: successful, resources: resources, requestedBackend: backend ?? configuration.backend,
                             preparationPhases: preparationPhases))
         reports = Array(reports.suffix(20))
     }
@@ -461,13 +492,13 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                     await realtime.reset()
                 } else { throw ModelInstallationError.missingModel }
                 try Task.checkCancellation()
-                await self?.record(runtime.model, stage: .transcription, successful: true,
+                await self?.record(runtime.configuration, stage: .transcription, successful: true,
                                    resources: await probe.finish(audioSeconds: Double(samples.count) / 16_000))
                 return text
             } catch {
                 await runtime.realtime?.reset()
                 await runtime.moonshine?.cancel()
-                await self?.record(runtime.model, stage: .transcription, successful: false,
+                await self?.record(runtime.configuration, stage: .transcription, successful: false,
                                    resources: await probe.finish(audioSeconds: Double(samples.count) / 16_000))
                 throw error
             }
@@ -496,7 +527,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
                 confirmationThreshold: 0.8)
             manager = SlidingWindowAsrManager(config: configuration)
         } else { manager = nil }
-        stream = StreamState(id: id, model: runtime.model, windowed: manager, realtime: runtime.realtime,
+        stream = StreamState(id: id, configuration: runtime.configuration, windowed: manager, realtime: runtime.realtime,
                              moonshine: runtime.moonshine, onUpdate: onUpdate, probe: probe)
         let operationID = UUID()
         let task = Task { try await self.startStreamingSession(runtime, id: id) }
@@ -634,16 +665,16 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         do {
             let text = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
             guard stream?.id == state.id else { throw CancellationError() }
-            record(state.model, stage: .transcription, successful: true,
+            record(state.configuration, stage: .transcription, successful: true,
                    resources: await state.probe.finish(audioSeconds: Double(state.sampleCount) / 16_000),
-                   backend: Self.backend(state.model) + "; live session elapsed includes recording and backpressure waits")
+                   backend: state.configuration.backend + "; live session elapsed includes recording and backpressure waits")
             if finishOperation?.id == operationID { finishOperation = nil }
             await cancelStreaming()
             return text
         } catch {
-            record(state.model, stage: .transcription, successful: false,
+            record(state.configuration, stage: .transcription, successful: false,
                    resources: await state.probe.finish(audioSeconds: Double(state.sampleCount) / 16_000),
-                   backend: Self.backend(state.model) + "; live session elapsed includes recording and backpressure waits")
+                   backend: state.configuration.backend + "; live session elapsed includes recording and backpressure waits")
             if finishOperation?.id == operationID { finishOperation = nil }
             await cancelStreaming()
             throw error
@@ -707,11 +738,12 @@ private enum StreamingEngineError: LocalizedError {
     }
 }
 #else
-actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEngine, StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine {
+actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEngine, StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine, ContextualLocalTranscriptionEngine {
     init() throws {}
     func isInstalled(_ model: SpeechModel) async -> Bool { false }
     func download(_ model: SpeechModel, progress: @escaping @Sendable (Double) -> Void) async throws { throw ModelInstallationError.noRuntime }
     func prepare(_ model: SpeechModel) async throws { throw ModelInstallationError.noRuntime }
+    func prepare(_ model: SpeechModel, context: ModelExecutionContext) async throws { throw ModelInstallationError.noRuntime }
     func transcribe(samples: [Float]) async throws -> String { throw ModelInstallationError.noRuntime }
     func beginStreaming(onUpdate: @escaping @Sendable (SpeechTranscriptUpdate) -> Void) async throws { throw ModelInstallationError.noRuntime }
     func appendStreaming(samples: [Float]) async throws { throw ModelInstallationError.noRuntime }
@@ -720,6 +752,7 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
     func unload() async {}
     func preparationStage() async -> ModelPreparationStage? { nil }
     func supportsBackgroundInference(for model: SpeechModel) async -> Bool { false }
+    func supportsBackgroundInference(for model: SpeechModel, context: ModelExecutionContext) async -> Bool { false }
     func performanceReports() async -> [EnginePerformanceReport] { [] }
 }
 #endif
