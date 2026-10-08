@@ -243,8 +243,8 @@ actor LocalModelEngine: PerformanceReportingEngine, ModelPreparationReportingEng
         try await prepare(model, context: .foreground)
     }
 
-    /// A single loading flight owns the old/new runtime transition. The synchronous
-    /// Core ML load runs away from this actor, so progress and cancellation stay responsive.
+    /// A single loading flight owns the old/new runtime transition. Heavy loading
+    /// runs away from this actor, so progress and cancellation stay responsive.
     func prepare(_ model: SpeechModel, context: ModelExecutionContext) async throws {
         let execution = LocalModelExecutionConfiguration(model: model, context: context)
         try Task.checkCancellation()
