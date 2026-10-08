@@ -94,6 +94,20 @@ struct FixtureCaptureSnapshot {
     }
 }
 
+@MainActor enum FixturePrewarmGate {
+    static var held = false
+    static var continuations: [CheckedContinuation<Void, Never>] = []
+    static func wait() async {
+        if held { await withCheckedContinuation { continuations.append($0) } }
+    }
+    static func release() {
+        held = false
+        let pending = continuations
+        continuations = []
+        pending.forEach { $0.resume() }
+    }
+}
+
 actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine {
     var cpuBackgroundEnabled = true
     private var capabilityCalls = 0
@@ -685,6 +699,130 @@ extension SharedKeyboardStore {
         interruptedWarmController.setForeground(true)
         try await eventually { interruptedWarmController.preparedModel == .parakeetPhonon }
         try check(interruptedWarmController.keepModelLoaded, "Interrupted first load resumes with retention still enabled")
+
+        // Model attribution is frozen before either capability discovery or
+        // microphone arming can suspend, and remains frozen through finalization.
+        let frozenEngine = LifecycleEngine()
+        await frozenEngine.releasePreparation()
+        let frozenDefaults = UserDefaults(suiteName: "LocalScribeFrozenModelCheck-\(UUID())")!
+        frozenDefaults.set(false, forKey: "keepModelLoaded")
+        let frozenController = await fixture(frozenEngine, preferences: frozenDefaults)
+        let frozenRecorder = AudioRecorder.latest!
+        await frozenEngine.holdNextBackgroundCapability()
+        let frozenStart = Task { await frozenController.startRecording() }
+        try await eventually { await frozenEngine.backgroundCapabilityIsHeld() }
+        try check(frozenController.recordingModel == .parakeetPhonon && frozenController.phase == .preparing,
+                  "Dictate publishes its frozen model before capability discovery returns")
+        frozenController.selectedModel = .parakeetPhononG4
+        await frozenEngine.releaseBackgroundCapability()
+        await frozenStart.value
+        try await eventually { frozenController.preparedModel == .parakeetPhonon }
+        try check(frozenController.recordingModel == .parakeetPhonon,
+                  "Changing Dictate selection during capability discovery cannot relabel capture")
+        frozenRecorder.feed(8_000)
+        await frozenEngine.holdFinalization()
+        let frozenStop = Task { await frozenController.stopRecording() }
+        try await eventually { await frozenEngine.finalizationIsHeld() }
+        frozenController.selectedModel = .parakeetRealtimeEOU
+        try check(frozenController.recordingModel == .parakeetPhonon,
+                  "Finalization keeps the actual recording model despite a new selection")
+        await frozenEngine.releaseFinalization()
+        await frozenStop.value
+        try check(frozenController.recordingModel == nil,
+                  "Completed Dictate recording clears its active model attribution")
+        let frozenPreparations = await frozenEngine.preparations()
+        try check(frozenPreparations == [.parakeetPhonon],
+                  "Preview and finalization prepare only the one frozen Dictate model")
+
+        AudioRecorder.holdNextArm = true
+        frozenController.selectedModel = .parakeetPhonon
+        let keyboardStart = Task { await frozenController.enableKeyboardSession() }
+        try await eventually { frozenRecorder.armContinuation != nil }
+        frozenController.selectedModel = .parakeetPhononG4
+        try check(frozenController.recordingModel == .parakeetPhonon,
+                  "Keyboard preparation freezes its model before microphone arming")
+        frozenRecorder.armContinuation?.resume()
+        frozenRecorder.armContinuation = nil
+        await keyboardStart.value
+        try check(frozenController.keyboardSessionActive && frozenController.preparedModel == .parakeetPhonon,
+                  "Keyboard session prepares the originally requested model after arm await")
+        try check(frozenController.recordingModel == nil,
+                  "Armed idle keyboard session has no active recording attribution")
+        frozenController.disableKeyboardSession()
+
+        // Hold production queued prewarm work, then reserve a different explicit
+        // Action model. Late foreground/discovery/selection work must not replace it.
+        let ownershipEngine = LifecycleEngine()
+        await ownershipEngine.releasePreparation()
+        let ownershipDefaults = UserDefaults(suiteName: "LocalScribePreparationOwnerCheck-\(UUID())")!
+        ownershipDefaults.set(false, forKey: "keepModelLoaded")
+        let ownershipController = await fixture(ownershipEngine, preferences: ownershipDefaults)
+        let ownershipRecorder = AudioRecorder.latest!
+        await ownershipController.refreshInstalledModels(prewarm: false)
+        let discoveryOnly = await ownershipEngine.preparations()
+        try check(discoveryOnly.isEmpty, "Discovery-only refresh does not load a runtime")
+        FixturePrewarmGate.held = true
+        ownershipController.keepModelLoaded = true
+        try await eventually { !FixturePrewarmGate.continuations.isEmpty }
+        await ownershipEngine.holdNextBackgroundCapability()
+        let actionOwner = UUID()
+        let ownedStart = Task { await ownershipController.startActionButtonRecording(requestID: actionOwner) }
+        try await eventually { await ownershipEngine.backgroundCapabilityIsHeld() }
+        try check(ownershipController.recordingModel == .parakeetRealtimeEOU,
+                  "Action publishes its frozen model during idle capability discovery")
+        ownershipController.selectedModel = .parakeetPhononG4
+        ownershipController.selectedBackgroundModel = .moonshineSmall
+        ownershipController.setForeground(true)
+        await ownershipController.refreshInstalledModels()
+        FixturePrewarmGate.release()
+        for _ in 0..<10 { await Task.yield() }
+        let reservedPreparations = await ownershipEngine.preparations()
+        try check(reservedPreparations.isEmpty,
+                  "Stale queued prewarm, foreground, refresh and selection cannot load over an Action reservation")
+        await ownershipEngine.releaseBackgroundCapability()
+        await ownedStart.value
+        try await eventually { ownershipController.preparedModel == .parakeetRealtimeEOU }
+        try check(ownershipController.recordingModel == .parakeetRealtimeEOU && ownershipController.actionButtonRecording,
+                  "Action capture keeps the background model frozen before both capability awaits")
+        ownershipRecorder.feed(8_000)
+        await ownershipController.stopActionButtonRecording()
+        ownershipController.setForeground(false)
+        ownershipController.setForeground(true)
+        await ownershipController.refreshInstalledModels()
+        for _ in 0..<10 { await Task.yield() }
+        let retainedActionPreparations = await ownershipEngine.preparations()
+        try check(retainedActionPreparations == [.parakeetRealtimeEOU] && ownershipController.preparedModel == .parakeetRealtimeEOU,
+                  "Returning from Action dictation and discovery retain its ready runtime without loading Dictate's different selection")
+        ownershipController.selectedModel = .parakeetPhonon
+        try await eventually { ownershipController.preparedModel == .parakeetPhonon }
+        let explicitPreparations = await ownershipEngine.preparations()
+        try check(explicitPreparations == [.parakeetRealtimeEOU, .parakeetPhonon],
+                  "Explicit idle model selection still warms the selected Dictate model with retention enabled")
+
+        // A queued warm-up retired by a cancelled explicit startup stays retired
+        // even though cancellation has returned the controller to idle.
+        let cancelledOwnerEngine = LifecycleEngine()
+        await cancelledOwnerEngine.releasePreparation()
+        let cancelledOwnerDefaults = UserDefaults(suiteName: "LocalScribeCancelledWarmOwnerCheck-\(UUID())")!
+        cancelledOwnerDefaults.set(false, forKey: "keepModelLoaded")
+        let cancelledOwnerController = await fixture(cancelledOwnerEngine, preferences: cancelledOwnerDefaults)
+        FixturePrewarmGate.held = true
+        cancelledOwnerController.keepModelLoaded = true
+        try await eventually { !FixturePrewarmGate.continuations.isEmpty }
+        await cancelledOwnerEngine.holdNextBackgroundCapability()
+        let cancelledOwner = UUID()
+        let cancelledOwnerStart = Task { await cancelledOwnerController.startActionButtonRecording(requestID: cancelledOwner) }
+        try await eventually { await cancelledOwnerEngine.backgroundCapabilityIsHeld() }
+        await cancelledOwnerController.cancelActionButtonRecording(requestID: cancelledOwner)
+        await cancelledOwnerEngine.releaseBackgroundCapability()
+        await cancelledOwnerStart.value
+        FixturePrewarmGate.release()
+        for _ in 0..<10 { await Task.yield() }
+        let cancelledPreparations = await cancelledOwnerEngine.preparations()
+        try check(cancelledOwnerController.recordingModel == nil && cancelledOwnerController.phase == .idle,
+                  "Cancelled Action reservation clears frozen attribution")
+        try check(cancelledPreparations.isEmpty,
+                  "A prewarm queued before cancelled Action startup cannot resurrect a retired model intent")
 
         print("PASS: \(checks) actual AppController lifecycle checks")
     }

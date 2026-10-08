@@ -22,6 +22,11 @@ preparation_needle = """        Task { @MainActor [weak self] in
 """
 assert source.count(preparation_needle) == 1, "Production preparation scheduling boundary changed"
 source = source.replace(preparation_needle, preparation_needle.replace("            guard let self", "            await FixtureAudioEventGate.wait()\n            guard let self"))
+prewarm_needle = """        Task { [weak self] in
+            guard let self, self.keepModelLoaded, self.foreground, self.phase == .idle,
+"""
+assert source.count(prewarm_needle) == 1, "Production prewarm scheduling boundary changed"
+source = source.replace(prewarm_needle, prewarm_needle.replace("            guard let self", "            await FixturePrewarmGate.wait()\n            guard let self"))
 Path(sys.argv[1]).write_text(source)
 PYFIXTURE
 swiftc -swift-version 6 -parse-as-library -I "$check_output" -L "$check_output" -lLocalScribeCore -Xlinker -rpath -Xlinker "$check_output" SharedKeyboard/KeyboardProtocol.swift LocalScribeApp/KeyboardSessionCoordinator.swift "$check_output/AppController.swift" scripts/checks/AppControllerLifecycleCheck.swift -o "$check_output/controller-check"
