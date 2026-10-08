@@ -32,12 +32,12 @@ public enum SpeechModel: String, Codable, CaseIterable, Identifiable, Sendable {
     public var languages: String { [.parakeetPhonon, .parakeetPhononG4, .parakeetPhononG1, .parakeetPhononLUT6, .parakeetPhononLUT3, .moonshineSmall, .parakeetRealtimeEOU].contains(self) ? "English" : "25 European languages" }
     public var detail: String {
         switch self {
-        case .parakeetUltra: "A larger local engine to compare for recognition quality. CPU and Neural Engine execution requested."
+        case .parakeetUltra: "A larger local engine to compare for recognition quality. Default in-app execution requests CPU and Neural Engine. Action Button uses the same files on CPU."
         case .parakeetPhonon: "Native Core ML English dictation. Compare speed and memory on your iPhone."
         case .parakeetPhononG4: "The same learned weights in a smaller encoder graph. Measure the storage and speed tradeoff."
         case .parakeetPhononG1: "The smallest exact-weight Phonon-2 graph. May prepare and transcribe more slowly."
-        case .parakeetPhononLUT6: "Dense 6-bit encoder with CPU and Neural Engine execution requested. Compare speed and memory on your iPhone."
-        case .parakeetPhononLUT3: "Dense 3-bit encoder with CPU and GPU execution requested. Keep the app in the foreground while recognizing speech."
+        case .parakeetPhononLUT6: "Dense 6-bit encoder. Default in-app execution requests CPU and Neural Engine. Action Button uses the same files on CPU. Compare speed and memory on your iPhone."
+        case .parakeetPhononLUT3: "Default in-app encoder requests CPU and GPU. Action Button uses the same files on CPU."
         case .moonshineSmall: "English streaming recognition with cached audio state and CPU execution. Text updates throughout recording."
         case .parakeetRedux: "A compact download with multilingual speech recognition."
         case .parakeetRealtimeEOU: "Streaming with cached audio state and frequent text updates. English text has no automatic punctuation."
