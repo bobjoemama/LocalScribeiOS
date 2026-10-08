@@ -1189,6 +1189,101 @@ extension SharedKeyboardStore {
                   && preserveRecorder.armCalls == originalArmCalls,
                   "Failed CPU warming preserves the prior result and history without starting a microphone session")
 
+        // Record can beat the queued idle warm-up. Retention ON must choose
+        // the same Action CPU key directly rather than leave a ready ANE model.
+        let immediateEngine = ContextualLifecycleEngine()
+        await immediateEngine.engine.releasePreparation()
+        let immediateDefaults = UserDefaults(suiteName: "LocalScribeImmediateCPUCheck-\(UUID())")!
+        immediateDefaults.set(false, forKey: "keepModelLoaded")
+        let immediateController = await fixture(immediateEngine, preferences: immediateDefaults)
+        let immediateRecorder = AudioRecorder.latest!
+        FixturePrewarmGate.held = true
+        immediateController.keepModelLoaded = true
+        try await eventually { !FixturePrewarmGate.continuations.isEmpty }
+        await immediateController.startRecording()
+        try check(immediateController.recordingExecutionContext == .backgroundCapable,
+                  "Immediate Record with retention ON freezes the Action CPU context before queued prewarm runs")
+        immediateRecorder.feed(8_000)
+        await immediateController.stopRecording()
+        FixturePrewarmGate.release()
+        for _ in 0..<10 { await Task.yield() }
+        let immediateRequests = await immediateEngine.preparationRequests()
+        try check(immediateController.actionButtonModelReady && immediateRequests.count == 1
+                  && immediateRequests[0].0 == .parakeetPhonon && immediateRequests[0].1 == .backgroundCapable,
+                  "Immediate Record finishes Ready for Action with one CPU preparation and no acceleration swap")
+
+        let immediateOffEngine = ContextualLifecycleEngine()
+        await immediateOffEngine.engine.releasePreparation()
+        let immediateOffDefaults = UserDefaults(suiteName: "LocalScribeImmediateOFFCheck-\(UUID())")!
+        immediateOffDefaults.set(false, forKey: "keepModelLoaded")
+        let immediateOffController = await fixture(immediateOffEngine, preferences: immediateOffDefaults)
+        let immediateOffRecorder = AudioRecorder.latest!
+        await immediateOffController.startRecording()
+        try check(immediateOffController.recordingExecutionContext == .foreground,
+                  "Cold Record with retention OFF preserves foreground acceleration")
+        immediateOffRecorder.feed(8_000)
+        await immediateOffController.stopRecording()
+        let immediateOffRequests = await immediateOffEngine.preparationRequests()
+        try check(immediateOffRequests.count == 1 && immediateOffRequests[0].1 == .foreground
+                  && immediateOffController.preparedModel == nil,
+                  "Retention OFF loads the foreground context on demand and releases it after completion")
+
+        let immediateKeyboardEngine = ContextualLifecycleEngine()
+        await immediateKeyboardEngine.engine.releasePreparation()
+        let immediateKeyboardDefaults = UserDefaults(suiteName: "LocalScribeImmediateKeyboardCPUCheck-\(UUID())")!
+        immediateKeyboardDefaults.set(false, forKey: "keepModelLoaded")
+        let immediateKeyboardController = await fixture(immediateKeyboardEngine, preferences: immediateKeyboardDefaults)
+        FixturePrewarmGate.held = true
+        immediateKeyboardController.keepModelLoaded = true
+        try await eventually { !FixturePrewarmGate.continuations.isEmpty }
+        await immediateKeyboardController.enableKeyboardSession()
+        try check(immediateKeyboardController.keyboardSessionActive && immediateKeyboardController.actionButtonModelReady,
+                  "Keyboard setup that beats queued prewarm also prepares the retained Action CPU context")
+        immediateKeyboardController.disableKeyboardSession()
+        FixturePrewarmGate.release()
+        for _ in 0..<10 { await Task.yield() }
+        let immediateKeyboardRequests = await immediateKeyboardEngine.preparationRequests()
+        try check(immediateKeyboardRequests.count == 1 && immediateKeyboardRequests[0].1 == .backgroundCapable,
+                  "Immediate keyboard setup retains one CPU runtime without a later context switch")
+
+        // Retention can be enabled while an OFF recording still owns its ANE
+        // runtime. That retained context must not beat ON's CPU policy.
+        for useKeyboard in [false, true] {
+            let retainedForegroundEngine = ContextualLifecycleEngine()
+            await retainedForegroundEngine.engine.releasePreparation()
+            let retainedForegroundDefaults = UserDefaults(suiteName: "LocalScribeRetainedForegroundCPUCheck-\(UUID())")!
+            retainedForegroundDefaults.set(false, forKey: "keepModelLoaded")
+            let retainedForegroundController = await fixture(retainedForegroundEngine, preferences: retainedForegroundDefaults)
+            let retainedForegroundRecorder = AudioRecorder.latest!
+            await retainedForegroundController.startRecording()
+            try await eventually { retainedForegroundController.preparedExecutionContext == .foreground }
+            retainedForegroundController.keepModelLoaded = true
+            retainedForegroundRecorder.feed(8_000)
+            await retainedForegroundController.stopRecording()
+            try check(retainedForegroundController.preparedExecutionContext == .foreground
+                      && !retainedForegroundController.actionButtonModelReady,
+                      "Changing retention during an OFF capture leaves its original foreground runtime frozen until completion")
+            FixturePrewarmGate.held = true
+            await retainedForegroundController.refreshInstalledModels()
+            try await eventually { !FixturePrewarmGate.continuations.isEmpty }
+            if useKeyboard {
+                await retainedForegroundController.enableKeyboardSession()
+                retainedForegroundController.disableKeyboardSession()
+            } else {
+                await retainedForegroundController.startRecording()
+                try check(retainedForegroundController.recordingExecutionContext == .backgroundCapable,
+                          "Retention ON overrides an already-retained accelerated context for the next Record")
+                retainedForegroundRecorder.feed(8_000)
+                await retainedForegroundController.stopRecording()
+            }
+            FixturePrewarmGate.release()
+            for _ in 0..<10 { await Task.yield() }
+            let retainedForegroundRequests = await retainedForegroundEngine.preparationRequests()
+            try check(retainedForegroundController.actionButtonModelReady && retainedForegroundRequests.count == 2
+                      && retainedForegroundRequests[0].1 == .foreground && retainedForegroundRequests[1].1 == .backgroundCapable,
+                      "Record and keyboard setup obey retention ON before queued warming, replacing accelerated state exactly once")
+        }
+
         print("PASS: \(checks) actual AppController lifecycle checks")
     }
 }

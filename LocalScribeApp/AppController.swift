@@ -347,7 +347,7 @@ final class AppController: ObservableObject {
 
     func startRecording() async {
         let model = selectedModel
-        let context = retainedExecutionContext(for: model) ?? .foreground
+        let context = requestedInAppExecutionContext(for: model)
         await startRecording(model: model, context: context)
     }
 
@@ -791,7 +791,7 @@ final class AppController: ObservableObject {
     func enableKeyboardSession() async {
         guard !verificationMode, phase == .idle, downloadingModel == nil, foreground, actionRecordingRequestID == nil else { return }
         let model = selectedModel
-        let context = retainedExecutionContext(for: model) ?? .foreground
+        let context = requestedInAppExecutionContext(for: model)
         guard installedModels.contains(model) else { errorMessage = "Download a model before enabling the keyboard microphone session."; return }
         prewarmRevision += 1
         recordingModel = model
@@ -1057,6 +1057,11 @@ final class AppController: ObservableObject {
     private func effectiveExecutionContext(for model: SpeechModel, requested context: ModelExecutionContext) -> ModelExecutionContext {
         guard engine is any ContextualLocalTranscriptionEngine else { return .foreground }
         return context.normalized(for: model)
+    }
+
+    private func requestedInAppExecutionContext(for model: SpeechModel) -> ModelExecutionContext {
+        if keepModelLoaded { return .backgroundCapable }
+        return retainedExecutionContext(for: model) ?? .foreground
     }
 
     private func retainedExecutionContext(for model: SpeechModel) -> ModelExecutionContext? {
