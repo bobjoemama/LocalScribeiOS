@@ -151,13 +151,12 @@ private struct ModelDetailsView: View {
                         ? "Updates text incrementally as speech arrives, reusing recognition state. The same model provides preview and final text."
                         : "First preview after 5 seconds of audio, then updates every 3 seconds as processing catches up. The same model provides preview and final text.")
                         .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
-                    LabeledContent("Background inference", value: SpeechModelPresentation.isStreaming(model) ? "CPU supported" : "Foreground only")
+                    LabeledContent("In-app processing", value: SpeechModelPresentation.inAppProcessing(model))
                     Text(SpeechModelPresentation.backend(model)).font(.footnote).foregroundStyle(AppTheme.inkSecondary)
+                    LabeledContent("Action Button", value: "CPU only · same model")
                     Text(model.detail).foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    if SpeechModelPresentation.isStreaming(model) {
-                        Text("iOS controls background execution and microphone activation. CPU support does not guarantee a background recording can start.")
-                    }
+                    Text("Action Button uses the same model files with CPU-only processing and may prepare them separately. Preparation and recognition speed depend on the model. iOS controls background execution and microphone activation.")
                 }
                 if model.languages != "English" {
                     Section("Supported languages") {
@@ -177,6 +176,10 @@ private struct ModelDetailsView: View {
 enum SpeechModelPresentation {
     static func isStreaming(_ model: SpeechModel) -> Bool { model == .parakeetRealtimeEOU || model == .moonshineSmall }
     static func mode(_ model: SpeechModel) -> String { isStreaming(model) ? "Streaming · live text" : "Periodic text · first 5 s, then every 3 s" }
+    static func inAppProcessing(_ model: SpeechModel) -> String {
+        if isStreaming(model) { return "CPU only" }
+        return model == .parakeetPhononLUT3 ? "CPU + GPU / Neural Engine" : "CPU + Neural Engine"
+    }
     static func backend(_ model: SpeechModel) -> String {
         if model == .moonshineSmall { return "Moonshine native ONNX Runtime · CPU only. GPU and Neural Engine disabled." }
         if model == .parakeetPhononLUT3 { return "Core ML encoder · CPU + GPU requested. Other components · CPU + Neural Engine requested." }

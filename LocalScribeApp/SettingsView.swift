@@ -86,7 +86,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Keyboard").foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("The microphone stays on until you end the session or reach the idle timeout. Audio between dictations is discarded. Keyboard recordings use the model selected on Dictate.").foregroundStyle(AppTheme.inkSecondary)
+                    Text("The microphone stays on until you end the session or reach the idle timeout. Audio between dictations is discarded. Keyboard recordings use the model selected on Dictate. Accelerated keyboard models wait until LocalScribe is open.").foregroundStyle(AppTheme.inkSecondary)
                 }
                 .listRowBackground(AppTheme.surface)
 
@@ -96,7 +96,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Action Button").foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("Dictate and Action Button recordings use the same selected model. Live Activities are required for the shortcut. If iOS declines background microphone activation, open LocalScribe and record from Dictate.").foregroundStyle(AppTheme.inkSecondary)
+                    Text("Dictate and Action Button recordings use the same selected model. The shortcut uses CPU-only processing and requires Live Activities. If iOS declines background microphone activation, open LocalScribe and record from Dictate.").foregroundStyle(AppTheme.inkSecondary)
                 }
                 .listRowBackground(AppTheme.surface)
 
@@ -154,7 +154,7 @@ private struct ActionButtonSetupView: View {
             Section {
                 LabeledContent("Model", value: controller.selectedModel.name)
             } footer: {
-                Text("Action Button recordings use the model selected on Dictate. Change it on Dictate or in Settings → Choose model.").foregroundStyle(AppTheme.inkSecondary)
+                Text("Action Button uses the same selected model files with CPU-only processing. Change the model on Dictate or in Settings → Choose model.").foregroundStyle(AppTheme.inkSecondary)
             }
             .listRowBackground(AppTheme.surface)
             Section {
