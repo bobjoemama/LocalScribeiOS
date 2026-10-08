@@ -107,6 +107,20 @@ scripts/check_personalization_controller.sh
 
 On this Mac, prefix Xcode commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; the global command-line-tools selection is left unchanged. The local Swift package isolates platform-independent correction, storage, capture and WER tests. `--without-fluidaudio` generates a UI-only project whose runtime visibly reports unavailable; it is not a working recognition build.
 
+## Before TestFlight upload
+
+Check the actual exported app, including its Activity widget:
+
+```sh
+python3 scripts/package_action_button_shortcut.py \
+  --app-bundle /path/to/exported/LocalScribe.app --require-bundled
+python3 scripts/checks/test_app_intent_descriptions.py
+```
+
+This checks the compiled String result, identity and unchanged signed shortcut, plus every app/widget intent description for the confirmed `iPhone` rejection (ITMS-90626). Build 17 passed local compilation and delivery but failed Apple's later metadata validation; the regression rejects its actual compiled descriptions. No broader undocumented keyword ban is assumed.
+
+After upload, confirm **Complete** under TestFlight's platform → Build Uploads, or check Apple's processing-result email. Delivery success and **Processing** do not establish availability. First external beta review and public-link enablement follow successful processing. [Apple's upload-status instructions](https://developer.apple.com/help/app-store-connect/manage-builds/view-builds-and-metadata/).
+
 ## Repeatable device inference check
 
 DEBUG builds include a finite benchmark runner, activated only by explicit launch arguments:
