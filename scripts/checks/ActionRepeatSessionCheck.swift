@@ -189,6 +189,54 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
         try check(!bridge.hasActiveSession && controller.phase == .idle && !recorder.recording
                   && recorder.armCalls == armsBeforeCancelledDiscovery,
                   "Discovery cancellation retires the reserved session before audio activation")
+
+        for skip in 0...1 {
+            await engine.engine.holdNextBackgroundCapability(skip: skip)
+            let capabilitySession = UUID()
+            let armsBeforeCapability = recorder.armCalls
+            let capabilityStart = Task {
+                try await DictationActionRuntime.perform(.startSession(sessionID: capabilitySession))
+            }
+            try await waitFor { await engine.engine.backgroundCapabilityIsHeld() }
+            await DictationActionRuntime.cancel(sessionID: capabilitySession, reason: .timeout)
+            await engine.engine.releaseBackgroundCapability()
+            do {
+                _ = try await capabilityStart.value
+                throw Failure.check("Cancelled capability discovery must fail")
+            } catch is CancellationError { checks += 1 }
+            try check(!bridge.hasActiveSession && controller.phase == .idle && !recorder.recording
+                      && !controller.actionButtonRecording && recorder.armCalls == armsBeforeCapability,
+                      "Cancellation across capability await \(skip) cannot leave an orphan microphone")
+            let replacement = try await ToggleDictationShortcut().perform()
+            let replacementID = bridge.sessionIdentifier!
+            await DictationActionRuntime.cancel(sessionID: capabilitySession, reason: .userCancelled)
+            try check(replacement.value == "" && replacementID != capabilitySession
+                      && controller.phase == .recording && recorder.recording,
+                      "Replacement Action capture survives the cancelled startup's late cleanup")
+            await DictationActionRuntime.cancel(sessionID: replacementID)
+        }
+
+        await engine.engine.holdNextBackgroundCapability()
+        let manualReplacementSession = UUID()
+        let manualReplacedStart = Task {
+            try await DictationActionRuntime.perform(.startSession(sessionID: manualReplacementSession))
+        }
+        try await waitFor { await engine.engine.backgroundCapabilityIsHeld() }
+        controller.setForeground(true)
+        await controller.startRecording()
+        let manualRecording = controller.currentRecordingID
+        await DictationActionRuntime.cancel(sessionID: manualReplacementSession, reason: .userCancelled)
+        await engine.engine.releaseBackgroundCapability()
+        do {
+            _ = try await manualReplacedStart.value
+            throw Failure.check("Cancelled startup replaced by manual capture must fail")
+        } catch is CancellationError { checks += 1 }
+        await DictationActionRuntime.cancel(sessionID: manualReplacementSession, reason: .timeout)
+        try check(manualRecording != nil && controller.currentRecordingID == manualRecording
+                  && controller.phase == .recording && recorder.recording && !bridge.hasActiveSession,
+                  "Cancelled Action startup and its late cancellation preserve a newer manual capture")
+        await controller.cancelRecording()
+        controller.setForeground(false)
         try check(UIPasteboard.general.writes.isEmpty && controller.history.isEmpty,
                   "Repeated/empty/cancelled sessions use no app clipboard access or history writes")
         print("PASS: \(checks) repeated Action Button session checks")
