@@ -76,6 +76,6 @@ Hold and release to start recording; hold and release again to finish, then past
 
 The bare **Dictate and Copy** app action returns text to Shortcuts; it does not copy by itself. Use the supplied workflow, which copies only a nonempty result and leaves the clipboard unchanged when recording starts. Local Only keeps this workflow’s clipboard item from syncing to other devices.
 
-**Settings → Action Button → Setup → Last run** reports the app intent’s action, outcome, whether it returned nonempty text, elapsed time, app context and cancellation reason. It does not confirm that the native clipboard action ran, and contains no speech or clipboard contents.
+**Settings → Action Button → Setup → Last run** reports the app intent’s action, outcome, whether it returned nonempty text, elapsed time, app context, cancellation reason and the failure message when available. It does not confirm that the native clipboard action ran, and contains no speech or clipboard contents.
 
 See [current device-test results](../tasklist.md#current-ios-beta-status). Keep the supplied shortcut assigned across app updates; no reconstruction is required. Verify at least two consecutive recordings when testing a beta. If recording cannot start, use **Dictate → Record / Stop / Copy** in LocalScribe as the foreground fallback.
