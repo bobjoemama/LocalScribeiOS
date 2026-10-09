@@ -164,6 +164,38 @@ struct DictationActivityAttributes {
     try check(
       DictationLiveActivity.lastText == "Captured words.",
       "Final Activity preview uses actual final transcript")
+
+    // Resolve through the production intent seam, then change session ownership
+    // before dispatch. The selected invocation must retain its original action.
+    let selectedStart = DictationActionRuntime.resolveToggleAction()
+    _ = try await StartDictationShortcut().perform()
+    let competingSession = owner!.sessionIdentifier!
+    let armsBeforeSelectedStart = recorder.armCalls
+    do {
+      _ = try await DictationActionRuntime.perform(selectedStart)
+      throw Failure.check("A selected Start must not become Stop after another Start")
+    } catch DictationActionError.busy { checks += 1 }
+    try check(
+      owner!.sessionIdentifier == competingSession && controller.phase == .recording
+        && recorder.recording && recorder.armCalls == armsBeforeSelectedStart,
+      "Session appearing after Start selection keeps its microphone and receives no Stop")
+
+    let selectedStop = DictationActionRuntime.resolveToggleAction()
+    await DictationActionRuntime.cancel(sessionID: competingSession)
+    _ = try await StartDictationShortcut().perform()
+    let replacementSession = owner!.sessionIdentifier!
+    let armsBeforeSelectedStop = recorder.armCalls
+    do {
+      _ = try await DictationActionRuntime.perform(selectedStop)
+      throw Failure.check("A selected Stop must not target a replacement session")
+    } catch DictationActionError.noSession { checks += 1 }
+    try check(
+      replacementSession != competingSession && owner!.sessionIdentifier == replacementSession
+        && controller.phase == .recording && recorder.recording
+        && recorder.armCalls == armsBeforeSelectedStop,
+      "Session replaced after Stop selection keeps its microphone and receives no new Start")
+    await DictationActionRuntime.cancel(sessionID: replacementSession)
+
     do {
       _ = try await StopLiveDictationIntent(sessionID: UUID()).perform()
       throw Failure.check("Stale stop must fail")

@@ -53,9 +53,9 @@ struct ToggleDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         await MainActor.run { _ = AppContext.shared }
+        let action = await DictationActionRuntime.resolveToggleAction()
         #if os(iOS)
-        let sessionID = await MainActor.run { AppContext.shared.actionBridge.sessionIdentifier }
-        if #available(iOS 27.0, *), let sessionID {
+        if #available(iOS 27.0, *), case let .stop(sessionID?, _, _) = action {
             progress.totalUnitCount = 1
             let cancellation = await MainActor.run { DictationActionRuntime.CancellationScope(sessionID: sessionID) }
             let text = try await performBackgroundTask {
@@ -67,7 +67,7 @@ struct ToggleDictationShortcut: AudioRecordingIntent, LiveActivityIntent {
             return .result(value: text ?? "")
         }
         #endif
-        let text = try await DictationActionRuntime.perform(.toggle)
+        let text = try await DictationActionRuntime.perform(action)
         return .result(value: text ?? "")
     }
 }

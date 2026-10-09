@@ -29,6 +29,15 @@ enum DictationActionRuntime {
     static var sessionIdentifier: (@MainActor @Sendable () -> UUID?)?
     private static let logger = Logger(subsystem: "com.devesh.localscribe.ios", category: "DictationShortcut")
 
+    /// Freeze the invocation before leaving MainActor. Later suspension must
+    /// not turn its Start into Stop or target a replacement recording.
+    static func resolveToggleAction() -> Action {
+        if let id = sessionIdentifier?() {
+            return .stop(sessionID: id)
+        }
+        return .startSession(sessionID: UUID())
+    }
+
     /// Platform cancellation belongs to an invocation, not the longer-lived
     /// recording/result. A delayed callback after Widget Stop must not discard
     /// the successfully retained result. Explicit session cancellation remains
