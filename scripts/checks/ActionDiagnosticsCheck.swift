@@ -64,6 +64,9 @@ actor ProgressEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRepo
         } catch DictationActionError.failed(let message) {
             try check(message.localizedCaseInsensitiveContains("Ready"),
                       "Cold background Action explains how to make the selected model Ready")
+            try check(bridge.diagnostic?.action == .start && bridge.diagnostic?.outcome == .failed
+                      && bridge.diagnostic?.failureMessage == message,
+                      "Failed first hold retains its actual operational reason in Last run")
         }
         try check(DictationLiveActivity.starts == activitiesBeforeColdStart
                   && recorder.armCalls == armsBeforeColdStart && !recorder.recording && !bridge.hasActiveSession,
@@ -74,12 +77,16 @@ actor ProgressEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRepo
         try check(controller.phase == .preparing && !recorder.recording
                   && recorder.armCalls == armsBeforeColdStart && DictationLiveActivity.starts == activitiesBeforeColdStart,
                   "Foreground preparation finishes before microphone activation or recording Activity")
+        try check(bridge.diagnostic?.outcome == .running && bridge.diagnostic?.failureMessage == nil,
+                  "Retry clears the previous failure while the actual start is running")
         await engine.releasePreparation()
         let start = try await foregroundStart.value
         controller.setForeground(false)
         try check(start.value == "" && bridge.diagnostic?.action == .start
                   && bridge.diagnostic?.outcome == .completed && bridge.diagnostic?.resultNonempty == false,
                   "Successful Start reports no result and still returns empty output")
+        try check(bridge.diagnostic?.failureMessage == nil,
+                  "Successful retry leaves no stale readiness failure in Last run")
         recorder.feed(32_000)
         let session = bridge.sessionIdentifier!
         let progress = Progress(totalUnitCount: 1)
@@ -209,7 +216,8 @@ actor ProgressEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRepo
             throw Failure.check("Cancellation must fail")
         } catch is CancellationError { checks += 1 }
         try check(bridge.diagnostic?.outcome == .cancelled && bridge.diagnostic?.cancellationReason == .timeout
-                  && bridge.diagnostic?.resultNonempty == false && !recorder.recording && !bridge.hasActiveSession,
+                  && bridge.diagnostic?.resultNonempty == false && bridge.diagnostic?.failureMessage == nil
+                  && !recorder.recording && !bridge.hasActiveSession,
                   "Timeout diagnostics survive task cleanup without committing a late result")
         let cancelledDescription = cancelledProgress.localizedAdditionalDescription
         try await Task.sleep(for: .milliseconds(1_100))

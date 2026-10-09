@@ -23,6 +23,7 @@ final class DictationActionBridge: ObservableObject {
     let durationSeconds: TimeInterval
     let executionContext: ExecutionContext
     let cancellationReason: DictationActionRuntime.CancellationReason?
+    let failureMessage: String?
   }
   /// In-memory operational status only; never contains speech, clipboard text or identifiers.
   @Published private(set) var diagnostic: ActionDiagnostic?
@@ -123,14 +124,15 @@ final class DictationActionBridge: ObservableObject {
       let cancelled = error is CancellationError || Task.isCancelled || diagnostic?.outcome == .cancelled
       recordDiagnostic(
         action: diagnosticAction, outcome: cancelled ? .cancelled : .failed,
-        reason: cancelled ? diagnostic?.cancellationReason ?? .taskCancelled : nil)
+        reason: cancelled ? diagnostic?.cancellationReason ?? .taskCancelled : nil,
+        failureMessage: cancelled ? nil : error.localizedDescription)
       throw error
     }
   }
 
   private func recordDiagnostic(
     action: ActionDiagnostic.Action, outcome: ActionDiagnostic.Outcome, result: String? = nil,
-    reason: DictationActionRuntime.CancellationReason? = nil
+    reason: DictationActionRuntime.CancellationReason? = nil, failureMessage: String? = nil
   ) {
     let duration = diagnosticStartedAt?.duration(to: .now) ?? .zero
     let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
@@ -156,7 +158,8 @@ final class DictationActionBridge: ObservableObject {
     }
     diagnostic = ActionDiagnostic(
       action: action, outcome: outcome, resultNonempty: nonempty, durationSeconds: seconds,
-      executionContext: context, cancellationReason: effectiveReason)
+      executionContext: context, cancellationReason: effectiveReason,
+      failureMessage: outcome == .failed ? failureMessage : nil)
     logger.notice("Shortcut action=\(action.rawValue, privacy: .public) outcome=\(outcome.rawValue, privacy: .public) result_nonempty=\(nonempty, privacy: .public) seconds=\(seconds, privacy: .public) context=\(context.rawValue, privacy: .public)")
   }
 

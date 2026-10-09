@@ -299,6 +299,113 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
                   && frozenPreparations.dropFirst(preparationCountBeforeFreeze).allSatisfy { $0 == .parakeetRealtimeEOU },
                   "Discovery never prewarms the changed preference or switches final transcription")
         controller.selectedModel = .parakeetRealtimeEOU
+
+        // Startup failures must leave Toggle on Start, with no microphone or
+        // result to copy. Exercise retry through the actual shortcut each time.
+        controller.setForeground(true)
+        let failureCheckPreparationID = UUID()
+        try check(controller.reserveActionButtonRecording(requestID: failureCheckPreparationID, model: controller.selectedModel),
+                  "Failed-start checks reserve the restored selected model")
+        let failureChecksReady = await controller.prepareReservedActionButtonRecording(requestID: failureCheckPreparationID)
+        try check(failureChecksReady, "Failed-start checks begin with the selected runtime Ready")
+        await controller.cancelActionButtonRecording(requestID: failureCheckPreparationID)
+        controller.setForeground(false)
+        let preservedTranscript = controller.transcript
+        for failure in ["authorization", "activity", "microphone"] {
+            let armsBeforeFailure = recorder.armCalls
+            let activitiesBeforeFailure = DictationLiveActivity.starts
+            switch failure {
+            case "authorization": DictationLiveActivity.authorized = false
+            case "activity": DictationLiveActivity.requestSucceeds = false
+            default: recorder.microphonePermissionGranted = false
+            }
+            do {
+                _ = try await ToggleDictationShortcut().perform()
+                throw Failure.check("Rejected \(failure) startup must fail")
+            } catch DictationActionError.failed { checks += 1 }
+            try check(!bridge.hasActiveSession && controller.phase == .idle
+                      && !controller.actionButtonRecording && !recorder.recording && !recorder.armed,
+                      "Rejected \(failure) startup leaves no capture or session for Stop")
+            try check(recorder.armCalls == armsBeforeFailure
+                      && controller.transcript == preservedTranscript,
+                      "Rejected \(failure) startup neither activates audio nor replaces completed text")
+            if failure == "authorization" {
+                try check(DictationLiveActivity.starts == activitiesBeforeFailure,
+                          "Disabled Activity authorization fails before requesting a recording Activity")
+            }
+            DictationLiveActivity.authorized = true
+            DictationLiveActivity.requestSucceeds = true
+            recorder.microphonePermissionGranted = true
+            let retry = try await ToggleDictationShortcut().perform()
+            let retryID = bridge.sessionIdentifier!
+            try check(retry.value == "" && controller.phase == .recording && recorder.recording
+                      && bridge.diagnostic?.action == .start,
+                      "First hold after rejected \(failure) startup starts and returns without Copy output")
+            await DictationActionRuntime.cancel(sessionID: retryID)
+            // Explicit cancellation discards its capture, so retain an existing
+            // editable transcript for the next failure's preservation check.
+            controller.transcript = preservedTranscript
+        }
+
+        // Rejected bridge acquisition cannot retire a controller reservation
+        // owned by another request, even if the failed shortcut is cancelled.
+        let reservedID = UUID()
+        try check(controller.reserveActionButtonRecording(requestID: reservedID, model: controller.selectedModel),
+                  "Independent controller request acquires the idle reservation")
+        let rejectedID = UUID()
+        do {
+            _ = try await DictationActionRuntime.perform(.startSession(sessionID: rejectedID))
+            throw Failure.check("Bridge acquisition must reject another request's reservation")
+        } catch DictationActionError.busy { checks += 1 }
+        await DictationActionRuntime.cancel(sessionID: rejectedID, reason: .timeout)
+        try check(!bridge.hasActiveSession && !recorder.recording,
+                  "Rejected reservation never publishes a bridge session or microphone")
+        await controller.startReservedActionButtonRecording(requestID: reservedID)
+        try check(controller.phase == .recording && controller.actionButtonRecording && recorder.recording,
+                  "Rejected shortcut and its cancellation preserve the actual reservation owner")
+        await controller.cancelActionButtonRecording(requestID: reservedID)
+        let reservationRetry = try await ToggleDictationShortcut().perform()
+        let reservationRetryID = bridge.sessionIdentifier!
+        try check(reservationRetry.value == "" && controller.phase == .recording && recorder.recording,
+                  "Hold after the independent owner retires starts a fresh bridge capture")
+        await DictationActionRuntime.cancel(sessionID: reservationRetryID)
+
+        // A cold background rejection is intentional: readiness precedes the
+        // microphone. Loading the same selection must make the next hold Start.
+        controller.keepModelLoaded = false
+        try await waitFor { controller.preparedModel == nil }
+        let armsBeforeColdFailure = recorder.armCalls
+        let activitiesBeforeColdFailure = DictationLiveActivity.starts
+        do {
+            _ = try await ToggleDictationShortcut().perform()
+            throw Failure.check("Cold background startup must report missing readiness")
+        } catch DictationActionError.failed(let message) {
+            try check(message.contains("Ready"), "Cold background startup reports its readiness requirement")
+        }
+        try check(!bridge.hasActiveSession && controller.phase == .idle
+                  && !controller.actionButtonRecording && !recorder.recording && !recorder.armed
+                  && recorder.armCalls == armsBeforeColdFailure
+                  && DictationLiveActivity.starts == activitiesBeforeColdFailure,
+                  "Readiness rejection retires ownership before Activity or microphone activation")
+        controller.keepModelLoaded = true
+        controller.setForeground(true)
+        let readyRequest = UUID()
+        try check(controller.reserveActionButtonRecording(requestID: readyRequest, model: controller.selectedModel),
+                  "Readiness rejection releases its reservation for explicit preparation")
+        let restoredReady = await controller.prepareReservedActionButtonRecording(requestID: readyRequest)
+        try check(restoredReady,
+                  "Selected runtime can be prepared after rejected cold startup")
+        await controller.cancelActionButtonRecording(requestID: readyRequest)
+        controller.setForeground(false)
+        let readyRetry = try await ToggleDictationShortcut().perform()
+        try check(readyRetry.value == "" && controller.phase == .recording && recorder.recording
+                  && bridge.diagnostic?.action == .start,
+                  "First hold after readiness recovery starts and returns to the speaker")
+        recorder.feed(32_000)
+        let readyStop = try await ToggleDictationShortcut().perform()
+        try check(readyStop.value == "Retry words." && !bridge.hasActiveSession
+                  && controller.phase == .idle && !recorder.recording && !recorder.armed,
+                  "Next hold after readiness recovery stops and returns only its new transcript")
         try check(UIPasteboard.general.writes.isEmpty && controller.history.isEmpty,
                   "Repeated/empty/cancelled sessions use no app clipboard access or history writes")
         print("PASS: \(checks) repeated Action Button session checks")
