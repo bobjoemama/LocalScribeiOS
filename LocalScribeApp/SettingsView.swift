@@ -181,6 +181,15 @@ private struct ActionButtonSetupView: View {
                         LabeledContent("App returned text", value: diagnostic.resultNonempty ? "Yes" : "No")
                         LabeledContent("App state", value: diagnostic.executionContext.rawValue.capitalized)
                         LabeledContent("Elapsed", value: String(format: "%.1f s", diagnostic.durationSeconds))
+                        if let message = diagnostic.failureMessage {
+                            LabeledContent("Error") {
+                                Text(message)
+                                    .foregroundStyle(AppTheme.error)
+                                    .multilineTextAlignment(.leading)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
+                            }
+                        }
                         if let reason = diagnostic.cancellationReason {
                             LabeledContent("Cancellation", value: reason == .timeout ? "Timed out" : reason == .userCancelled ? "User cancelled" : reason == .taskCancelled ? "Task cancelled" : reason == .requested ? "Requested" : "Other")
                         }

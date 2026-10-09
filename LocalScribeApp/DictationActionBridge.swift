@@ -25,7 +25,7 @@ final class DictationActionBridge: ObservableObject {
     let cancellationReason: DictationActionRuntime.CancellationReason?
     let failureMessage: String?
   }
-  /// In-memory operational status only; never contains speech, clipboard text or identifiers.
+  /// In-memory operational status and errors; never stores transcript or clipboard values.
   @Published private(set) var diagnostic: ActionDiagnostic?
   private var diagnosticStartedAt: ContinuousClock.Instant?
   private var diagnosticSessionID: UUID?
