@@ -1,6 +1,13 @@
 # Installing LocalScribe on iPhone
 
-The current public delivery is source code; development installations do not provide public beta access or a generally installable IPA. See [current beta status](../tasklist.md#current-ios-beta-status). For everyday use after installation, see the [README](../README.md). Read the [privacy policy](PRIVACY.md) for audio, saved text, permissions and beta diagnostics.
+The [public TestFlight beta](https://testflight.apple.com/join/sdqBktQV) is open to anyone with a compatible iPhone running iOS 18 or later. See [current beta status](../tasklist.md#current-ios-beta-status) for the available build and pending updates. Read the [privacy policy](PRIVACY.md) for audio, saved text, permissions and beta diagnostics.
+
+## Install with TestFlight
+
+1. Open the [LocalScribe invitation](https://testflight.apple.com/join/sdqBktQV) on the iPhone. Install Apple’s TestFlight if prompted, then accept the invitation and tap **Install**.
+2. Open LocalScribe → **Models**, download and select a model, then wait for **Ready**. Allow microphone access when recording starts.
+
+A Mac, Xcode and Developer Mode are unnecessary for TestFlight installation. The keyboard and Action Button use the setup steps below.
 
 ## Install from source
 

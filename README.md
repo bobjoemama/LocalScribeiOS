@@ -4,7 +4,9 @@ An open-source alternative to Wispr Flow. Speech recognition runs on your iPhone
 
 ## Install
 
-A public TestFlight invitation is not available yet. For now, [build and install from source](docs/INSTALLATION.md#install-from-source) with a Mac, Xcode 27+ and Apple signing access. The guide covers the app, keyboard and Live Activity extension. [Beta status](tasklist.md#current-ios-beta-status).
+[Install the beta with TestFlight](https://testflight.apple.com/join/sdqBktQV). Open the link on your iPhone, install Apple’s TestFlight if prompted, then accept the invitation and tap **Install**. No Mac or Developer Mode is required.
+
+[Installation and setup](docs/INSTALLATION.md) · [Build from source](docs/INSTALLATION.md#install-from-source) · [Beta status](tasklist.md#current-ios-beta-status).
 
 ## Use
 
