@@ -82,16 +82,18 @@ struct LocalScribeLiveActivity: Widget {
           .frame(maxWidth: .infinity, alignment: .leading)
         }
       } compactLeading: {
-        ActivityPhaseSymbol(phase: context.state.phase)
-          .accessibilityLabel(context.state.status)
+        CompactActivityRegion {
+          ActivityPhaseSymbol(phase: context.state.phase)
+            .accessibilityLabel(context.state.status)
+        }
       } compactTrailing: {
-        if context.state.phase == .recording {
-          ActivityElapsed(context: context)
-            .font(.caption2.monospacedDigit())
-            .frame(maxWidth: 64)
-        } else {
-          Text(context.state.phase.compactStatus)
-            .font(.caption2)
+        CompactActivityRegion {
+          if context.state.phase == .recording {
+            ActivityElapsed(context: context)
+              .monospacedDigit()
+          } else {
+            Text(context.state.phase.compactStatus)
+          }
         }
       } minimal: {
         ActivityPhaseSymbol(phase: context.state.phase)
@@ -100,6 +102,20 @@ struct LocalScribeLiveActivity: Widget {
       .keylineTint(context.state.phase == .recording ? ActivityColors.recording : nil)
       .widgetURL(URL(string: "localscribe://dictation"))
     }
+  }
+}
+
+private struct CompactActivityRegion<Content: View>: View {
+  // Keep equal, snug reservations on both sides of the camera region.
+  @ScaledMetric(relativeTo: .caption2) private var width: CGFloat = 52
+  @ViewBuilder let content: Content
+
+  var body: some View {
+    content
+      .font(.caption2)
+      .lineLimit(1)
+      .minimumScaleFactor(0.8)
+      .frame(width: width, alignment: .center)
   }
 }
 
@@ -156,6 +172,50 @@ private struct StopDictationButton: View {
     DictationActivityAttributes.ContentState(
       phase: .ready, elapsed: 42, message: nil,
       transcriptTail: "Please send the updated notes today.")
+    DictationActivityAttributes.ContentState(phase: .cancelled, elapsed: 42, message: nil)
+    DictationActivityAttributes.ContentState(
+      phase: .failed, elapsed: 0, message: "Microphone unavailable")
+  }
+
+  #Preview(
+    "Compact Island phases", as: .dynamicIsland(.compact),
+    using: DictationActivityAttributes(
+      sessionID: UUID(), startedAt: Date().addingTimeInterval(-42), modelName: "Parakeet Realtime"
+    )
+  ) {
+    LocalScribeLiveActivity()
+  } contentStates: {
+    DictationActivityAttributes.ContentState(phase: .recording, elapsed: 42, message: nil)
+    DictationActivityAttributes.ContentState(phase: .transcribing, elapsed: 42, message: nil)
+    DictationActivityAttributes.ContentState(phase: .ready, elapsed: 42, message: nil)
+    DictationActivityAttributes.ContentState(phase: .cancelled, elapsed: 42, message: nil)
+    DictationActivityAttributes.ContentState(
+      phase: .failed, elapsed: 0, message: "Microphone unavailable")
+  }
+
+  #Preview(
+    "Compact Island long recording", as: .dynamicIsland(.compact),
+    using: DictationActivityAttributes(
+      sessionID: UUID(), startedAt: Date().addingTimeInterval(-360_042),
+      modelName: "Parakeet Realtime"
+    )
+  ) {
+    LocalScribeLiveActivity()
+  } contentStates: {
+    DictationActivityAttributes.ContentState(phase: .recording, elapsed: 360_042, message: nil)
+  }
+
+  #Preview(
+    "Minimal Island phases", as: .dynamicIsland(.minimal),
+    using: DictationActivityAttributes(
+      sessionID: UUID(), startedAt: Date().addingTimeInterval(-42), modelName: "Parakeet Realtime"
+    )
+  ) {
+    LocalScribeLiveActivity()
+  } contentStates: {
+    DictationActivityAttributes.ContentState(phase: .recording, elapsed: 42, message: nil)
+    DictationActivityAttributes.ContentState(phase: .transcribing, elapsed: 42, message: nil)
+    DictationActivityAttributes.ContentState(phase: .ready, elapsed: 42, message: nil)
     DictationActivityAttributes.ContentState(phase: .cancelled, elapsed: 42, message: nil)
     DictationActivityAttributes.ContentState(
       phase: .failed, elapsed: 0, message: "Microphone unavailable")

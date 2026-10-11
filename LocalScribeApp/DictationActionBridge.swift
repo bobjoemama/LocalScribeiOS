@@ -223,9 +223,12 @@ final class DictationActionBridge: ObservableObject {
     diagnosticSessionID = sessionID
     pendingResult = nil
     didBeginRecording = false
-    // Discovery suspends before microphone activation. Reserve ownership first
-    // so a matching platform cancellation can retire this start while it waits.
-    await controller.refreshInstalledModels(prewarm: false)
+    // The reserved model is still the selection at this first suspension.
+    // A Ready background runtime needs no catalog scan; cold discovery remains
+    // owned by this request so cancellation can retire it before capture.
+    if !controller.actionButtonModelReady {
+      await controller.refreshInstalledModels(prewarm: false)
+    }
     guard activeSessionID == sessionID else { throw CancellationError() }
     if Task.isCancelled {
       _ = try await perform(.cancel(sessionID: sessionID, reason: .taskCancelled))

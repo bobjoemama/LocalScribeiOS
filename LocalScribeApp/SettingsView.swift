@@ -245,7 +245,7 @@ private struct ActionButtonSetupView: View {
                         LabeledContent("State", value: diagnostic.outcome.rawValue.capitalized)
                         LabeledContent("App returned text", value: diagnostic.resultNonempty ? "Yes" : "No")
                         LabeledContent("App state", value: diagnostic.executionContext.rawValue.capitalized)
-                        LabeledContent("Elapsed", value: String(format: "%.1f s", diagnostic.durationSeconds))
+                        LabeledContent("Action time", value: String(format: "%.1f s", diagnostic.durationSeconds))
                         if let message = diagnostic.failureMessage {
                             LabeledContent("Error") {
                                 Text(message)
@@ -260,7 +260,7 @@ private struct ActionButtonSetupView: View {
                         }
                     }
                 } footer: {
-                    Text("This reports the app action only. Shortcuts performs Copy to Clipboard afterward; LocalScribe cannot confirm that copy. No transcript is included in this diagnostic.").foregroundStyle(AppTheme.inkSecondary)
+                    Text("This reports the app action only. Action time measures shortcut-action execution; recording continues after Start returns. Shortcuts performs Copy to Clipboard afterward; LocalScribe cannot confirm that copy. No transcript is included in this diagnostic.").foregroundStyle(AppTheme.inkSecondary)
                 }
                 .listRowBackground(AppTheme.surface)
             }

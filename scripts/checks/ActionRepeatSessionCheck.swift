@@ -1,19 +1,50 @@
 import Foundation
 import LocalScribeCore
 
+private enum ActionStartObservation {
+    // Ignore unrelated launch/foreground discovery; count the real invocation's
+    // installation calls across its actor hops and child tasks.
+    @TaskLocal static var tracked = false
+}
+
 // Suspension points and late callbacks exercise the real intent/runtime/bridge/
 // controller pipeline without activating a microphone or loading a speech model.
 actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine {
     let engine = LifecycleEngine()
     var discovery: CheckedContinuation<Void, Never>?
     var holdDiscovery = false
+    private var trackedDiscoveryOnly = false
+    private var discoveryHeld: (@Sendable () -> Void)?
+    private var discoveryWaiter: CheckedContinuation<Void, Never>?
+    private var observedDiscoveryModels: [SpeechModel] = []
     var finalText = "Captured words."
-    func holdModelDiscovery() { holdDiscovery = true }
+    func holdModelDiscovery(trackedOnly: Bool = false, onHold: (@Sendable () -> Void)? = nil) {
+        holdDiscovery = true
+        trackedDiscoveryOnly = trackedOnly
+        discoveryHeld = onHold
+    }
     func discovering() -> Bool { discovery != nil }
-    func releaseDiscovery() { holdDiscovery = false; discovery?.resume(); discovery = nil }
+    func waitUntilDiscoveryIsHeld() async {
+        if discovery != nil { return }
+        await withCheckedContinuation { discoveryWaiter = $0 }
+    }
+    func discoveryModelsForObservedStart() -> [SpeechModel] { observedDiscoveryModels }
+    func releaseDiscovery() {
+        holdDiscovery = false
+        trackedDiscoveryOnly = false
+        discoveryHeld = nil
+        discovery?.resume(); discovery = nil
+    }
     func setFinalText(_ text: String) { finalText = text }
     func isInstalled(_ model: SpeechModel) async -> Bool {
-        if holdDiscovery { await withCheckedContinuation { discovery = $0 } }
+        if ActionStartObservation.tracked { observedDiscoveryModels.append(model) }
+        if holdDiscovery, !trackedDiscoveryOnly || ActionStartObservation.tracked {
+            await withCheckedContinuation {
+                discovery = $0
+                discoveryWaiter?.resume(); discoveryWaiter = nil
+                discoveryHeld?()
+            }
+        }
         return await engine.isInstalled(model)
     }
     func supportsBackgroundInference(for model: SpeechModel) async -> Bool { await engine.supportsBackgroundInference(for: model) }
@@ -41,6 +72,56 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
             try await Task.sleep(for: .milliseconds(10))
         }
     }
+    @MainActor static func checkWarmStart(
+        controller: AppController, bridge: DictationActionBridge,
+        recorder: AudioRecorder, engine: RepeatActionEngine
+    ) async throws {
+        // Race observable boundary events, not a time window: a Ready Start
+        // must reach required Activity/capture while its catalog I/O is blocked.
+        enum WarmStartBoundary: Sendable { case catalog, capture, returned }
+        let (boundaries, boundarySignal) = AsyncStream<WarmStartBoundary>.makeStream()
+        await engine.holdModelDiscovery(trackedOnly: true, onHold: { boundarySignal.yield(.catalog) })
+        let activityStartsBeforeWarmStart = DictationLiveActivity.requiredStarts
+        let captureBoundary = controller.$phase.dropFirst().sink { phase in
+            if phase == .recording { boundarySignal.yield(.capture) }
+        }
+        defer { captureBoundary.cancel(); boundarySignal.finish() }
+        let observedStart = Task {
+            // Both failure and success signal return. A failed startup must not
+            // leave the consumer waiting for a capture event that cannot arrive.
+            defer { boundarySignal.yield(.returned) }
+            return try await ActionStartObservation.$tracked.withValue(true) {
+                try await ToggleDictationShortcut().perform()
+            }
+        }
+        do {
+            var boundary = boundaries.makeAsyncIterator()
+            let firstBoundary = await boundary.next()
+            if firstBoundary == .catalog {
+                await engine.releaseDiscovery()
+                _ = try await observedStart.value
+                let observedModels = await engine.discoveryModelsForObservedStart()
+                throw Failure.check("Ready Start blocked on catalog I/O before Activity/capture; \(observedModels.count) profile checks after release")
+            }
+            let warmStart = try await observedStart.value
+            let warmDiscoveryModels = await engine.discoveryModelsForObservedStart()
+            try check(firstBoundary == .capture && warmStart.value == ""
+                      && DictationLiveActivity.requiredStarts == activityStartsBeforeWarmStart + 1
+                      && controller.phase == .recording && recorder.recording,
+                      "Ready Start reaches its required Activity and capture without waiting on catalog discovery")
+            try check(warmDiscoveryModels.isEmpty,
+                      "Ready Start performs zero catalog installation checks on its critical path")
+            print("Observed Ready Start catalog checks: \(warmDiscoveryModels.count)")
+            await engine.releaseDiscovery()
+            await DictationActionRuntime.cancel(sessionID: bridge.sessionIdentifier!)
+        } catch {
+            await engine.releaseDiscovery()
+            observedStart.cancel()
+            _ = await observedStart.result
+            if let id = bridge.sessionIdentifier { await DictationActionRuntime.cancel(sessionID: id) }
+            throw error
+        }
+    }
     @MainActor static func main() async throws {
         let engine = RepeatActionEngine()
         await engine.engine.releasePreparation()
@@ -60,6 +141,8 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
         let bridge = DictationActionBridge(controller: controller)
         let recorder = AudioRecorder.latest!
         var retiredSession: UUID?
+
+        try await checkWarmStart(controller: controller, bridge: bridge, recorder: recorder, engine: engine)
 
         // Replay the shipped Toggle -> If nonempty -> native Copy contract twice.
         for cycle in 1...2 {
@@ -181,11 +264,13 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
         DictationActionRuntime.handler = actualHandler
 
         // Explicit platform cancellation can arrive while model discovery awaits.
+        controller.keepModelLoaded = false
+        try check(!controller.actionButtonModelReady, "Discovery cancellation begins with a genuinely cold runtime")
         await engine.holdModelDiscovery()
         let requestedSession = UUID()
         let armsBeforeCancelledDiscovery = recorder.armCalls
         let start = Task { try await DictationActionRuntime.perform(.startSession(sessionID: requestedSession)) }
-        try await waitFor { await engine.discovering() }
+        await engine.waitUntilDiscoveryIsHeld()
         await DictationActionRuntime.cancel(sessionID: requestedSession, reason: .timeout)
         await engine.releaseDiscovery()
         do {
@@ -195,6 +280,15 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
         try check(!bridge.hasActiveSession && controller.phase == .idle && !recorder.recording
                   && recorder.armCalls == armsBeforeCancelledDiscovery,
                   "Discovery cancellation retires the reserved session before audio activation")
+        controller.keepModelLoaded = true
+        controller.setForeground(true)
+        let restoredRequest = UUID()
+        guard controller.reserveActionButtonRecording(requestID: restoredRequest, model: controller.selectedModel),
+              await controller.prepareReservedActionButtonRecording(requestID: restoredRequest) else {
+            throw Failure.check("Selected runtime must be restored after cold discovery cancellation")
+        }
+        await controller.cancelActionButtonRecording(requestID: restoredRequest)
+        controller.setForeground(false)
 
         for skip in 0...1 {
             await engine.engine.holdNextBackgroundCapability(skip: skip)
@@ -277,13 +371,16 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
         // Change the preference during discovery. This Action must retain its
         // original model for capture, initial Island name and preview policy.
         controller.selectedModel = .parakeetRealtimeEOU
+        controller.keepModelLoaded = false
+        controller.setForeground(true)
+        try check(!controller.actionButtonModelReady, "Model-freeze discovery begins with a genuinely cold runtime")
         let preparationCountBeforeFreeze = await engine.engine.preparations().count
         await engine.holdModelDiscovery()
         let frozenSession = UUID()
         let frozenStart = Task {
             try await DictationActionRuntime.perform(.startSession(sessionID: frozenSession))
         }
-        try await waitFor { await engine.discovering() }
+        await engine.waitUntilDiscoveryIsHeld()
         controller.selectedModel = .parakeetPhonon
         await engine.releaseDiscovery()
         _ = try await frozenStart.value
@@ -299,6 +396,7 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
                   && frozenPreparations.dropFirst(preparationCountBeforeFreeze).allSatisfy { $0 == .parakeetRealtimeEOU },
                   "Discovery never prewarms the changed preference or switches final transcription")
         controller.selectedModel = .parakeetRealtimeEOU
+        controller.keepModelLoaded = true
 
         // Startup failures must leave Toggle on Start, with no microphone or
         // result to copy. Exercise retry through the actual shortcut each time.
