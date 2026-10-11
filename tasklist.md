@@ -169,7 +169,7 @@ A concise, source-checked [privacy policy](docs/PRIVACY.md) now documents saved 
 
 ## Current iOS beta status
 
-As verified on **October 11 at 00:19 PDT / 07:19 UTC**:
+Phone delivery updated **October 11 at 14:00 PDT / 21:00 UTC**. Public TestFlight availability was last checked at **00:19 PDT / 07:19 UTC**:
 
 - **Installed on Devesh's phone:** 0.7.7/build 21, verified by native queries at October 11 14:00:41 PDT / 21:00:41 UTC and independently rechecked by root. The in-place update retains the signed app, keychain and App Group identities. Source is pushed. Devesh confirmed build-20 recording/copying works; physical appearance timing and compact symmetry for build 21 await Devesh's check.
 - **Public TestFlight:** [join LocalScribe](https://testflight.apple.com/join/sdqBktQV), with build 18 **Approved** in LocalScribe Beta 1.0. Build 19 has completed processing and is **Ready to Submit**, with no tester group assigned; it does not contain the build-20 repair.
