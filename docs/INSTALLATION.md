@@ -5,7 +5,7 @@ The [public TestFlight beta](https://testflight.apple.com/join/sdqBktQV) is open
 ## Install with TestFlight
 
 1. Open the [LocalScribe invitation](https://testflight.apple.com/join/sdqBktQV) on the iPhone. Install Apple’s TestFlight if prompted, then accept the invitation and tap **Install**.
-2. Open LocalScribe → **Models**, download and select a model, then wait for **Ready**. Allow microphone access when recording starts.
+2. Open LocalScribe and follow [First dictation](#first-dictation) to download a model and record.
 
 A Mac, Xcode and Developer Mode are unnecessary for TestFlight installation. The keyboard and Action Button use the setup steps below.
 
@@ -40,9 +40,9 @@ Using a new bundle identifier installs a separate app with separate saved data. 
 
 For simulator builds and developer checks, see [Development](DEVELOPMENT.md#build). Simulator success does not establish physical microphone, keyboard insertion or background shortcut behavior.
 
-## TestFlight
+## TestFlight maintenance
 
-A public TestFlight link is the planned installation route for people who do not use Xcode. **No public invitation is available yet.** Build/upload and external-review status live in [current beta status](../tasklist.md#current-ios-beta-status). Once an invitation is available, install Apple’s TestFlight app, open the link on your iPhone and accept/install the beta.
+Maintainers: see [upload checks and verification](DEVELOPMENT.md#before-testflight-upload). A development or locally exported Store-signed build becomes available through the public invitation only after upload, processing, any required review and assignment to the external tester group.
 
 For maintainers, complete beta information, create the external tester group and attach an eligible processed build. Apple reviews the first external build; later builds may also need review. Enable a public invitation link only after the group has an approved available build. Each build expires **90 days after upload**, so an ongoing beta needs replacement builds. See Apple’s [TestFlight overview](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/) and [public invitation workflow](https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/).
 
