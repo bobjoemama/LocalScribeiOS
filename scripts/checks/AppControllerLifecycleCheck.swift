@@ -47,14 +47,22 @@ struct FixtureCaptureSnapshot {
     var recording = false
     var armed = false
     var armCalls = 0
+    var activations = 0
+    var rejectNewBackgroundActivation = false
     init() { Self.latest = self }
     private(set) var lastMixWithOtherAudio = false
+    private(set) var lastRequireExistingPermission = false
     func arm(requireExistingPermission: Bool = false, mixWithOtherAudio: Bool = false) async throws {
         armCalls += 1
         lastMixWithOtherAudio = mixWithOtherAudio
+        lastRequireExistingPermission = requireExistingPermission
         if Self.holdNextArm {
             Self.holdNextArm = false
             await withCheckedContinuation { armContinuation = $0 }
+        }
+        if !armed {
+            if rejectNewBackgroundActivation { throw NSError(domain: NSOSStatusErrorDomain, code: 561015905) }
+            activations += 1
         }
         armed = true
     }
@@ -116,8 +124,13 @@ actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRep
     private var capabilityCalls = 0
     private var heldCapabilityCall: Int?
     private var capabilityContinuation: CheckedContinuation<Void, Never>?
+    private var capabilityWaiter: CheckedContinuation<Void, Never>?
     func holdNextBackgroundCapability(skip: Int = 0) { heldCapabilityCall = capabilityCalls + 1 + skip }
     func backgroundCapabilityIsHeld() -> Bool { capabilityContinuation != nil }
+    func waitUntilBackgroundCapabilityHeld() async {
+        if capabilityContinuation != nil { return }
+        await withCheckedContinuation { capabilityWaiter = $0 }
+    }
     func releaseBackgroundCapability() {
         heldCapabilityCall = nil
         capabilityContinuation?.resume()
@@ -126,7 +139,10 @@ actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRep
     func supportsBackgroundInference(for model: SpeechModel) async -> Bool {
         capabilityCalls += 1
         if heldCapabilityCall == capabilityCalls {
-            await withCheckedContinuation { capabilityContinuation = $0 }
+            await withCheckedContinuation {
+                capabilityContinuation = $0
+                capabilityWaiter?.resume(); capabilityWaiter = nil
+            }
         }
         return cpuBackgroundEnabled && model == .parakeetRealtimeEOU
     }
@@ -176,13 +192,25 @@ actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRep
         callback?(.init(confirmedText: "Captured", volatileText: "words"))
     }
     var holdFinish = false
+    private var finalText = "Captured words."
+    func setFinalText(_ text: String) { finalText = text }
     var finishContinuation: CheckedContinuation<Void, Never>?
+    private var finalizationWaiter: CheckedContinuation<Void, Never>?
+    func waitUntilFinalizationStarts() async {
+        if finishContinuation != nil { return }
+        await withCheckedContinuation { finalizationWaiter = $0 }
+    }
     func holdFinalization() { holdFinish = true }
     func finalizationIsHeld() -> Bool { finishContinuation != nil }
     func releaseFinalization() { holdFinish = false; finishContinuation?.resume(); finishContinuation = nil }
     func finishStreaming() async throws -> String {
-        if holdFinish { await withCheckedContinuation { finishContinuation = $0 } }
-        return "Captured words."
+        if holdFinish {
+            await withCheckedContinuation {
+                finishContinuation = $0
+                finalizationWaiter?.resume(); finalizationWaiter = nil
+            }
+        }
+        return finalText
     }
     private var holdCancellation = false
     private var cancellationContinuation: CheckedContinuation<Void, Never>?
@@ -262,7 +290,136 @@ extension SharedKeyboardStore {
         await controller.refreshInstalledModels()
         return controller
     }
+    @MainActor static func checkExplicitMicrophoneActionCycles() async throws {
+        let engine = LifecycleEngine()
+        await engine.releasePreparation()
+        let controller = await fixture(engine, model: .parakeetRealtimeEOU)
+        let recorder = AudioRecorder.latest!
+        defer {
+            recorder.rejectNewBackgroundActivation = false
+            controller.disableKeyboardSession()
+        }
+        await controller.enableKeyboardSession()
+        try check(controller.keyboardSessionActive && recorder.armed && !recorder.recording
+                  && controller.actionButtonModelReady && recorder.activations == 1,
+                  "Foreground Enable owns one microphone lease and prepares the selected Action runtime")
+        try check(recorder.lastMixWithOtherAudio && !recorder.lastRequireExistingPermission,
+                  "Foreground Enable requests a mixable session and keeps the normal microphone permission request")
+        controller.setForeground(false)
+        recorder.rejectNewBackgroundActivation = true
+        let preparingRequest = UUID()
+        await engine.holdNextBackgroundCapability(skip: 1)
+        let preparingStart = Task { await controller.startActionButtonRecording(requestID: preparingRequest) }
+        await engine.waitUntilBackgroundCapabilityHeld()
+        let preparationDeadline = controller.keyboardSessionExpiresAt!
+        await controller.handleKeyboardIdleDeadline(expected: preparationDeadline)
+        try check(controller.phase == .preparing && recorder.armed && controller.keyboardSessionActive
+                  && controller.keyboardSessionExpiresAt != preparationDeadline,
+                  "Idle deadline during Action preparation renews the lease without cancelling startup")
+        await engine.releaseBackgroundCapability()
+        await preparingStart.value
+        await controller.cancelActionButtonRecording(requestID: preparingRequest)
+        var previousRecordingID: UUID?
+        for (cycle, text, sampleCount) in [(1, "First action words.", 8_000), (2, "Second action words.", 16_000)] {
+            await engine.setFinalText(text)
+            let requestID = UUID()
+            await controller.startActionButtonRecording(requestID: requestID)
+            let recordingID = controller.currentRecordingID
+            try check(controller.phase == .recording && controller.actionButtonRecording
+                      && recorder.recording && recordingID != nil && recordingID != previousRecordingID,
+                      "Action cycle \(cycle) reuses the explicit foreground microphone lease in background")
+            try check(controller.transcript.isEmpty && controller.partialText.isEmpty,
+                      "Action cycle \(cycle) starts a separate empty utterance")
+            let recordingDeadline = controller.keyboardSessionExpiresAt!
+            await controller.handleKeyboardIdleDeadline(expected: recordingDeadline)
+            let renewedDeadline = controller.keyboardSessionExpiresAt
+            await controller.handleKeyboardIdleDeadline(expected: recordingDeadline)
+            try check(controller.phase == .recording && recorder.recording && recorder.armed
+                      && renewedDeadline != recordingDeadline && controller.keyboardSessionExpiresAt == renewedDeadline,
+                      "Active recording renews its deadline and ignores an old queued expiry")
+            recorder.feed(sampleCount)
+            let backgroundAssertionsBeforeStop = UIApplication.shared.backgroundTaskStarts
+            let deadlineBeforeStop = controller.keyboardSessionExpiresAt!
+            if cycle == 2 {
+                await engine.holdFinalization()
+                let stop = Task { await controller.stopActionButtonRecording(completionIsPlatformManaged: true) }
+                await engine.waitUntilFinalizationStarts()
+                try check(controller.keyboardSessionExpiresAt.map { $0 > deadlineBeforeStop } == true,
+                          "Managed Action Stop renews the lease before its finalization deadline event")
+                let finalizationDeadline = controller.keyboardSessionExpiresAt!
+                await controller.handleKeyboardIdleDeadline(expected: finalizationDeadline)
+                try check(controller.phase == .transcribing && recorder.armed && !recorder.recording
+                          && controller.keyboardSessionExpiresAt != finalizationDeadline,
+                          "Deadline during managed finalization renews the explicit lease without cancelling recognition")
+                await engine.releaseFinalization()
+                await stop.value
+            } else {
+                await controller.stopActionButtonRecording()
+                try check(controller.keyboardSessionExpiresAt.map { $0 > deadlineBeforeStop } == true,
+                          "Successful Action Stop advances the actual deadline from its pre-Stop value")
+            }
+            let counts = await engine.counts()
+            try check(controller.phase == .idle && !controller.actionButtonRecording && !recorder.recording
+                      && controller.currentRecordingID == nil && controller.completedRecordingID == recordingID
+                      && controller.transcript == text && counts.3 == sampleCount && recorder.pending.isEmpty,
+                      "Action cycle \(cycle) finishes only its utterance and drains exactly its own audio")
+            try check(controller.keyboardSessionActive && recorder.armed && recorder.activations == 1,
+                      "Successful Action finish preserves the enabled microphone instead of requiring new background activation")
+            if cycle == 2 {
+                try check(UIApplication.shared.backgroundTaskStarts == backgroundAssertionsBeforeStop,
+                          "Managed Action completion preserves the lease without acquiring finite completion time")
+            }
+            previousRecordingID = recordingID
+        }
+        let preparations = await engine.preparations()
+        try check(preparations == [.parakeetRealtimeEOU] && controller.selectedModel == .parakeetRealtimeEOU,
+                  "Both Action utterances reuse one prepared selected model")
+        let cancelledRequest = UUID()
+        await controller.startActionButtonRecording(requestID: cancelledRequest)
+        recorder.feed(8_000)
+        await controller.cancelActionButtonRecording(requestID: cancelledRequest)
+        try check(controller.phase == .idle && controller.transcript.isEmpty && !recorder.recording
+                  && controller.keyboardSessionActive && recorder.armed && recorder.activations == 1,
+                  "Action cancellation still discards its utterance and preserves the explicit microphone lease")
+        let endRequest = UUID()
+        await controller.startActionButtonRecording(requestID: endRequest)
+        let endedDeadline = controller.keyboardSessionExpiresAt!
+        recorder.feed(8_000)
+        await controller.finishKeyboardSession()
+        await controller.handleKeyboardIdleDeadline(expected: endedDeadline)
+        try check(controller.phase == .idle && controller.keyboardSessionExpiresAt == nil
+                  && !recorder.armed && !recorder.recording,
+                  "Explicit End finishes active capture and a stale deadline cannot recreate the microphone lease")
+        recorder.rejectNewBackgroundActivation = false
+        controller.setForeground(true)
+        await controller.enableKeyboardSession()
+        let idleDeadline = controller.keyboardSessionExpiresAt!
+        controller.setForeground(false)
+        await controller.handleKeyboardIdleDeadline(expected: idleDeadline)
+        try check(controller.keyboardSessionExpiresAt == nil && !recorder.armed && !recorder.recording,
+                  "Current idle deadline retires the explicit session and microphone")
+
+        // A ready model alone never grants a persistent microphone lease.
+        recorder.rejectNewBackgroundActivation = false
+        await engine.setFinalText("Standalone action words.")
+        let activationsBeforeStandalone = recorder.activations
+        await controller.startActionButtonRecording()
+        try check(controller.phase == .recording && !controller.keyboardSessionActive
+                  && recorder.activations == activationsBeforeStandalone + 1,
+                  "Action without an explicit session activates only its own capture")
+        recorder.feed(8_000)
+        await controller.stopActionButtonRecording()
+        try check(controller.phase == .idle && controller.transcript == "Standalone action words."
+                  && !controller.keyboardSessionActive && !recorder.armed && !recorder.recording,
+                  "Action without an explicit session shuts down all microphone resources after Stop")
+        recorder.rejectNewBackgroundActivation = true
+        await controller.startActionButtonRecording()
+        try check(controller.phase == .idle && !controller.actionButtonRecording
+                  && !recorder.armed && !controller.keyboardSessionActive && controller.errorMessage != nil,
+                  "Ready model retention cannot bypass rejection of a new background microphone activation")
+    }
     @MainActor static func main() async throws {
+        try await checkExplicitMicrophoneActionCycles()
         let engine = LifecycleEngine()
         let controller = await fixture(engine)
         let recorder = AudioRecorder.latest!
@@ -271,6 +428,8 @@ extension SharedKeyboardStore {
         try check(controller.modelStatus != nil, "Only actual pending load has model status")
         await controller.startRecording()
         try check(controller.phase == .recording && recorder.recording, "Microphone starts before blocked model loading")
+        try check(!recorder.lastMixWithOtherAudio && !recorder.lastRequireExistingPermission,
+                  "Normal Dictate keeps its nonmixable foreground activation and permission request")
         recorder.feed(48_000)
         let stopping = Task { await controller.stopRecording() }
         try await eventually { controller.phase == .transcribing }
@@ -544,12 +703,14 @@ extension SharedKeyboardStore {
         guard let active = try shared.readStatus() else { throw CheckFailure.failed("No active status") }
         try check(active.sessionID == session && active.utteranceID == utterance, "Start renews keyboard lease without replacing session/utterance")
         keyboardRecorder.feed(24_000)
+        let deadlineBeforeKeyboardStop = keyboardController.keyboardSessionExpiresAt!
         try shared.writeCommand(KeyboardCommand(sessionID: session, utteranceID: utterance, action: .stop))
         try await eventually { keyboardController.phase == .idle }
         guard let result = try shared.readStatus() else { throw CheckFailure.failed("No keyboard result") }
         try check(result.sessionID == session && result.utteranceID == utterance, "Stop renewal preserves command ownership")
         try check(result.transcript == "Captured words." && result.hasDeliverableResult(), "Renewed keyboard lease delivers completed text")
-        try check((keyboardController.keyboardSessionExpiresAt?.timeIntervalSinceNow ?? 0) > 290, "Keyboard expiry is an idle timeout after completion")
+        try check(keyboardController.keyboardSessionExpiresAt.map { $0 > deadlineBeforeKeyboardStop } == true,
+                  "Keyboard Stop advances its actual idle deadline from the pre-Stop value")
         await keyboardController.finishKeyboardSession()
         try check(keyboardController.keyboardSessionExpiresAt == nil && !keyboardRecorder.armed, "Explicit End still stops microphone immediately")
         withExtendedLifetime(bridge) {}

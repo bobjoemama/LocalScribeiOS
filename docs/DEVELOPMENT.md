@@ -88,7 +88,7 @@ python3 scripts/generate_project.py
 xcodebuild -project LocalScribe.xcodeproj -scheme LocalScribe \
   -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath DerivedData CODE_SIGNING_ALLOWED=NO build
-swift test --jobs 4
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swift test --jobs 4
 swiftc SharedKeyboard/KeyboardProtocol.swift scripts/checks/KeyboardProtocolCheck.swift \
   -o /tmp/localscribe-keyboard-check
 /tmp/localscribe-keyboard-check
@@ -105,7 +105,7 @@ scripts/check_dictation_tail.sh
 scripts/check_personalization_controller.sh
 ```
 
-On this Mac, prefix Xcode commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; the global command-line-tools selection is left unchanged. The local Swift package isolates platform-independent correction, storage, capture and WER tests. `--without-fluidaudio` generates a UI-only project whose runtime visibly reports unavailable; it is not a working recognition build.
+On this Mac, prefix Xcode commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; the global command-line-tools selection is left unchanged. Use the same Xcode toolchain for Swift package tests: the separately selected command-line tools cannot import this project's Swift Testing module. The local Swift package isolates platform-independent correction, storage, capture and WER tests. `--without-fluidaudio` generates a UI-only project whose runtime visibly reports unavailable; it is not a working recognition build.
 
 ## Before TestFlight upload
 

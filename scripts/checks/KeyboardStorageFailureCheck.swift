@@ -28,6 +28,10 @@ final class AppController: ObservableObject {
         if phase == .recording { await stopRecording() }
         disableKeyboardSession()
     }
+    func handleKeyboardIdleDeadline(expected deadline: Date) async {
+        guard keyboardSessionExpiresAt == deadline else { return }
+        await finishKeyboardSession()
+    }
 }
 
 #if os(macOS)

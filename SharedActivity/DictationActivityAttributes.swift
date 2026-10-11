@@ -36,7 +36,8 @@ struct DictationActivityAttributes: ActivityAttributes, Sendable {
     var transcriptTail: String? = nil
 
     var status: String {
-      guard phase == .failed, let message, !message.isEmpty else { return phase.status }
+      guard phase == .failed || phase == .ready || phase == .cancelled,
+        let message, !message.isEmpty else { return phase.status }
       return message
     }
   }

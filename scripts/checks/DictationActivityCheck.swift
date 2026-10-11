@@ -169,6 +169,72 @@ import Foundation
       "Only the replacement session requests an Activity after the held end")
     activity.cancel(elapsed: 0)
     try await waitForEnd(Activity<DictationActivityAttributes>.activities.last!)
+
+    let leasedSession = UUID()
+    let leasedStarted = await activity.start(sessionID: leasedSession, modelName: "Realtime",
+      startedAt: Date(), previewCapability: .streamingText)
+    try check(leasedStarted, "Explicit microphone lease has an utterance Activity")
+    let leased = Activity<DictationActivityAttributes>.activities.last!
+    activity.finish(transcript: "Lease result.", elapsed: 8, microphoneRemainsActive: true)
+    await leased.waitForChange()
+    try check(leased.dismissalPolicy == nil && leased.updateStates.last?.phase == .ready
+      && leased.updateStates.last?.status == "Ready · Mic on" && leased.updateStates.last?.elapsed == 8,
+      "Completion retains an active, frozen Ready Activity while the explicit microphone stays on")
+    Activity<DictationActivityAttributes>.requestsAllowed = false
+    let rejectedLeaseReplacement = await activity.start(sessionID: UUID(), modelName: "Realtime",
+      startedAt: Date(), previewCapability: .streamingText)
+    Activity<DictationActivityAttributes>.requestsAllowed = true
+    try check(!rejectedLeaseReplacement && leased.dismissalPolicy == nil && activity.hasActiveActivity,
+      "A denied replacement leaves the already-enabled microphone covered by its retained Activity")
+    await ActivityEndGate.shared.holdNextEnd()
+    let nextLeaseSession = UUID()
+    let leaseReplacement = Task { @MainActor in
+      await activity.start(sessionID: nextLeaseSession, modelName: "Realtime", startedAt: Date(),
+        previewCapability: .streamingText)
+    }
+    let leaseGateDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+    while !(await ActivityEndGate.shared.isHeld()), ContinuousClock.now < leaseGateDeadline {
+      await Task.yield()
+    }
+    let leaseRetirementHeld = await ActivityEndGate.shared.isHeld()
+    try check(leaseRetirementHeld, "Completed lease Activity retirement reaches platform")
+    let leaseSuccessor = Activity<DictationActivityAttributes>.activities.last!
+    try check(leaseSuccessor.attributes.sessionID == nextLeaseSession && leased.dismissalPolicy == nil,
+      "Fresh Activity exists before the prior microphone lease Activity is retired")
+    await ActivityEndGate.shared.release()
+    let leaseReplacementStarted = await leaseReplacement.value
+    try check(leaseReplacementStarted && leased.dismissalPolicy == .immediate,
+      "Replacement finishes old Activity retirement before accepting the next capture")
+    activity.endMicrophoneLease()
+    try check(leaseSuccessor.dismissalPolicy == nil,
+      "An idle lease-end cannot retire the newer recording Activity")
+    activity.finish(transcript: "Next lease result.", elapsed: 4, microphoneRemainsActive: true)
+    await leaseSuccessor.waitForChange()
+    activity.endMicrophoneLease()
+    try await waitForEnd(leaseSuccessor)
+    try check(leaseSuccessor.finalState?.status == "Ready" && leaseSuccessor.finalState?.elapsed == 4,
+      "Ending the microphone lease ends its retained Activity without claiming Mic on")
+    for state in [ActivityState.ended, .dismissed] {
+      let externallyStopped = DictationLiveActivity()
+      let accepted = await externallyStopped.start(sessionID: UUID(), modelName: "Realtime",
+        startedAt: Date(), previewCapability: .streamingText)
+      try check(accepted, "System-state scenario acquires a real owned fixture Activity")
+      let owned = Activity<DictationActivityAttributes>.activities.last!
+      externallyStopped.finish(transcript: "Completed.", elapsed: 2, microphoneRemainsActive: true)
+      await owned.waitForChange()
+      try check(externallyStopped.hasActiveActivity, "An active retained Activity covers the microphone lease")
+      owned.simulateSystemState(.stale)
+      try check(externallyStopped.hasActiveActivity, "A stale ongoing Activity still covers the microphone lease")
+      owned.simulateSystemState(state)
+      Activity<DictationActivityAttributes>.requestsAllowed = false
+      let denied = await externallyStopped.start(sessionID: UUID(), modelName: "Realtime",
+        startedAt: Date(), previewCapability: .streamingText)
+      Activity<DictationActivityAttributes>.requestsAllowed = true
+      try check(!denied && !externallyStopped.hasActiveActivity,
+        "An ended or dismissed retained pointer cannot claim coverage after replacement refusal")
+      externallyStopped.endMicrophoneLease()
+      try await waitForEnd(owned)
+    }
     print("PASS: \(checks) production Activity state/lifecycle checks")
   }
 }

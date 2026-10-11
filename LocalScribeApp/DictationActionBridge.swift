@@ -36,6 +36,7 @@ final class DictationActionBridge: ObservableObject {
   private let liveActivity = DictationLiveActivity()
   private var subscription: AnyCancellable?
   private var transcriptSubscription: AnyCancellable?
+  private var microphoneLeaseSubscription: AnyCancellable?
   private var recordingActivityStarted = false
   private var pendingResult: String?
   private var pendingElapsed: TimeInterval = 0
@@ -66,6 +67,9 @@ final class DictationActionBridge: ObservableObject {
         phase: controller.phase == .recording ? .recording : .transcribing,
         elapsed: controller.elapsed, transcript: text)
     }
+    microphoneLeaseSubscription = controller.$keyboardSessionExpiresAt.dropFirst().sink { [weak self] deadline in
+      if deadline == nil { self?.liveActivity.endMicrophoneLease() }
+    }
     #if canImport(UIKit)
       LocalScribeShortcuts.updateAppShortcutParameters()
     #endif
@@ -90,9 +94,12 @@ final class DictationActionBridge: ObservableObject {
       didBeginRecording = false
       activeSessionID = nil
       pendingResult = nil
-      liveActivity.cancel(elapsed: controller.elapsed)
+      liveActivity.cancel(elapsed: controller.elapsed, microphoneRemainsActive: controller.keyboardSessionActive)
       if needsRecordingCancellation {
         await controller.cancelActionButtonRecording(requestID: sessionID)
+      }
+      if controller.phase == .idle, controller.keyboardSessionActive, !liveActivity.hasActiveActivity {
+        controller.disableKeyboardSession()
       }
       return nil
     }
@@ -121,6 +128,11 @@ final class DictationActionBridge: ObservableObject {
       recordDiagnostic(action: diagnosticAction, outcome: .completed, result: result)
       return result
     } catch {
+      // An idle, pre-armed microphone cannot outlive a failed recording intent
+      // without an Activity. Never revoke a newer recording's ownership here.
+      if controller.phase == .idle, controller.keyboardSessionActive, !liveActivity.hasActiveActivity {
+        controller.disableKeyboardSession()
+      }
       let cancelled = error is CancellationError || Task.isCancelled || diagnostic?.outcome == .cancelled
       recordDiagnostic(
         action: diagnosticAction, outcome: cancelled ? .cancelled : .failed,
@@ -195,6 +207,7 @@ final class DictationActionBridge: ObservableObject {
   private func start(_ controller: AppController, sessionID: UUID = UUID()) async throws {
     guard activeSessionID == nil, controller.phase == .idle else { throw DictationActionError.busy }
     guard liveActivity.canStartRecordingActivity else {
+      if controller.keyboardSessionActive { controller.disableKeyboardSession() }
       throw DictationActionError.failed(
         "Enable Live Activities for LocalScribe in iPhone Settings to record through shortcuts. You can still record directly in LocalScribe."
       )
@@ -246,6 +259,9 @@ final class DictationActionBridge: ObservableObject {
     guard recordingActivityStarted else {
       activeSessionID = nil
       await controller.cancelActionButtonRecording(requestID: sessionID)
+      if controller.keyboardSessionActive, !liveActivity.hasActiveActivity {
+        controller.disableKeyboardSession()
+      }
       throw DictationActionError.failed(
         "iOS could not start the recording Live Activity. Check Live Activities in iPhone Settings."
       )
@@ -270,7 +286,7 @@ final class DictationActionBridge: ObservableObject {
     guard controller.phase == .recording, controller.actionButtonRecording, didBeginRecording else {
       let message = controller.errorMessage
       activeSessionID = nil
-      liveActivity.fail(message: message, elapsed: 0)
+      liveActivity.fail(message: message, elapsed: 0, microphoneRemainsActive: controller.keyboardSessionActive)
       recordingActivityStarted = false
       logger.error("Shortcut microphone capture did not start")
       await controller.cancelActionButtonRecording(requestID: sessionID)
@@ -319,7 +335,8 @@ final class DictationActionBridge: ObservableObject {
     if consumeResult {
       pendingResult = nil
       activeSessionID = nil
-      liveActivity.finish(transcript: result, elapsed: pendingElapsed)
+      liveActivity.finish(transcript: result, elapsed: pendingElapsed,
+                          microphoneRemainsActive: controller.keyboardSessionActive)
       logger.notice("Shortcut result returned for system clipboard action")
     } else {
       // Island Stop has no Copy action behind it. Retain this exact result so
@@ -347,18 +364,24 @@ final class DictationActionBridge: ObservableObject {
       didBeginRecording = false
       if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         if let message = controller.errorMessage {
-          liveActivity.fail(message: message, elapsed: controller.elapsed)
+          liveActivity.fail(message: message, elapsed: controller.elapsed,
+                            microphoneRemainsActive: controller.keyboardSessionActive)
         } else {
           // Cancel from the app clears the utterance without an error.
           // Empty recognition has a real controller error instead.
-          liveActivity.cancel(elapsed: controller.elapsed)
+          liveActivity.cancel(elapsed: controller.elapsed,
+                              microphoneRemainsActive: controller.keyboardSessionActive)
         }
         activeSessionID = nil
       } else {
         // Preserve exactly this completed session, including interruption results.
         pendingResult = text
         pendingElapsed = controller.elapsed
-        liveActivity.update(phase: .ready, elapsed: controller.elapsed, transcript: text)
+        if controller.keyboardSessionActive {
+          liveActivity.finish(transcript: text, elapsed: controller.elapsed, microphoneRemainsActive: true)
+        } else {
+          liveActivity.update(phase: .ready, elapsed: controller.elapsed, transcript: text)
+        }
       }
     }
   }

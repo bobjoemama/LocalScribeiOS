@@ -406,6 +406,82 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
         try check(readyStop.value == "Retry words." && !bridge.hasActiveSession
                   && controller.phase == .idle && !recorder.recording && !recorder.armed,
                   "Next hold after readiness recovery stops and returns only its new transcript")
+        controller.setForeground(true)
+        await controller.enableKeyboardSession()
+        controller.setForeground(false)
+        let leaseActivations = recorder.activations
+        let finishesBeforeLease = DictationLiveActivity.finishes
+        _ = try await ToggleDictationShortcut().perform()
+        let leasedRecord = bridge.sessionIdentifier!
+        recorder.feed(32_000)
+        let leasedResult = try await ToggleDictationShortcut().perform()
+        try check(leasedResult.value == "Retry words." && !bridge.hasActiveSession
+                  && controller.keyboardSessionActive && recorder.armed && !recorder.recording
+                  && DictationLiveActivity.finishes == finishesBeforeLease
+                  && DictationLiveActivity.lastMessage == "Ready · Mic on",
+                  "Action result retires its utterance while retaining Activity and explicit microphone lease")
+        _ = try await ToggleDictationShortcut().perform()
+        let nextLeasedRecord = bridge.sessionIdentifier!
+        do {
+            _ = try await StopLiveDictationIntent(sessionID: leasedRecord).perform()
+            throw Failure.check("Old lease Activity must not stop its replacement recording")
+        } catch DictationActionError.noSession { checks += 1 }
+        try check(nextLeasedRecord != leasedRecord && bridge.sessionIdentifier == nextLeasedRecord
+                  && recorder.recording && recorder.activations == leaseActivations,
+                  "Lease reuses one armed microphone and stale old Stop preserves new capture")
+        recorder.feed(32_000)
+        _ = try await ToggleDictationShortcut().perform()
+
+        await engine.setFinalText("")
+        _ = try await ToggleDictationShortcut().perform()
+        recorder.feed(32_000)
+        let finishesBeforeEmptyLease = DictationLiveActivity.finishes
+        do {
+            _ = try await ToggleDictationShortcut().perform()
+            throw Failure.check("Empty leased recording must still fail")
+        } catch DictationActionError.failed { checks += 1 }
+        try check(!bridge.hasActiveSession && recorder.armed && !recorder.recording
+                  && DictationLiveActivity.finishes == finishesBeforeEmptyLease
+                  && DictationLiveActivity.lastMessage?.contains("Mic on") == true,
+                  "No-speech failure preserves a truthful Activity while its explicit microphone remains armed")
+        await engine.setFinalText("Retry words.")
+        _ = try await ToggleDictationShortcut().perform()
+        await DictationActionRuntime.cancel(sessionID: bridge.sessionIdentifier!)
+        try check(!bridge.hasActiveSession && recorder.armed && !recorder.recording
+                  && DictationLiveActivity.lastMessage == "Cancelled · Mic on",
+                  "Explicit utterance cancellation preserves Activity coverage for the separate microphone lease")
+
+        _ = try await ToggleDictationShortcut().perform()
+        let leasedWidgetSession = bridge.sessionIdentifier!
+        recorder.feed(32_000)
+        _ = try await StopLiveDictationIntent(sessionID: leasedWidgetSession).perform()
+        let finishesBeforeEnd = DictationLiveActivity.finishes
+        controller.disableKeyboardSession()
+        try check(!recorder.armed && !controller.keyboardSessionActive
+                  && DictationLiveActivity.finishes == finishesBeforeEnd + 1
+                  && DictationLiveActivity.lastMessage == nil,
+                  "Explicit End retires only the completed Activity covering its microphone lease")
+        let activationsBeforePendingCopy = recorder.activations
+        let leasePendingCopy = try await ToggleDictationShortcut().perform()
+        try check(leasePendingCopy.value == "Retry words." && !bridge.hasActiveSession
+                  && recorder.activations == activationsBeforePendingCopy && !recorder.armed,
+                  "Ending the lease preserves Widget's owned result for the next hold without phantom capture")
+        for rejectedActivity in ["authorization", "request"] {
+            controller.setForeground(true)
+            await controller.enableKeyboardSession()
+            controller.setForeground(false)
+            DictationLiveActivity.authorized = rejectedActivity != "authorization"
+            DictationLiveActivity.requestSucceeds = rejectedActivity != "request"
+            do {
+                _ = try await ToggleDictationShortcut().perform()
+                throw Failure.check("Missing Activity must reject the leased Start")
+            } catch DictationActionError.failed { checks += 1 }
+            try check(!bridge.hasActiveSession && !recorder.armed && !recorder.recording
+                      && !controller.keyboardSessionActive,
+                      "Failed first \(rejectedActivity) request ends an idle microphone with no covering Activity")
+            DictationLiveActivity.authorized = true
+            DictationLiveActivity.requestSucceeds = true
+        }
         try check(UIPasteboard.general.writes.isEmpty && controller.history.isEmpty,
                   "Repeated/empty/cancelled sessions use no app clipboard access or history writes")
         print("PASS: \(checks) repeated Action Button session checks")

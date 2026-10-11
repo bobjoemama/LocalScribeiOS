@@ -23,6 +23,8 @@ struct DictationActivityAttributes {
   static var holdNextStart = false
   static var heldStart: CheckedContinuation<Void, Never>?
   private var startingSessionID: UUID?
+  private var microphoneLeaseRetained = false
+  private var hasSession = false
   static func releaseStart() { heldStart?.resume(); heldStart = nil }
   static var authorized = true
   static var requestSucceeds = true
@@ -34,6 +36,7 @@ struct DictationActivityAttributes {
   static var lastMessage: String?
   static var regressedToRecording = false
   var canStartRecordingActivity: Bool { Self.authorized }
+  var hasActiveActivity: Bool { hasSession }
   func clearOrphanedActivities() {}
   @discardableResult func start(
     sessionID: UUID, modelName: String, startedAt: Date,
@@ -46,7 +49,14 @@ struct DictationActivityAttributes {
       await withCheckedContinuation { Self.heldStart = $0 }
     }
     guard startingSessionID == sessionID, !Task.isCancelled else { return false }
+    if !Self.authorized || !Self.requestSucceeds {
+      Self.starts += 1
+      if required { Self.requiredStarts += 1 }
+      return false
+    }
     self.previewCapability = previewCapability
+    microphoneLeaseRetained = false
+    hasSession = true
     Self.lastModelName = modelName
     Self.starts += 1
     Self.lastPhase = .recording
@@ -61,22 +71,38 @@ struct DictationActivityAttributes {
   ) {
     if Self.lastPhase == .transcribing && phase == .recording { Self.regressedToRecording = true }
     Self.lastPhase = phase
+    Self.lastMessage = message
     if previewCapability == .streamingText, let transcript { Self.lastText = transcript }
   }
-  func finish(transcript: String, elapsed: TimeInterval) {
-    Self.finishes += 1
+  func finish(transcript: String, elapsed: TimeInterval, microphoneRemainsActive: Bool = false) {
+    microphoneLeaseRetained = microphoneRemainsActive
+    hasSession = microphoneRemainsActive && hasSession
+    if !microphoneRemainsActive { Self.finishes += 1 }
     Self.lastPhase = .ready
+    Self.lastMessage = microphoneRemainsActive ? "Ready · Mic on" : nil
     Self.lastText = previewCapability == .streamingText ? transcript : ""
   }
-  func fail(message: String?, elapsed: TimeInterval) {
+  func fail(message: String?, elapsed: TimeInterval, microphoneRemainsActive: Bool = false) {
+    microphoneLeaseRetained = microphoneRemainsActive
+    hasSession = microphoneRemainsActive && hasSession
     Self.lastPhase = .failed
-    Self.lastMessage = message
+    Self.lastMessage = microphoneRemainsActive ? (message ?? "Dictation failed") + " · Mic on" : message
     Self.lastText = ""
   }
-  func cancel(elapsed: TimeInterval) {
+  func cancel(elapsed: TimeInterval, microphoneRemainsActive: Bool = false) {
+    microphoneLeaseRetained = microphoneRemainsActive
+    hasSession = microphoneRemainsActive && hasSession
     startingSessionID = nil
     Self.lastPhase = .cancelled
+    Self.lastMessage = microphoneRemainsActive ? "Cancelled · Mic on" : nil
     Self.lastText = ""
+  }
+  func endMicrophoneLease() {
+    guard microphoneLeaseRetained else { return }
+    microphoneLeaseRetained = false
+    hasSession = false
+    Self.finishes += 1
+    Self.lastMessage = nil
   }
 }
 

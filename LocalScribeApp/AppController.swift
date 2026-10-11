@@ -140,7 +140,10 @@ final class AppController: ObservableObject {
     private var historyWritable = true
     private var dictionaryWritable = true
     private var snippetsWritable = true
-    var keyboardSessionActive: Bool { keyboardSessionExpiresAt.map { $0 > Date() } ?? false }
+    var keyboardSessionActive: Bool {
+        // A queued idle deadline cannot revoke the lease during active work.
+        keyboardSessionExpiresAt.map { $0 > Date() || phase != .idle } ?? false
+    }
     var isBusy: Bool { phase == .preparing || phase == .transcribing }
 
     #if DEBUG
@@ -612,7 +615,9 @@ final class AppController: ObservableObject {
         if completionIsPlatformManaged {
             guard let requestID = actionRecordingRequestID, adoptPlatformManagedActionCompletion(requestID: requestID) else { return }
         }
-        await stopRecording(endKeyboardSession: true, streamFailure: nil, progress: progress,
+        // Action owns this utterance, not a microphone session explicitly
+        // enabled in the foreground. No enabled session still means shutdown.
+        await stopRecording(endKeyboardSession: false, streamFailure: nil, progress: progress,
                             completionIsPlatformManaged: completionIsPlatformManaged)
     }
 
@@ -827,7 +832,7 @@ final class AppController: ObservableObject {
         let revision = microphoneRevision
         defer { if revision == microphoneRevision { phase = .idle; recordingModel = nil; recordingExecutionContext = nil; if !keyboardSessionActive { scheduleModelRelease() } } }
         do {
-            try await recorder.arm()
+            try await recorder.arm(mixWithOtherAudio: true)
             guard foreground, revision == microphoneRevision else { throw AppError.sessionEnded }
             try await prepareRuntime(model, context: context)
             await refreshPerformanceReports()
@@ -843,15 +848,22 @@ final class AppController: ObservableObject {
     }
 
     private func renewKeyboardSession() {
-        keyboardSessionExpiresAt = Date().addingTimeInterval(TimeInterval(keyboardIdleMinutes * 60))
+        let deadline = Date().addingTimeInterval(TimeInterval(keyboardIdleMinutes * 60))
+        keyboardSessionExpiresAt = deadline
         sessionTimer?.invalidate()
         sessionTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(keyboardIdleMinutes * 60), repeats: false) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
-                if self.phase == .recording { self.renewKeyboardSession() }
-                else { await self.finishKeyboardSession() }
+                await self?.handleKeyboardIdleDeadline(expected: deadline)
             }
         }
+    }
+
+    /// Consume the deadline event for this exact lease. Renew active work;
+    /// only an idle lease expires. A queued old event cannot undo renewal/End.
+    func handleKeyboardIdleDeadline(expected deadline: Date) async {
+        guard keyboardSessionExpiresAt == deadline else { return }
+        if phase != .idle { renewKeyboardSession() }
+        else { await finishKeyboardSession() }
     }
 
     func disableKeyboardSession() {

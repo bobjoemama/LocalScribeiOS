@@ -15,10 +15,17 @@ final class DictationLiveActivity {
   private var pendingState: DictationActivityAttributes.ContentState?
   private var lastState: DictationActivityAttributes.ContentState?
   private var transcriptTail: String?
+  private var microphoneLeaseRetained = false
 
   var canStartRecordingActivity: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
 
   var isEnabled: Bool { canStartRecordingActivity }
+  var hasActiveActivity: Bool {
+    guard let session,
+      let activity = Activity<DictationActivityAttributes>.activities.first(where: { $0.id == session.activityID })
+    else { return false }
+    return activity.activityState == .active || activity.activityState == .stale
+  }
 
   @discardableResult
   func start(
@@ -27,8 +34,9 @@ final class DictationLiveActivity {
   ) async -> Bool {
     guard required ? canStartRecordingActivity : isEnabled else { return false }
     if let session {
-      return Activity<DictationActivityAttributes>.activities.first(where: { $0.id == session.activityID })?
-        .attributes.sessionID == sessionID
+      if hasActiveActivity, Activity<DictationActivityAttributes>.activities.first(where: { $0.id == session.activityID })?
+        .attributes.sessionID == sessionID { return true }
+      guard microphoneLeaseRetained else { return false }
     }
     guard startingSessionID == nil else { return false }
     startingSessionID = sessionID
@@ -40,6 +48,7 @@ final class DictationLiveActivity {
     let previous = updates
     await previous.value
     guard startingSessionID == sessionID, !Task.isCancelled else { return false }
+    let completedSession = microphoneLeaseRetained ? session : nil
     let attributes = DictationActivityAttributes(
       sessionID: sessionID, startedAt: startedAt, modelName: modelName)
     let state = DictationActivityAttributes.ContentState(
@@ -50,12 +59,26 @@ final class DictationLiveActivity {
         pushType: nil
       )
       session = Session(activityID: activity.id, previewCapability: previewCapability)
+      microphoneLeaseRetained = false
       transcriptTail = nil
       lastState = state
       pendingState = nil
+      if let completedSession {
+        // The explicit microphone lease stays covered while its utterance
+        // Activity is replaced. Never end the old Activity before this request.
+        let retirement = Task {
+          await Self.endActivity(id: completedSession.activityID, state: nil, dismissalAfter: nil)
+        }
+        updates = retirement
+        await retirement.value
+        guard startingSessionID == sessionID, session?.activityID == activity.id,
+          !Task.isCancelled else { return false }
+      }
       return true
     } catch {
-      session = nil
+      // A denied replacement must preserve the completed Activity covering
+      // the already-enabled microphone lease.
+      if completedSession == nil { session = nil }
       return false
     }
   }
@@ -98,7 +121,12 @@ final class DictationLiveActivity {
     }
   }
 
-  func finish(transcript: String, elapsed: TimeInterval) {
+  func finish(transcript: String, elapsed: TimeInterval, microphoneRemainsActive: Bool = false) {
+    if microphoneRemainsActive, session != nil {
+      microphoneLeaseRetained = true
+      update(phase: .ready, elapsed: elapsed, message: "Ready · Mic on", transcript: transcript)
+      return
+    }
     let tail = session?.previewCapability == .streamingText
       ? DictationTranscriptTail.make(from: transcript) : ""
     end(
@@ -106,17 +134,40 @@ final class DictationLiveActivity {
     )
   }
 
-  func fail(message: String?, elapsed: TimeInterval) {
+  func fail(message: String?, elapsed: TimeInterval, microphoneRemainsActive: Bool = false) {
     // Keep the detailed audio error in the shortcut/app; the activity gets
     // only the first, bounded sentence and never contains captured speech.
     let reason = message?.split(separator: ".", maxSplits: 1).first.map(String.init)?
       .trimmingCharacters(in: .whitespacesAndNewlines)
     let shortReason = reason.map { String($0.prefix(100)) }
+    if microphoneRemainsActive, session != nil {
+      startingSessionID = nil
+      microphoneLeaseRetained = true
+      transcriptTail = nil
+      update(phase: .failed, elapsed: elapsed, message: (shortReason ?? "Dictation failed") + " · Mic on")
+      return
+    }
     end(phase: .failed, elapsed: elapsed, message: shortReason, dismissalAfter: 10)
   }
 
-  func cancel(elapsed: TimeInterval) {
+  func cancel(elapsed: TimeInterval, microphoneRemainsActive: Bool = false) {
+    if microphoneRemainsActive, session != nil {
+      startingSessionID = nil
+      microphoneLeaseRetained = true
+      transcriptTail = nil
+      update(phase: .cancelled, elapsed: elapsed, message: "Cancelled · Mic on")
+      return
+    }
     end(phase: .cancelled, elapsed: elapsed, dismissalAfter: 4)
+  }
+
+  /// Ending the explicit idle microphone lease cannot end a newer recording.
+  func endMicrophoneLease() {
+    guard microphoneLeaseRetained, let lastState else { return }
+    let message = lastState.phase == .ready ? nil
+      : lastState.message?.replacingOccurrences(of: " · Mic on", with: "")
+    end(phase: lastState.phase, elapsed: lastState.elapsed, message: message,
+        transcriptTail: lastState.transcriptTail, dismissalAfter: 10)
   }
 
   private func end(
@@ -124,6 +175,7 @@ final class DictationLiveActivity {
     transcriptTail: String? = nil, dismissalAfter: TimeInterval
   ) {
     startingSessionID = nil
+    microphoneLeaseRetained = false
     guard let session else { return }
     let activityID = session.activityID
     self.session = nil

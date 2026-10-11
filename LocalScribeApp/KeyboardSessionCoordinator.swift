@@ -38,8 +38,9 @@ final class KeyboardSessionCoordinator {
             return
         }
         guard expiration != expiresAt else { return }
+        let ownsActiveWork = controller.map { $0.phase != .idle } ?? false
         if let expiration, let previous = expiresAt, sessionID != nil,
-           previous > Date() || controller?.phase == .recording {
+           previous > Date() || ownsActiveWork {
             // Activity extends the existing microphone lease. Keep utterance IDs,
             // receipts and pending results valid instead of creating a new session.
             expiresAt = expiration
@@ -96,7 +97,7 @@ final class KeyboardSessionCoordinator {
             expirationRequested = true
             Task { @MainActor [weak self, weak controller] in
                 guard let controller else { return }
-                await controller.finishKeyboardSession()
+                await controller.handleKeyboardIdleDeadline(expected: expiresAt)
                 self?.tick()
             }
             return

@@ -36,7 +36,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>LocalScribe uses your microphone only when you record or explicitly enable a keyboard session. Speech stays on your device.</string>
+	<string>LocalScribe uses your microphone only when you record or explicitly enable a microphone session. Speech stays on your device.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
