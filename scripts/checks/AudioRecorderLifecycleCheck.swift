@@ -27,18 +27,19 @@ struct FixtureAudioApplication {
     nonisolated static let mediaServicesWereResetNotification = Notification.Name("RecorderFixtureReset")
     enum InterruptionType: UInt { case began = 1 }
     enum RouteChangeReason: UInt { case oldDeviceUnavailable = 1 }
-    enum Category { case record, playAndRecord }
-    enum Mode { case measurement }
+    enum Category: String { case record = "AVAudioSessionCategoryRecord", playAndRecord = "AVAudioSessionCategoryPlayAndRecord" }
+    enum Mode: String { case measurement = "AVAudioSessionModeMeasurement" }
     enum ErrorCode: Int {
         case cannotInterruptOthers = 560557684
         case cannotStartRecording = 561145187
+        case cannotStartPlaying = 561015905
         case insufficientPriority = 561017449
         case siriIsRecording = 1936290409
     }
     struct CategoryOptions: OptionSet {
-        let rawValue: Int
-        static let allowBluetoothHFP = Self(rawValue: 1)
-        static let mixWithOthers = Self(rawValue: 2)
+        let rawValue: UInt
+        static let allowBluetoothHFP = Self(rawValue: 4)
+        static let mixWithOthers = Self(rawValue: 1)
     }
     struct SetActiveOptions: OptionSet { let rawValue: Int; static let notifyOthersOnDeactivation = Self(rawValue: 1) }
     enum Port { case builtInMic }
@@ -50,15 +51,29 @@ struct FixtureAudioApplication {
     var deactivations = 0
     var background = false
     var forbidBackgroundRecording = false
+    var activationErrorCode: Int?
+    var rejectedStep: String?
+    var omitMixOption = false
+    var resetConfigurationOnDeactivate = false
     var category = Category.record
+    var mode = Mode.measurement
     var categoryOptions: CategoryOptions = []
     static func sharedInstance() -> AVAudioSession { instance }
-    func setCategory(_ category: Category, mode: Mode, options: CategoryOptions) throws {
-        self.category = category
-        categoryOptions = options
+    func reject(_ step: String) throws {
+        if rejectedStep == step { throw NSError(domain: NSOSStatusErrorDomain, code: 561015905) }
     }
-    func setAllowHapticsAndSystemSoundsDuringRecording(_ enabled: Bool) throws {}
+    func setCategory(_ category: Category, mode: Mode, options: CategoryOptions) throws {
+        try reject("category")
+        self.category = category
+        self.mode = mode
+        categoryOptions = omitMixOption ? options.subtracting(.mixWithOthers) : options
+    }
+    func setAllowHapticsAndSystemSoundsDuringRecording(_ enabled: Bool) throws { try reject("sounds") }
     func setActive(_ active: Bool, options: SetActiveOptions = []) throws {
+        if active { try reject("activation") }
+        if active, let activationErrorCode {
+            throw NSError(domain: NSOSStatusErrorDomain, code: activationErrorCode)
+        }
         if active, background {
             if !categoryOptions.contains(.mixWithOthers) {
                 throw NSError(domain: NSOSStatusErrorDomain, code: ErrorCode.cannotInterruptOthers.rawValue)
@@ -69,8 +84,10 @@ struct FixtureAudioApplication {
         }
         self.active = active
         if active { activations += 1 } else { deactivations += 1 }
+        if !active, resetConfigurationOnDeactivate { category = .record; mode = .measurement; categoryOptions = [] }
     }
     func setPreferredInput(_ input: Input?) throws {
+        try reject("input")
         if failPreferredInput { throw FixtureFailure.expected }
     }
 }
@@ -80,9 +97,13 @@ let AVAudioSessionRouteChangeReasonKey = "reason"
     static var engines: [AVAudioEngine] = []
     let inputNode = FixtureInputNode()
     var isRunning = false
+    var failStart = false
     init() { Self.engines.append(self) }
     func prepare() {}
-    func start() throws { isRunning = true }
+    func start() throws {
+        if failStart { throw NSError(domain: NSOSStatusErrorDomain, code: 561015905) }
+        isRunning = true
+    }
     func stop() { isRunning = false }
 }
 @MainActor final class FixtureInputNode {
@@ -133,6 +154,8 @@ enum FixtureFailure: Error { case expected, failed(String) }
         try check(!engine.isRunning && engine.inputNode.taps == 0, "Canceled permission response cannot install an input tap")
         try await recorder.arm()
         try check(session.active && engine.isRunning && engine.inputNode.taps == 1, "A fresh retry can record after cancellation")
+        try check(session.category == .record && session.mode == .measurement && session.categoryOptions.rawValue == 4,
+                  "Normal capture retains record/measurement with Bluetooth HFP")
         try await recorder.arm()
         try check(engine.inputNode.taps == 1, "Arming an already running recorder remains idempotent")
         recorder.shutdown()
@@ -159,23 +182,83 @@ enum FixtureFailure: Error { case expected, failed(String) }
         try check(!session.active && !engine.isRunning && engine.inputNode.taps == 0, "Task cancellation alone prevents session activation after permission")
         session.background = true
         do { try await recorder.arm(requireExistingPermission: true); throw FixtureFailure.failed("Nonmixable background session should fail") }
-        catch RecordingError.audioSessionFailed(let code) {
+        catch RecordingError.audioSessionFailed(let code, _) {
             try check(code == AVAudioSession.ErrorCode.cannotInterruptOthers.rawValue, "Background nonmixable failure preserves exact OS status")
         }
         try check(!session.active && !engine.isRunning && engine.inputNode.taps == 0, "Activation failure leaves no microphone or tap")
         try await recorder.arm(requireExistingPermission: true, mixWithOtherAudio: true)
         try check(session.active && engine.isRunning && engine.inputNode.taps == 1, "Mixable background activation reaches real recorder start")
-        try check(session.category == .playAndRecord && session.categoryOptions.contains(.mixWithOthers), "Background policy uses a category supporting mixWithOthers")
+        try check(session.category == .playAndRecord && session.mode == .measurement && session.categoryOptions.rawValue == 5,
+                  "Action capture retains playAndRecord/measurement with mixing and Bluetooth HFP")
         recorder.shutdown()
         session.forbidBackgroundRecording = true
         do { try await recorder.arm(requireExistingPermission: true, mixWithOtherAudio: true); throw FixtureFailure.failed("Mixing must not bypass recording denial") }
-        catch RecordingError.audioSessionFailed(let code) {
+        catch RecordingError.audioSessionFailed(let code, _) {
             try check(code == AVAudioSession.ErrorCode.cannotStartRecording.rawValue, "Recording authorization denial stays distinct from mix failure")
             try check(RecordingError.audioSessionFailed(code: code).localizedDescription.contains("!rec"), "User can report the actual recording denial code")
         }
         try check(!session.active && !engine.isRunning && engine.inputNode.taps == 0, "Denied mixable session is completely cleaned up")
         session.background = false
         session.forbidBackgroundRecording = false
+        session.activationErrorCode = 561015905
+        do {
+            try await recorder.arm(requireExistingPermission: true, mixWithOtherAudio: true)
+            throw FixtureFailure.failed("Expected platform audio activation denial")
+        } catch RecordingError.audioSessionFailed(let code, _) {
+            let message = RecordingError.audioSessionFailed(code: code).localizedDescription
+            try check(code == 561015905 && message.contains("!pla")
+                      && message.contains("recording or playback"),
+                      "Platform audio denial names !pla without claiming a playback-only cause")
+        }
+        session.activationErrorCode = nil
+        let failureSteps = [
+            ("category", "audio session configuration"),
+            ("sounds", "recording sounds configuration"),
+            ("activation", "audio session activation"),
+            ("input", "microphone selection"),
+            ("engine", "audio engine start")
+        ]
+        for (failureStep, expectedStep) in failureSteps {
+            session.rejectedStep = failureStep
+            engine.failStart = failureStep == "engine"
+            do {
+                try await recorder.arm(requireExistingPermission: true, mixWithOtherAudio: true)
+                throw FixtureFailure.failed("Expected \(failureStep) failure")
+            } catch let error as RecordingError {
+                guard case .audioSessionFailed(let code, _) = error else { throw error }
+                try check(code == 561015905 && error.localizedDescription.hasPrefix("Microphone setup failed at \(expectedStep)."),
+                          "Same platform error at \(failureStep) reports the actual failing step")
+            }
+            try check(!session.active && !engine.isRunning && engine.inputNode.taps == 0,
+                      "\(failureStep) failure retires activation, engine and tap")
+            session.rejectedStep = nil
+            engine.failStart = false
+            try await recorder.arm(requireExistingPermission: true, mixWithOtherAudio: true)
+            try check(session.active && engine.isRunning && engine.inputNode.taps == 1,
+                      "Retry after \(failureStep) failure starts a fresh recorder")
+            recorder.shutdown()
+        }
+        session.omitMixOption = true
+        session.resetConfigurationOnDeactivate = true
+        session.activationErrorCode = 561015905
+        do {
+            try await recorder.arm(requireExistingPermission: true, mixWithOtherAudio: true)
+            throw FixtureFailure.failed("Expected activation failure with differing effective options")
+        } catch let error as RecordingError {
+            guard case .audioSessionFailed(_, let context) = error else { throw error }
+            try check(context?.requested.options == 5 && context?.effective.options == 4
+                      && context?.effective.category == "AVAudioSessionCategoryPlayAndRecord"
+                      && context?.effective.mode == "AVAudioSessionModeMeasurement"
+                      && session.categoryOptions.isEmpty,
+                      "Failure snapshots effective category, mode and options before cleanup changes them")
+            try check(error.localizedDescription.contains("options 0x4")
+                      && error.localizedDescription.contains("Requested:")
+                      && error.localizedDescription.contains("options 0x5"),
+                      "Different effective options are visible alongside the requested configuration")
+        }
+        session.activationErrorCode = nil
+        session.omitMixOption = false
+        session.resetConfigurationOnDeactivate = false
         var deliveredEvents = 0
         recorder.onInterruption = {
             deliveredEvents += 1

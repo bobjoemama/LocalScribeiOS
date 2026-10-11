@@ -3,21 +3,59 @@ import Foundation
 import LocalScribeCore
 
 enum RecordingError: LocalizedError {
+    enum ActivationStep: String {
+        case category = "audio session configuration"
+        case recordingSounds = "recording sounds configuration"
+        case activation = "audio session activation"
+        case input = "microphone selection"
+        case format = "microphone format preparation"
+        case tap = "microphone tap installation"
+        case preparation = "audio engine preparation"
+        case engine = "audio engine start"
+    }
+    struct SessionConfiguration: Equatable {
+        let category: String
+        let mode: String
+        let options: UInt
+        var description: String { "\(category), \(mode), options 0x\(String(options, radix: 16))" }
+        @MainActor init(session: AVAudioSession) {
+            category = session.category.rawValue
+            mode = session.mode.rawValue
+            options = session.categoryOptions.rawValue
+        }
+        init(category: AVAudioSession.Category, mode: AVAudioSession.Mode, options: AVAudioSession.CategoryOptions) {
+            self.category = category.rawValue
+            self.mode = mode.rawValue
+            self.options = options.rawValue
+        }
+    }
+    /// System configuration only; excludes routes, device names and captured audio.
+    struct ActivationContext {
+        let step: ActivationStep
+        let requested: SessionConfiguration
+        let effective: SessionConfiguration
+        var description: String {
+            let requestedDetail = requested == effective ? "" : " Requested: \(requested.description)."
+            return " Audio session: \(effective.description).\(requestedDetail)"
+        }
+    }
     case microphoneDenied, unavailableInput, converterUnavailable, conversionFailed, noAudio
-    case audioSessionFailed(code: Int)
+    case audioSessionFailed(code: Int, context: ActivationContext? = nil)
     var errorDescription: String? {
         switch self {
-        case .microphoneDenied: "Microphone access is off. Enable it for LocalScribe in iPhone Settings."
-        case .unavailableInput: "No microphone is available. Check your audio connection and try again."
-        case .converterUnavailable: "The microphone audio format could not be prepared."
-        case .conversionFailed: "Microphone audio conversion failed. Recording stopped to avoid losing more speech."
-        case .noAudio: "No audio was captured. Try speaking closer to your microphone."
-        case let .audioSessionFailed(code):
-            switch code {
+        case .microphoneDenied: return "Microphone access is off. Enable it for LocalScribe in iPhone Settings."
+        case .unavailableInput: return "No microphone is available. Check your audio connection and try again."
+        case .converterUnavailable: return "The microphone audio format could not be prepared."
+        case .conversionFailed: return "Microphone audio conversion failed. Recording stopped to avoid losing more speech."
+        case .noAudio: return "No audio was captured. Try speaking closer to your microphone."
+        case let .audioSessionFailed(code, context):
+            let message = switch code {
             case AVAudioSession.ErrorCode.cannotInterruptOthers.rawValue:
                 "iOS could not activate the microphone from the background. Open LocalScribe and try again. Audio error: \(code) (!int)."
             case AVAudioSession.ErrorCode.cannotStartRecording.rawValue:
                 "iOS did not permit microphone recording. Start recording with LocalScribe onscreen. Audio error: \(code) (!rec)."
+            case AVAudioSession.ErrorCode.cannotStartPlaying.rawValue:
+                "iOS did not allow audio recording or playback to start. Audio error: \(code) (!pla)."
             case AVAudioSession.ErrorCode.insufficientPriority.rawValue:
                 "Another app controls the audio session. Finish its call or recording, then try again. Audio error: \(code) (!pri)."
             case AVAudioSession.ErrorCode.siriIsRecording.rawValue:
@@ -25,6 +63,8 @@ enum RecordingError: LocalizedError {
             default:
                 "The microphone could not start. Audio error: \(code)."
             }
+            let stepMessage = context.map { "Microphone setup failed at \($0.step.rawValue). " } ?? ""
+            return stepMessage + message + (context?.description ?? "")
         }
     }
 }
@@ -94,19 +134,26 @@ final class AudioRecorder {
         if engine.isRunning { return }
         activationRevision &+= 1
         eventOwnership.set(.init(activationRevision: activationRevision, captureGeneration: nil))
+        let session = AVAudioSession.sharedInstance()
+        let category: AVAudioSession.Category = mixWithOtherAudio ? .playAndRecord : .record
+        let options: AVAudioSession.CategoryOptions = mixWithOtherAudio ? [.allowBluetoothHFP, .mixWithOthers] : [.allowBluetoothHFP]
+        let requestedConfiguration = RecordingError.SessionConfiguration(category: category, mode: .measurement, options: options)
+        var activationStep = RecordingError.ActivationStep.category
         do {
-            let session = AVAudioSession.sharedInstance()
             // A nonmixable .record session cannot activate from the background.
             // .playAndRecord supports mixing; no playback or silent keepalive is added.
-            try session.setCategory(mixWithOtherAudio ? .playAndRecord : .record, mode: .measurement,
-                                    options: mixWithOtherAudio ? [.allowBluetoothHFP, .mixWithOthers] : [.allowBluetoothHFP])
+            try session.setCategory(category, mode: .measurement, options: options)
+            activationStep = .recordingSounds
             try session.setAllowHapticsAndSystemSoundsDuringRecording(hapticFeedbackEnabled)
+            activationStep = .activation
             try session.setActive(true)
+            activationStep = .input
             if preferBuiltInMicrophone, let microphone = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
                 try session.setPreferredInput(microphone)
             } else {
                 try session.setPreferredInput(nil)
             }
+            activationStep = .format
             let input = engine.inputNode
             let inputFormat = input.outputFormat(forBus: 0)
             guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else { throw RecordingError.unavailableInput }
@@ -131,17 +178,25 @@ final class AudioRecorder {
             }
             // AVFAudio may call this block off the main thread. Explicit @Sendable plus
             // a nonisolated processor prevents a Swift 6 inherited-MainActor runtime trap.
+            activationStep = .tap
             input.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { @Sendable [processor] buffer, _ in
                 processor.process(buffer)
             }
             tapInstalled = true
+            activationStep = .preparation
             engine.prepare()
+            activationStep = .engine
             try engine.start()
         } catch {
+            // Read the effective public session values before shutdown changes
+            // its activation. Requested options alone cannot describe OS policy.
+            let context = RecordingError.ActivationContext(
+                step: activationStep, requested: requestedConfiguration,
+                effective: .init(session: session))
             shutdown()
             let systemError = error as NSError
             if systemError.domain == NSOSStatusErrorDomain {
-                throw RecordingError.audioSessionFailed(code: systemError.code)
+                throw RecordingError.audioSessionFailed(code: systemError.code, context: context)
             }
             throw error
         }
