@@ -1,6 +1,6 @@
 # LocalScribe iOS privacy
 
-Updated October 10, 2026. This describes LocalScribe's current implementation, including its keyboard and Live Activity extension.
+Updated October 11, 2026. This describes LocalScribe's source implementation, including its keyboard and Live Activity extension. [Beta status](../tasklist.md#current-ios-beta-status) identifies the installed and public versions.
 
 ## Recognition and downloads
 
@@ -16,7 +16,9 @@ History saving is optional. Turning it off stops new entries and leaves existing
 
 ## Microphone, keyboard and visible text
 
-The app asks for microphone permission when needed. You can revoke it in iPhone Settings. A microphone session for keyboard or Action Button dictation must be explicitly enabled in LocalScribe: the app owns the microphone, and iOS shows its microphone indicator while the session is active. Idle audio is discarded; inactivity ends the session after the configured timeout. End the session in LocalScribe to stop the microphone yourself. Keeping a model loaded does not enable a microphone session.
+The app asks for microphone permission in the foreground. Revoke it in iPhone Settings at any time. In build 22, **Background dictation** defaults to On: opening LocalScribe enables the shared Action Button/keyboard microphone session and prepares the selected model. iOS shows its microphone indicator while the session is active. Idle audio is discarded before conversion or recognition.
+
+**Pause** on Dictate stops the microphone and persists that choice; **Resume** enables it again. Auto-stop defaults to **Never**, with optional timed settings. Force-quitting ends microphone access; calls, permission changes and iOS memory reclamation can interrupt it. Keeping a model loaded is a separate preference and does not itself enable microphone access. Earlier builds require manually enabling the session.
 
 The optional keyboard needs Allow Full Access for commands and results in the local shared container. Its temporary state uses file protection available after the device’s first unlock and is excluded from backups. The keyboard does not save surrounding text from your destination app. Ordinary typing works without Full Access.
 

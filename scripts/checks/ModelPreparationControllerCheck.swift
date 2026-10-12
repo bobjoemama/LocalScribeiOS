@@ -108,6 +108,7 @@ actor ReportingPreparationEngine: StreamingLocalTranscriptionEngine, ContextualL
         defaults.set(SpeechModel.parakeetPhonon.rawValue, forKey: "selectedModel")
         defaults.set(keepLoaded, forKey: "keepModelLoaded")
         defaults.set(false, forKey: "saveHistory")
+        defaults.set(false, forKey: "backgroundDictationEnabled")
         let controller = AppController(engine: engine, defaults: defaults, historyURL: directory.appendingPathComponent("history.json"),
             backgroundModelPreparation: helper)
         await controller.refreshInstalledModels()

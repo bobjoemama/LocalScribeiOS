@@ -15,6 +15,7 @@ import LocalScribeCore
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("LocalScribePersonalizationCheck-\(UUID())")
         let defaults = UserDefaults(suiteName: "Personalization-\(UUID())")!
         defaults.set(false, forKey: "saveHistory")
+        defaults.set(false, forKey: "backgroundDictationEnabled")
         let engine = LifecycleEngine(); await engine.releasePreparation()
         let controller = AppController(engine: engine, defaults: defaults, historyURL: root.appendingPathComponent("history.json"))
         await controller.refreshInstalledModels()

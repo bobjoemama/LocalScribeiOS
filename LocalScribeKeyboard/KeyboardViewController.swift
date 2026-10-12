@@ -321,8 +321,8 @@ final class KeyboardViewController: UIInputViewController {
       }
       guard let status, status.isLive() || status.hasDeliverableResult() else {
         show(
-          "Keyboard session off",
-          "Open LocalScribe → Settings → Keyboard to start a microphone session.")
+          "Background dictation off",
+          "Open LocalScribe → Dictate to resume background dictation.")
         return
       }
       if let pendingCommand {
@@ -374,7 +374,7 @@ final class KeyboardViewController: UIInputViewController {
       }
       if !status.canRecord() && status.phase != .transcribing {
         show(
-          status.phase == .failed ? "Dictation unavailable" : "Keyboard session off",
+          status.phase == .failed ? "Dictation unavailable" : "Background dictation off",
           status.message ?? "Microphone off · Open LocalScribe")
         return
       }
@@ -392,16 +392,22 @@ final class KeyboardViewController: UIInputViewController {
           "Dictation unavailable", status.message ?? "Open LocalScribe to resume.",
           action: "Record", symbol: "mic.fill")
       case .ready:
-        let minutes = max(1, Int(ceil((status.expiresAt?.timeIntervalSinceNow ?? 0) / 60)))
+        let sessionDetail: String
+        if status.expiresAt == .distantFuture {
+          sessionDetail = "Microphone on"
+        } else {
+          let minutes = max(1, Int(ceil((status.expiresAt?.timeIntervalSinceNow ?? 0) / 60)))
+          sessionDetail = "Session ends in \(minutes)m"
+        }
         let copied = status.utteranceID != nil && status.utteranceID == lastCopiedUtterance
         show(
           copied ? "Copied" : "Dictation",
-          copied ? "Paste your dictation in any app." : "Session ends in \(minutes)m",
+          copied ? "Paste your dictation in any app." : sessionDetail,
           action: "Record", symbol: "mic.fill", enabled: pendingCommand == nil)
       case .inactive:
         show(
-          "Keyboard session off",
-          "Open LocalScribe → Settings → Keyboard to start a microphone session.")
+          "Background dictation off",
+          "Open LocalScribe → Dictate to resume background dictation.")
       }
     } catch {
       show("Dictation unavailable", "Open LocalScribe to check shared access.")

@@ -66,10 +66,10 @@ Realtime produces English text without punctuation or capitalization. Choose **P
 
 1. Add LocalScribe in **iPhone Settings → General → Keyboard → Keyboards → Add New Keyboard**.
 2. Enable **Allow Full Access** for dictation. This permits local shared-container commands; speech recognition stays on the phone.
-3. Open LocalScribe and start a **keyboard microphone session**, then switch to your destination app and select the LocalScribe keyboard.
-4. Use the keyboard’s recording controls and insert the result. End the microphone session in LocalScribe when finished.
+3. Open LocalScribe and wait for **Ready · Mic on** on Dictate, then switch to your destination app and select the LocalScribe keyboard. On builds before 22, use **Settings → Keyboard → Enable microphone** first.
+4. Use the keyboard’s recording controls and insert the result. **Pause** on Dictate stops background microphone access.
 
-The app owns the microphone because custom keyboards cannot record audio. An armed session keeps the iOS microphone indicator on; idle audio is discarded. The default idle timeout is five minutes and can be changed in Settings; active dictation renews it. Results expire after 30 seconds. Secure fields and apps that disallow custom keyboards use the system keyboard. Physical host-app insertion remains a verification item.
+The app owns the microphone because custom keyboards cannot record audio. Its session keeps the iOS microphone indicator on; idle audio is discarded. Build 22 enables this automatically when LocalScribe opens and defaults to Never auto-stop. Earlier builds need the Enable microphone control and default to five minutes. Results expire after 30 seconds. Secure fields and apps that disallow custom keyboards use the system keyboard. Physical host-app insertion remains a verification item.
 
 ## Action Button
 
@@ -81,7 +81,9 @@ Allow microphone access in LocalScribe, enable Live Activities, and choose a dow
 
 Hold and release to start recording; hold and release again to finish, then paste in your destination app. Releasing the button does not stop recording. Touch and hold Dynamic Island to see the model, timer, status and Stop button. Realtime and Moonshine also show live text there; Phonon-2, Ultra and Redux show periodic text in the app. iOS controls when the Island expands and collapses. If you finish with its Stop button, invoke the Action Button workflow again to return the retained result for copying without starting another recording.
 
-**Development builds 20 and later:** if iOS rejects starting the microphone from another app, open **LocalScribe Settings → Action Button → Setup → Microphone session** and tap **Enable microphone**. Wait for the model to be **Ready** and the session to show **Mic on**, then switch apps and use the two holds. An explicitly enabled session stays on between recordings until **End session** or its idle timeout; idle audio is discarded. Action Button and keyboard share one session. Model readiness alone does not grant background microphone activation. This control and the session-preservation repair are not yet in the public build; see [beta status](../tasklist.md#current-ios-beta-status).
+**Development builds 20–21:** if iOS rejects starting the microphone from another app, open **LocalScribe Settings → Action Button → Setup → Microphone session** and tap **Enable microphone**. Wait for **Ready** and **Mic on**, then switch apps and use the two holds. The session stays on between recordings until **End session** or its idle timeout. Action Button and keyboard share one session.
+
+**Build 22 update:** background dictation is On by default. Opening LocalScribe starts its microphone session and prepares the selected model; allow microphone access when iOS asks. Wait for **Ready** on Dictate, then switch apps and use the existing Action Button shortcut. Dictate has **Pause**, **Resume** and **Retry** controls, so another setup trip is unnecessary. **Settings → Dictation → Auto-stop** defaults to **Never**; saved timed choices remain available. The microphone indicator stays on between recordings, and idle audio is discarded. Force-quitting ends the app and microphone; calls, permission changes and iOS memory reclamation can also interrupt it. The current installation and public TestFlight versions are recorded in [beta status](../tasklist.md#current-ios-beta-status); these build-22 changes are not in the last confirmed public beta.
 
 The bare **Dictate and Copy** app action returns text to Shortcuts; it does not copy by itself. Use the supplied workflow, which copies only a nonempty result and leaves the clipboard unchanged when recording starts. Local Only keeps this workflow’s clipboard item from syncing to other devices.
 

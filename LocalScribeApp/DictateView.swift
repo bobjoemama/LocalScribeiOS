@@ -21,15 +21,20 @@ struct DictateView: View {
     private var displayedModel: SpeechModel { controller.recordingModel ?? controller.selectedModel }
     private var textToCopy: String { recording || controller.phase == .transcribing ? controller.partialText : controller.transcript }
     private var canSelectModel: Bool {
-        controller.phase == .idle && controller.recordingModel == nil && controller.downloadingModel == nil && !controller.keyboardSessionActive
+        let idle = controller.phase == .idle && controller.recordingModel == nil
+        let preparingBackgroundSession = controller.backgroundDictationStarting && controller.phase == .preparing
+        return (idle || preparingBackgroundSession) && controller.downloadingModel == nil
     }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 modelMenu.padding(.horizontal, 20).padding(.vertical, 12)
-                if microphoneDenied { microphoneBanner }
-                else if let recoverableError { errorBanner(recoverableError) }
+                BackgroundDictationControl(controller: controller)
+                    .padding(.horizontal, 20).padding(.bottom, 8)
+                if !microphoneDenied, let recoverableError, recoverableError != controller.backgroundDictationError {
+                    errorBanner(recoverableError)
+                }
                 transcriptWorkspace
                 LivePerformanceStrip(open: { showingPerformance = true })
                     .padding(.horizontal, 20).padding(.vertical, 8)
@@ -69,6 +74,9 @@ struct DictateView: View {
             }
             .onChange(of: controller.errorMessage) { _, error in
                 if let error { recoverableError = error; refreshMicrophonePermission() }
+            }
+            .onChange(of: controller.backgroundDictationError) { _, error in
+                if let error, recoverableError == error { recoverableError = nil }
             }
             .onChange(of: controller.level) { _, level in
                 guard recording else { return }
@@ -142,19 +150,6 @@ struct DictateView: View {
         }
     }
 
-    private var microphoneBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Microphone access is off", systemImage: "mic.slash").font(.subheadline.weight(.medium))
-            Button("Open Settings") {
-                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-                UIApplication.shared.open(url)
-            }.frame(minHeight: 44)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
-        .foregroundStyle(AppTheme.error).background(AppTheme.errorSoft, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 20).padding(.bottom, 8)
-    }
-
     private func errorBanner(_ message: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 12) {
@@ -189,12 +184,6 @@ struct DictateView: View {
                     discardAction
                 }
             }
-            if let expiry = controller.keyboardSessionExpiresAt {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) { keyboardSessionStatus(expiry); Spacer(minLength: 0); endKeyboardSession }
-                    VStack(alignment: .leading, spacing: 8) { keyboardSessionStatus(expiry); endKeyboardSession }
-                }
-            }
         }
         .padding(.horizontal, 20).padding(.vertical, 12)
         .background(.bar).overlay(alignment: .top) { Rectangle().fill(AppTheme.separator).frame(height: 1) }
@@ -219,27 +208,6 @@ struct DictateView: View {
         DictationWaveform(levels: levels, currentLevel: controller.level).frame(minWidth: 80, maxWidth: .infinity).frame(height: 24)
     }
 
-    private func keyboardSessionStatus(_ expiry: Date) -> some View {
-        HStack(spacing: 4) {
-            Text(keyboardMicrophoneStatus)
-            if controller.phase == .idle { Text(expiry, style: .timer).monospacedDigit() }
-        }.font(.footnote).foregroundStyle(AppTheme.inkSecondary)
-    }
-
-    private var keyboardMicrophoneStatus: String {
-        switch controller.phase {
-        case .idle: "Keyboard microphone on · ends in"
-        case .preparing: "Keyboard microphone on · starting"
-        case .recording: "Keyboard microphone on · recording"
-        case .transcribing: "Keyboard microphone on · transcribing"
-        }
-    }
-
-    private var endKeyboardSession: some View {
-        Button("End") { Task { await controller.finishKeyboardSession() } }
-            .font(.footnote).buttonStyle(.bordered).disabled(controller.isBusy).frame(minHeight: 44)
-    }
-
     private func modelLoadingStatus(_ status: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
@@ -257,7 +225,7 @@ struct DictateView: View {
             }.buttonStyle(.borderedProminent).tint(AppTheme.accent).controlSize(.large).disabled(true)
         } else {
             let stopping = recording || controller.phase == .preparing
-            let starting = controller.phase == .idle && controller.recordingModel != nil
+            let starting = controller.phase == .idle && (controller.recordingModel != nil || controller.backgroundDictationStarting)
             Button {
                 editing = false
                 if controller.phase == .idle { controller.saveTranscriptEdits() }
@@ -295,6 +263,102 @@ struct DictateView: View {
 
     private func clearCopyFeedback() { copyFeedbackTask?.cancel(); copied = false }
     private func refreshMicrophonePermission() { microphoneDenied = AVAudioApplication.shared.recordPermission == .denied }
+}
+
+/// One foreground control for the microphone shared by Dictate, keyboard and Action Button.
+struct BackgroundDictationControl: View {
+    @ObservedObject var controller: AppController
+    var showsTitle = true
+    var showsPauseControl = true
+    @State private var microphoneDenied = false
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var canRetry: Bool {
+        controller.phase == .idle && !controller.backgroundDictationStarting
+            && controller.downloadingModel == nil && controller.installedModels.contains(controller.selectedModel)
+    }
+
+    private var status: String {
+        if !controller.backgroundDictationEnabled { return "Paused" }
+        if microphoneDenied { return "Microphone access is off" }
+        if controller.backgroundDictationStarting { return "Starting…" }
+        if !controller.installedModels.contains(controller.selectedModel) { return "Choose a downloaded model" }
+        if controller.keyboardSessionActive {
+            if !controller.actionButtonModelReady { return "Loading model…" }
+            switch controller.phase {
+            case .recording: return "Recording · Mic on"
+            case .transcribing: return "Finishing · Mic on"
+            case .preparing: return "Starting…"
+            case .idle: return "Ready · Mic on"
+            }
+        }
+        if controller.backgroundDictationError != nil { return "Interrupted" }
+        if controller.downloadingModel != nil { return "Waiting for download" }
+        return "Not ready"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { statusLabel; Spacer(minLength: 8); actions }
+                VStack(alignment: .leading, spacing: 4) { statusLabel; actions }
+            }
+            if controller.backgroundDictationEnabled, !controller.keyboardSessionActive,
+               !controller.backgroundDictationStarting, let error = controller.backgroundDictationError {
+                Text(error).font(.footnote).foregroundStyle(AppTheme.error)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("While ready, the microphone stays on. Idle audio is discarded.")
+                .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onAppear(perform: refreshPermission)
+        .onChange(of: scenePhase) { _, phase in if phase == .active { refreshPermission() } }
+        .onChange(of: controller.backgroundDictationError) { _, _ in refreshPermission() }
+    }
+
+    private var statusLabel: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if showsTitle { Text("Background dictation").font(.subheadline.weight(.medium)) }
+            HStack(spacing: 4) {
+                Text(status)
+                if controller.backgroundDictationEnabled, controller.keyboardSessionActive,
+                   controller.phase == .idle, controller.keyboardIdleMinutes > 0,
+                   let expiry = controller.keyboardSessionExpiresAt {
+                    Text("· Ends in")
+                    Text(expiry, style: .timer).monospacedDigit()
+                }
+            }
+            .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
+            .accessibilityElement(children: .combine)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder private var actions: some View {
+        HStack(spacing: 8) {
+            if showsPauseControl {
+                Button(controller.backgroundDictationEnabled ? "Pause" : "Resume") {
+                    controller.backgroundDictationEnabled.toggle()
+                }
+                .buttonStyle(.bordered).font(.footnote).frame(minWidth: 44, minHeight: 44)
+                .accessibilityLabel(controller.backgroundDictationEnabled ? "Pause background dictation" : "Resume background dictation")
+            }
+            if microphoneDenied {
+                Button("Open Settings") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(url)
+                }.buttonStyle(.bordered).font(.footnote).frame(minHeight: 44)
+            } else if controller.backgroundDictationEnabled, !controller.keyboardSessionActive,
+                      !controller.backgroundDictationStarting {
+                Button("Retry") { Task { await controller.retryBackgroundDictation() } }
+                    .buttonStyle(.bordered).font(.footnote).frame(minWidth: 44, minHeight: 44)
+                    .disabled(!canRetry).accessibilityLabel("Retry background dictation")
+            }
+        }
+    }
+
+    private func refreshPermission() { microphoneDenied = AVAudioApplication.shared.recordPermission == .denied }
 }
 
 /// Keep a single replacing transcript. Following stops on a real user scroll;

@@ -49,6 +49,7 @@ actor ProgressEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRepo
         let engine = ProgressEngine()
         let defaults = UserDefaults(suiteName: "ActionDiagnosticsCheck-\(UUID())")!
         defaults.set(false, forKey: "saveHistory")
+        defaults.set(false, forKey: "backgroundDictationEnabled")
         defaults.set(SpeechModel.parakeetRealtimeEOU.rawValue, forKey: "selectedModel")
         let history = FileManager.default.temporaryDirectory.appendingPathComponent("ActionDiagnostics-\(UUID())/history.json")
         let controller = AppController(engine: engine, defaults: defaults, historyURL: history)

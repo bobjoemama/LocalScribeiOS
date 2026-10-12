@@ -40,6 +40,12 @@ struct FixtureCaptureSnapshot {
     var onCaptureFailure: ((RecordingError) -> Void)?
     var onInterruption: (() -> Void)?
     var armContinuation: CheckedContinuation<Void, Never>?
+    private var armHeldWaiter: CheckedContinuation<Void, Never>?
+    func waitUntilArmHeld() async {
+        if armContinuation != nil { return }
+        await withCheckedContinuation { armHeldWaiter = $0 }
+    }
+    func releaseArm() { armContinuation?.resume(); armContinuation = nil }
     static var holdNextArm = false
     static var samplesOnBeginCapture = 0
     var captureSnapshot = FixtureCaptureSnapshot()
@@ -58,8 +64,9 @@ struct FixtureCaptureSnapshot {
         lastRequireExistingPermission = requireExistingPermission
         if Self.holdNextArm {
             Self.holdNextArm = false
-            await withCheckedContinuation { armContinuation = $0 }
+            await withCheckedContinuation { armContinuation = $0; armHeldWaiter?.resume(); armHeldWaiter = nil }
         }
+        if !microphonePermissionGranted { throw NSError(domain: "FixtureMicrophone", code: 1, userInfo: [NSLocalizedDescriptionKey: "Microphone permission is denied."]) }
         if !armed {
             if rejectNewBackgroundActivation { throw NSError(domain: NSOSStatusErrorDomain, code: 561015905) }
             activations += 1
@@ -150,6 +157,11 @@ actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRep
     var installed: Set<SpeechModel> = [.parakeetPhonon, .parakeetPhononG4, .parakeetRealtimeEOU]
     var holdPreparation = true
     var loadContinuation: CheckedContinuation<Void, Never>?
+    private var preparationHeldWaiter: CheckedContinuation<Void, Never>?
+    func waitUntilPreparationHeld() async {
+        if loadContinuation != nil { return }
+        await withCheckedContinuation { preparationHeldWaiter = $0 }
+    }
     var prepareCalls = 0
     var beginCalls = 0
     var unloadCalls = 0
@@ -159,17 +171,39 @@ actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRep
     var callback: (@Sendable (SpeechTranscriptUpdate) -> Void)?
     var oldCallback: (@Sendable (SpeechTranscriptUpdate) -> Void)?
     func isInstalled(_ model: SpeechModel) async -> Bool { installed.contains(model) }
+    func setInstalled(_ models: Set<SpeechModel>) { installed = models }
     var downloaded: [SpeechModel] = []
     var prepared: [SpeechModel] = []
     var downloadFailure: SpeechModel?
     var slowDownload = false
     var slowDownloadModel: SpeechModel?
+    private var holdDownload = false
+    private var downloadContinuation: CheckedContinuation<Void, Never>?
+    private var downloadHeldWaiter: CheckedContinuation<Void, Never>?
+    private var unloadWaiter: CheckedContinuation<Void, Never>?
+    func holdNextDownload() { holdDownload = true }
+    func waitUntilDownloadHeld() async {
+        if downloadContinuation != nil { return }
+        await withCheckedContinuation { downloadHeldWaiter = $0 }
+    }
+    func releaseHeldDownload() { downloadContinuation?.resume(); downloadContinuation = nil }
+    func waitUntilUnloaded() async {
+        if unloadCalls > 0 { return }
+        await withCheckedContinuation { unloadWaiter = $0 }
+    }
     func configureDownloads(failure: SpeechModel? = nil, slow: Bool = false, slowModel: SpeechModel? = nil) { downloadFailure = failure; slowDownload = slow; slowDownloadModel = slowModel }
     func downloads() -> [SpeechModel] { downloaded }
     func preparations() -> [SpeechModel] { prepared }
     func download(_ model: SpeechModel, progress: @escaping @Sendable (Double) -> Void) async throws {
         downloaded.append(model)
         progress(0.25)
+        if holdDownload {
+            holdDownload = false
+            await withCheckedContinuation {
+                downloadContinuation = $0
+                downloadHeldWaiter?.resume(); downloadHeldWaiter = nil
+            }
+        }
         if slowDownload || slowDownloadModel == model { try await Task.sleep(for: .seconds(10)) }
         try Task.checkCancellation()
         if downloadFailure == model { throw Failure.expected }
@@ -178,7 +212,7 @@ actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRep
     }
     func prepare(_ model: SpeechModel) async throws {
         prepareCalls += 1; prepared.append(model)
-        if holdPreparation { await withCheckedContinuation { loadContinuation = $0 } }
+        if holdPreparation { await withCheckedContinuation { loadContinuation = $0; preparationHeldWaiter?.resume(); preparationHeldWaiter = nil } }
         try Task.checkCancellation()
     }
     func releasePreparation() { holdPreparation = false; loadContinuation?.resume(); loadContinuation = nil }
@@ -225,7 +259,7 @@ actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceRep
         oldCallback = callback; callback = nil
     }
     func transcribe(samples: [Float]) async throws -> String { "Unused offline API" }
-    func unload() async { unloadCalls += 1 }
+    func unload() async { unloadCalls += 1; unloadWaiter?.resume(); unloadWaiter = nil }
     func emitStale() { oldCallback?(.init(confirmedText: "Stale", volatileText: "utterance")) }
     func failNextAppend() { failAppend = true }
     func counts() -> (Int, Int, Int, Int, Int) { (prepareCalls, beginCalls, unloadCalls, admittedSamples, largestAppend) }
@@ -281,8 +315,12 @@ extension SharedKeyboardStore {
         }
         throw CheckFailure.failed("Timed out waiting for controller transition at \(file):\(line)")
     }
-    @MainActor static func fixture(_ engine: any LocalTranscriptionEngine, model: SpeechModel = .parakeetPhonon, preferences: UserDefaults? = nil) async -> AppController {
+    @MainActor static func fixture(_ engine: any LocalTranscriptionEngine, model: SpeechModel = .parakeetPhonon, preferences: UserDefaults? = nil, automatic: Bool = false) async -> AppController {
         let defaults = preferences ?? UserDefaults(suiteName: "LocalScribeControllerCheck-\(UUID())")!
+        if !automatic {
+            defaults.set(false, forKey: "backgroundDictationEnabled")
+            if defaults.object(forKey: "keyboardIdleMinutes") == nil { defaults.set(5, forKey: "keyboardIdleMinutes") }
+        }
         defaults.set(false, forKey: "saveHistory")
         defaults.set(model.rawValue, forKey: "selectedModel")
         let history = FileManager.default.temporaryDirectory.appendingPathComponent("LocalScribeControllerCheck-\(UUID())/history.json")
@@ -418,7 +456,416 @@ extension SharedKeyboardStore {
                   && !recorder.armed && !controller.keyboardSessionActive && controller.errorMessage != nil,
                   "Ready model retention cannot bypass rejection of a new background microphone activation")
     }
+
+    @MainActor static func checkActionReservationRetention() async throws {
+        for turnsRetentionOff in [false, true] {
+            let engine = ContextualLifecycleEngine()
+            await engine.engine.releasePreparation()
+            let defaults = UserDefaults(suiteName: "ActionReservationRetention-\(UUID())")!
+            defaults.set(turnsRetentionOff, forKey: "keepModelLoaded")
+            let controller = await fixture(engine, preferences: defaults)
+            let recorder = AudioRecorder.latest!
+            let owner = UUID()
+            do {
+                try check(controller.reserveActionButtonRecording(requestID: owner, model: .parakeetPhonon), "Action owns the foreground CPU preparation")
+                let ready = await controller.prepareReservedActionButtonRecording(requestID: owner)
+                try check(ready && controller.phase == .idle && controller.actionButtonModelReady, "Reserved CPU preparation finishes Ready before the Activity boundary")
+                if turnsRetentionOff { controller.keepModelLoaded = false }
+                controller.setForeground(false)
+                try check(controller.actionButtonModelReady && controller.preparedExecutionContext == .backgroundCapable,
+                          "An Action reservation retains Ready through ordinary Keep-Off release and scene exit")
+                await controller.startReservedActionButtonRecording(requestID: owner)
+                try check(controller.phase == .recording && recorder.recording && recorder.armCalls == 1,
+                          "The reserved Phonon runtime starts once after the background Activity boundary")
+                recorder.feed(8_000)
+                await controller.stopActionButtonRecording()
+                try check(controller.phase == .idle && controller.transcript == "Captured words." && controller.preparedModel == nil,
+                          "Completed Action releases its runtime under the Off policy")
+                await engine.engine.waitUntilUnloaded()
+            } catch {
+                await controller.cancelActionButtonRecording(requestID: owner)
+                await controller.cancelRecording()
+                throw error
+            }
+        }
+    }
+
+    @MainActor static func checkActionReservationCleanup() async throws {
+        for failPermission in [false, true] {
+            let engine = ContextualLifecycleEngine()
+            await engine.engine.releasePreparation()
+            let defaults = UserDefaults(suiteName: "ActionReservationCleanup-\(UUID())")!
+            defaults.set(false, forKey: "keepModelLoaded")
+            let controller = await fixture(engine, preferences: defaults)
+            let recorder = AudioRecorder.latest!
+            let owner = UUID()
+            do {
+                try check(controller.reserveActionButtonRecording(requestID: owner, model: .parakeetPhonon), "Cleanup fixture owns an Action reservation")
+                let ready = await controller.prepareReservedActionButtonRecording(requestID: owner)
+                try check(ready, "Cleanup fixture has a prepared CPU runtime")
+                if failPermission {
+                    recorder.microphonePermissionGranted = false
+                    await controller.startReservedActionButtonRecording(requestID: owner)
+                    try check(controller.errorMessage?.contains("allow microphone access") == true && recorder.armCalls == 0,
+                              "Failed activation reports missing microphone permission without capture")
+                } else {
+                    await controller.cancelActionButtonRecording(requestID: UUID())
+                    try check(controller.actionButtonModelReady, "Unrelated cancellation preserves the reserved runtime")
+                    await controller.cancelActionButtonRecording(requestID: owner)
+                }
+                try check(controller.phase == .idle && controller.preparedModel == nil && !controller.actionButtonRecording,
+                          "Matching cancellation or failed startup releases the Off-policy reservation")
+                await engine.engine.waitUntilUnloaded()
+            } catch {
+                await controller.cancelActionButtonRecording(requestID: owner)
+                await controller.cancelRecording()
+                throw error
+            }
+        }
+    }
+
+    @MainActor static func checkActionStartupErrors() async throws {
+        let engine = ContextualLifecycleEngine()
+        await engine.engine.releasePreparation()
+        let controller = await fixture(engine)
+        let recorder = AudioRecorder.latest!
+        let owner = UUID()
+        let stale = "Open LocalScribe and wait until Phonon-2 is Ready before using the Action Button."
+        var download: Task<Void, Never>?
+        do {
+            controller.errorMessage = stale
+            try check(controller.reserveActionButtonRecording(requestID: owner, model: .parakeetPhonon), "Startup accepts a fresh Action reservation")
+            try check(controller.errorMessage == nil, "An accepted Action reservation clears the prior startup error")
+            controller.errorMessage = "Preserve the current owner's error."
+            try check(!controller.reserveActionButtonRecording(requestID: UUID(), model: .parakeetPhonon)
+                      && controller.errorMessage == "Preserve the current owner's error.",
+                      "Rejected reservations do not clear another owner's error")
+            let ready = await controller.prepareReservedActionButtonRecording(requestID: owner)
+            try check(ready, "The download conflict starts with an actually Ready CPU runtime")
+            await controller.cancelActionButtonRecording(requestID: owner)
+            await engine.engine.holdNextDownload()
+            let runningDownload = Task { await controller.download(.parakeetPhononG4) }
+            download = runningDownload
+            await engine.engine.waitUntilDownloadHeld()
+            try check(controller.reserveActionButtonRecording(requestID: owner, model: .parakeetPhonon),
+                      "A download already in progress admits a reservation that can report its startup conflict")
+            controller.errorMessage = stale
+            await controller.startReservedActionButtonRecording(requestID: owner)
+            let error = controller.errorMessage
+            await engine.engine.releaseHeldDownload()
+            await runningDownload.value
+            try check(controller.phase == .idle && recorder.armCalls == 0 && !controller.actionButtonRecording,
+                      "An in-progress download rejects Action startup before microphone activation")
+            try check(error?.localizedCaseInsensitiveContains("download") == true && error != stale,
+                      "Download rejection replaces the stale Ready instruction with its actual conflict")
+            controller.keepModelLoaded = false
+            await engine.engine.waitUntilUnloaded()
+        } catch {
+            await engine.engine.releaseHeldDownload()
+            await download?.value
+            await controller.cancelActionButtonRecording(requestID: owner)
+            await controller.cancelRecording()
+            controller.keepModelLoaded = false
+            throw error
+        }
+    }
+
+    @MainActor static func waitForBackgroundStartup(_ controller: AppController) async {
+        guard controller.backgroundDictationStarting else { return }
+        var subscription: AnyCancellable?
+        await withCheckedContinuation { continuation in
+            subscription = controller.$backgroundDictationStarting.filter { !$0 }.first().sink { _ in continuation.resume() }
+        }
+        subscription?.cancel()
+    }
+
+    @MainActor static func waitForMicrophoneEnd(_ controller: AppController) async {
+        var subscription: AnyCancellable?
+        await withCheckedContinuation { continuation in
+            subscription = controller.$keyboardSessionExpiresAt.filter { $0 == nil }.first().sink { _ in continuation.resume() }
+        }
+        subscription?.cancel()
+    }
+
+    @MainActor static func checkDefaultBackgroundDictation() async throws {
+        let engine = ContextualLifecycleEngine()
+        await engine.engine.releasePreparation()
+        let defaults = UserDefaults(suiteName: "DefaultBackgroundDictation-\(UUID())")!
+        let controller = await fixture(engine, preferences: defaults, automatic: true)
+        let recorder = AudioRecorder.latest!
+        defer { controller.backgroundDictationEnabled = false }
+        await waitForBackgroundStartup(controller)
+        try check(controller.backgroundDictationEnabled && controller.keepModelLoaded && controller.keyboardIdleMinutes == 0,
+                  "Fresh settings default to background dictation, retained selected model and Never")
+        try check(controller.keyboardSessionActive && recorder.armed && !recorder.recording && recorder.lastMixWithOtherAudio
+                  && controller.actionButtonModelReady && controller.backgroundDictationError == nil,
+                  "Foreground catalog discovery arms a genuine mixable idle session and prepares the selected CPU runtime")
+        let requests = await engine.preparationRequests()
+        try check(requests.count == 1 && requests[0].0 == .parakeetPhonon && requests[0].1 == .backgroundCapable,
+                  "Automatic startup prepares only the selected background runtime once")
+        try check(controller.keyboardSessionExpiresAt == .distantFuture,
+                  "Never uses the existing indefinite shared-protocol lease")
+        controller.keyboardIdleMinutes = 5
+        try check(controller.keyboardSessionExpiresAt != .distantFuture && controller.keyboardSessionActive,
+                  "Changing the idle policy reconfigures an already armed lease immediately")
+        controller.keyboardIdleMinutes = 0
+        try check(controller.keyboardSessionExpiresAt == .distantFuture, "Returning to Never removes the timed lease")
+        await controller.handleKeyboardIdleDeadline(expected: .distantFuture)
+        controller.setForeground(false)
+        controller.setForeground(true)
+        await controller.refreshInstalledModels()
+        try check(controller.keyboardSessionActive && recorder.activations == 1,
+                  "Never ignores idle expiry and reopening reuses the already armed session")
+        controller.backgroundDictationEnabled = false
+        try check(!controller.keyboardSessionActive && !recorder.armed && defaults.object(forKey: "backgroundDictationEnabled") as? Bool == false,
+                  "Pause immediately closes idle microphone access and persists Off")
+        controller.setForeground(false); controller.setForeground(true)
+        await controller.refreshInstalledModels()
+        try check(recorder.activations == 1 && !controller.backgroundDictationStarting,
+                  "Paused background dictation cannot silently reactivate on reopening or discovery")
+        let reopened = await fixture(engine, preferences: defaults, automatic: true)
+        defer { reopened.backgroundDictationEnabled = false }
+        let reopenedRecorder = AudioRecorder.latest!
+        try check(!reopened.backgroundDictationEnabled && !reopened.keyboardSessionActive && reopenedRecorder.armCalls == 0,
+                  "A new controller preserves the saved paused preference")
+        defaults.set(15, forKey: "keyboardIdleMinutes")
+        let timed = await fixture(engine, preferences: defaults, automatic: true)
+        defer { timed.backgroundDictationEnabled = false }
+        try check(timed.keyboardIdleMinutes == 15, "An explicitly saved timed idle choice survives the new Never default")
+        await timed.retryBackgroundDictation()
+        let timedDeadline = timed.keyboardSessionExpiresAt!
+        await timed.handleKeyboardIdleDeadline(expected: timedDeadline)
+        try check(!timed.keyboardSessionActive && timed.backgroundDictationEnabled,
+                  "An optional timed deadline ends the session without changing the enabled preference")
+        await timed.refreshInstalledModels()
+        try check(!timed.keyboardSessionActive, "A timed expiry does not start a discovery retry loop")
+        timed.backgroundDictationEnabled = false
+        let coldEngine = ContextualLifecycleEngine()
+        await coldEngine.engine.releasePreparation()
+        let coldDefaults = UserDefaults(suiteName: "ColdBackgroundDictation-\(UUID())")!
+        coldDefaults.set(false, forKey: "backgroundDictationEnabled")
+        coldDefaults.set(false, forKey: "keepModelLoaded")
+        let cold = await fixture(coldEngine, preferences: coldDefaults, automatic: true)
+        defer { cold.backgroundDictationEnabled = false }
+        let coldRecorder = AudioRecorder.latest!
+        cold.setForeground(false); cold.backgroundDictationEnabled = true
+        await cold.refreshInstalledModels()
+        await cold.retryBackgroundDictation()
+        try check(coldRecorder.armCalls == 0 && !cold.keyboardSessionActive,
+                  "Enabled discovery or retry in a cold background cannot request permission or activate audio")
+        cold.setForeground(true)
+        await waitForBackgroundStartup(cold)
+        try check(cold.keyboardSessionActive && coldRecorder.activations == 1, "A later real foreground opening activates the enabled session once")
+        cold.backgroundDictationEnabled = false
+        coldRecorder.microphonePermissionGranted = false
+        cold.errorMessage = "Unrelated saved-data error."
+        await cold.retryBackgroundDictation()
+        try check(!cold.keyboardSessionActive && !coldRecorder.armed && cold.backgroundDictationError?.contains("permission") == true
+                  && cold.errorMessage == "Unrelated saved-data error.",
+                  "Denied automatic permission reports an inline microphone error without replacing an unrelated global error")
+        await cold.refreshInstalledModels()
+        try check(coldRecorder.armCalls == 2, "Denied permission cannot cause an automatic discovery retry loop")
+        cold.backgroundDictationEnabled = false
+    }
+
+    @MainActor static func checkPendingBackgroundDictation() async throws {
+        for pauseDuringPermission in [true, false] {
+            let engine = ContextualLifecycleEngine()
+            let defaults = UserDefaults(suiteName: "PendingBackgroundDictation-\(UUID())")!
+            defaults.set(false, forKey: "backgroundDictationEnabled")
+            defaults.set(false, forKey: "keepModelLoaded")
+            let controller = await fixture(engine, preferences: defaults, automatic: true)
+            let recorder = AudioRecorder.latest!
+            AudioRecorder.holdNextArm = pauseDuringPermission
+            let startup = Task { await controller.retryBackgroundDictation() }
+            if pauseDuringPermission { await recorder.waitUntilArmHeld() }
+            else { await engine.engine.waitUntilPreparationHeld() }
+            do {
+                if !pauseDuringPermission {
+                    try check(controller.keyboardSessionActive && recorder.armed && !controller.actionButtonModelReady,
+                              "The actual foreground microphone owns a lease while CPU preparation is pending")
+                }
+                controller.backgroundDictationEnabled = false
+                recorder.releaseArm()
+                await engine.engine.releasePreparation()
+                await startup.value
+                try check(!controller.keyboardSessionActive && !recorder.armed && !controller.backgroundDictationStarting && controller.phase == .idle,
+                          "Pause fences late permission and CPU preparation completions without reopening microphone access")
+                try check(controller.preparedModel == nil && !controller.actionButtonModelReady,
+                          "Paused pending startup cannot publish a stale Ready runtime under Keep-Off")
+            } catch {
+                controller.backgroundDictationEnabled = false
+                recorder.releaseArm(); await engine.engine.releasePreparation(); await startup.value
+                throw error
+            }
+        }
+        let engine = ContextualLifecycleEngine()
+        let defaults = UserDefaults(suiteName: "BackgroundCPUPreparation-\(UUID())")!
+        defaults.set(false, forKey: "backgroundDictationEnabled")
+        defaults.set(false, forKey: "keepModelLoaded")
+        let controller = await fixture(engine, preferences: defaults, automatic: true)
+        let recorder = AudioRecorder.latest!
+        let startup = Task { await controller.retryBackgroundDictation() }
+        await engine.engine.waitUntilPreparationHeld()
+        do {
+            controller.setForeground(false)
+            try check(controller.keyboardSessionActive && controller.phase == .preparing && !controller.actionButtonModelReady,
+                      "An already activated foreground session protects pending CPU preparation on background entry")
+            await engine.engine.releasePreparation(); await startup.value
+            try check(controller.keyboardSessionActive && controller.actionButtonModelReady && recorder.activations == 1
+                      && controller.preparedExecutionContext == .backgroundCapable,
+                      "Background CPU preparation finishes Ready under the real shared lease even with Keep-Off")
+        } catch {
+            controller.backgroundDictationEnabled = false; await engine.engine.releasePreparation(); await startup.value; throw error
+        }
+        controller.backgroundDictationEnabled = false
+        let cancelEngine = ContextualLifecycleEngine()
+        let cancelDefaults = UserDefaults(suiteName: "CancelAutomaticPreparation-\(UUID())")!
+        cancelDefaults.set(false, forKey: "backgroundDictationEnabled")
+        cancelDefaults.set(false, forKey: "keepModelLoaded")
+        let cancellation = await fixture(cancelEngine, preferences: cancelDefaults, automatic: true)
+        defer { cancellation.backgroundDictationEnabled = false }
+        let cancelRecorder = AudioRecorder.latest!
+        let pending = Task { await cancellation.retryBackgroundDictation() }
+        await cancelEngine.engine.waitUntilPreparationHeld()
+        await cancellation.cancelPreparation()
+        await cancelEngine.engine.releasePreparation(); await pending.value
+        try check(cancellation.phase == .idle && !cancelRecorder.armed && !cancellation.keyboardSessionActive
+                  && cancellation.keyboardSessionExpiresAt == nil && !cancellation.backgroundDictationStarting && cancellation.preparedModel == nil,
+                  "Cancel preparation retires automatic startup, microphone and shared lease before any late Ready completion")
+        await cancellation.refreshInstalledModels()
+        try check(!cancellation.keyboardSessionActive, "Cancel preparation remains paused until an explicit retry or later app opening")
+        cancellation.backgroundDictationEnabled = false
+        let pressureEngine = ContextualLifecycleEngine()
+        let pressureDefaults = UserDefaults(suiteName: "PressureDuringAutomaticPreparation-\(UUID())")!
+        pressureDefaults.set(false, forKey: "backgroundDictationEnabled")
+        pressureDefaults.set(false, forKey: "keepModelLoaded")
+        let pressure = await fixture(pressureEngine, preferences: pressureDefaults, automatic: true)
+        defer { pressure.backgroundDictationEnabled = false }
+        let pressureRecorder = AudioRecorder.latest!
+        let pressureStartup = Task { await pressure.retryBackgroundDictation() }
+        await pressureEngine.engine.waitUntilPreparationHeld()
+        NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        await waitForMicrophoneEnd(pressure)
+        await pressureEngine.engine.releasePreparation(); await pressureStartup.value
+        try check(pressure.phase == .idle && !pressure.keyboardSessionActive && !pressureRecorder.armed && pressure.preparedModel == nil,
+                  "A forced memory warning retires even the early automatic CPU-preparation lease")
+        pressure.backgroundDictationEnabled = false
+    }
+
+    @MainActor static func checkBackgroundReconfiguration() async throws {
+        let engine = ContextualLifecycleEngine()
+        await engine.engine.releasePreparation()
+        let controller = await fixture(engine, automatic: true)
+        let recorder = AudioRecorder.latest!
+        defer { controller.backgroundDictationEnabled = false }
+        await waitForBackgroundStartup(controller)
+        controller.selectedModel = .parakeetPhononG4
+        await waitForBackgroundStartup(controller)
+        let selectedRequests = await engine.preparationRequests()
+        try check(controller.selectedModel == .parakeetPhononG4 && controller.actionButtonModelReady && controller.keyboardSessionActive
+                  && selectedRequests.last?.0 == .parakeetPhononG4 && recorder.activations == 2,
+                  "Explicit idle selection reconfigures the microphone lease and prepares the new selected runtime")
+        await engine.engine.holdNextPreparation()
+        controller.selectedModel = .parakeetPhonon
+        await engine.engine.waitUntilPreparationHeld()
+        controller.selectedModel = .parakeetRealtimeEOU
+        await engine.engine.releasePreparation()
+        await waitForBackgroundStartup(controller)
+        try check(controller.selectedModel == .parakeetRealtimeEOU && controller.preparedModel == .parakeetRealtimeEOU
+                  && controller.keyboardSessionActive && !controller.backgroundDictationStarting,
+                  "A selection change cancels pending idle preparation and only the replacement runtime becomes Ready")
+        controller.selectedModel = .parakeetPhononG4
+        await waitForBackgroundStartup(controller)
+        let owner = UUID()
+        try check(controller.reserveActionButtonRecording(requestID: owner, model: controller.selectedModel), "Model selection fixture reserves its ready runtime")
+        controller.selectedModel = .parakeetPhonon
+        try check(controller.selectedModel == .parakeetPhonon && controller.recordingModel == .parakeetPhononG4
+                  && controller.recordingExecutionContext == .backgroundCapable && controller.preparedModel == .parakeetPhononG4
+                  && controller.keyboardSessionActive,
+                  "A new selection persists while the existing Action keeps its exact reserved runtime and microphone")
+        await controller.cancelActionButtonRecording(requestID: owner)
+        controller.selectedModel = .parakeetPhononG4
+        await waitForBackgroundStartup(controller)
+        for cancel in [false, true] {
+            await engine.engine.holdNextDownload()
+            let download = Task { await controller.download(.parakeetRealtimeEOU) }
+            await engine.engine.waitUntilDownloadHeld()
+            do {
+                try check(!controller.keyboardSessionActive && !recorder.armed, "An explicit download pauses only the idle microphone lease")
+                if cancel { controller.cancelDownload() }
+                await engine.engine.releaseHeldDownload(); await download.value
+                await waitForBackgroundStartup(controller)
+                try check(controller.keyboardSessionActive && controller.actionButtonModelReady && controller.selectedModel == .parakeetPhononG4,
+                          "Download completion or cancellation resumes only the selected automatic session")
+            } catch {
+                controller.cancelDownload(); await engine.engine.releaseHeldDownload(); await download.value; throw error
+            }
+        }
+        recorder.onInterruption?()
+        try check(!controller.keyboardSessionActive && !recorder.armed && controller.backgroundDictationError?.contains("interrupted") == true,
+                  "A real interruption revokes the microphone lease and exposes a session-specific retry error")
+        await controller.refreshInstalledModels()
+        try check(!controller.keyboardSessionActive, "Interruption does not trigger a catalog retry loop")
+        controller.setForeground(false); controller.setForeground(true)
+        await waitForBackgroundStartup(controller)
+        try check(controller.keyboardSessionActive && controller.backgroundDictationError == nil, "A later foreground opening recovers once after interruption")
+        recorder.microphonePermissionGranted = false
+        controller.setForeground(false); controller.setForeground(true)
+        await waitForBackgroundStartup(controller)
+        try check(!controller.keyboardSessionActive && !recorder.armed && controller.backgroundDictationError != nil,
+                  "Foreground reopening observes lost permission and revokes the existing idle lease")
+        recorder.microphonePermissionGranted = true
+        await controller.retryBackgroundDictation()
+        NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        await waitForMicrophoneEnd(controller)
+        try check(!recorder.armed && controller.backgroundDictationEnabled && controller.backgroundDictationError?.contains("memory") == true,
+                  "Forced memory pressure overrides Never without silently changing the enabled preference")
+        await controller.refreshInstalledModels()
+        try check(!controller.keyboardSessionActive, "Forced memory release cannot cause an automatic microphone retry loop")
+        let missingEngine = ContextualLifecycleEngine()
+        await missingEngine.engine.setInstalled([])
+        await missingEngine.engine.releasePreparation()
+        let missing = await fixture(missingEngine, automatic: true)
+        defer { missing.backgroundDictationEnabled = false }
+        let missingRecorder = AudioRecorder.latest!
+        try check(!missing.keyboardSessionActive && missingRecorder.armCalls == 0,
+                  "Default background startup waits for its selected model to be installed")
+        await missingEngine.engine.holdNextDownload()
+        let install = Task { await missing.download(.parakeetPhonon) }
+        await missingEngine.engine.waitUntilDownloadHeld()
+        await missingEngine.engine.releaseHeldDownload(); await install.value
+        await waitForBackgroundStartup(missing)
+        try check(missing.keyboardSessionActive && missing.actionButtonModelReady && missingRecorder.activations == 1,
+                  "Completing the selected model download automatically opens the foreground session without settings navigation")
+        missing.backgroundDictationEnabled = false
+    }
     @MainActor static func main() async throws {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--background-dictation") {
+            try await checkDefaultBackgroundDictation()
+            try await checkPendingBackgroundDictation()
+            try await checkBackgroundReconfiguration()
+            print("PASS: \(checks) automatic background dictation lifecycle checks")
+            return
+        } else if arguments.contains("--action-startup-retention") {
+            try await checkActionReservationRetention()
+        } else if arguments.contains("--action-startup-cleanup") {
+            try await checkActionReservationCleanup()
+        } else if arguments.contains("--action-startup-errors") {
+            try await checkActionStartupErrors()
+        } else {
+            try await checkActionReservationRetention()
+            try await checkActionReservationCleanup()
+            try await checkActionStartupErrors()
+        }
+        if arguments.contains(where: { $0.hasPrefix("--action-startup-") }) {
+            print("PASS: \(checks) focused Action startup lifecycle checks")
+            return
+        }
+        try await checkDefaultBackgroundDictation()
+        try await checkPendingBackgroundDictation()
+        try await checkBackgroundReconfiguration()
         try await checkExplicitMicrophoneActionCycles()
         let engine = LifecycleEngine()
         let controller = await fixture(engine)

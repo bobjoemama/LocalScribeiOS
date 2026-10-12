@@ -64,7 +64,10 @@ final class AppContext: ObservableObject {
         var startupError: String?
         do { engine = try LocalModelEngine() }
         catch { engine = FailedModelEngine(message: error.localizedDescription); startupError = error.localizedDescription }
-        #if DEBUG
+        #if DEBUG && targetEnvironment(simulator)
+        let developerRun = arguments.contains("--verify-dictation") || arguments.contains("--benchmark-models")
+            || DesignPreviewConfiguration.current != nil
+        #elseif DEBUG
         let developerRun = arguments.contains("--verify-dictation") || arguments.contains("--benchmark-models")
         #else
         let developerRun = false

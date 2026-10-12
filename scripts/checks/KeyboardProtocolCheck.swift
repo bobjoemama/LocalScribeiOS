@@ -30,6 +30,40 @@ struct KeyboardProtocolCheck {
         let stop = KeyboardCommand(sessionID: session, utteranceID: utterance, action: .stop, createdAt: now)
         try check(start.isValid(for: ready, now: now), "Fresh start command accepted")
         try check(!stop.isValid(for: ready, now: now), "Stop rejects an idle session")
+        // Never removes the idle deadline, not the containing-app heartbeat.
+        let neverSession = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
+        let neverUtterance = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
+        let neverReady = KeyboardSessionStatus(sessionID: neverSession, expiresAt: .distantFuture,
+                                              heartbeatAt: now, phase: .ready)
+        let neverStart = KeyboardCommand(sessionID: neverSession, utteranceID: neverUtterance,
+                                         action: .start, createdAt: now)
+        try check(neverReady.canRecord(at: now) && neverStart.isValid(for: neverReady, now: now),
+                  "Never lease with a fresh heartbeat grants recording and its owned Start command")
+        try check(neverReady.canRecord(at: now.addingTimeInterval(3)),
+                  "Never lease preserves the existing three-second heartbeat boundary")
+        let staleTime = now.addingTimeInterval(3.01)
+        let freshCommandForStaleApp = KeyboardCommand(sessionID: neverSession, utteranceID: neverUtterance,
+                                                       action: .start, createdAt: staleTime)
+        try check(!neverReady.isLive(at: staleTime) && !neverReady.canRecord(at: staleTime),
+                  "Unchanged Never snapshot cannot grant capture after the app heartbeat stops")
+        try check(!freshCommandForStaleApp.isValid(for: neverReady, now: staleTime),
+                  "Fresh keyboard commands cannot revive a Never lease with a stale app heartbeat")
+        let laterTime = now.addingTimeInterval(86_400)
+        let laterReady = KeyboardSessionStatus(sessionID: neverSession, expiresAt: .distantFuture,
+                                              heartbeatAt: laterTime, phase: .ready)
+        let laterStart = KeyboardCommand(sessionID: neverSession, utteranceID: neverUtterance,
+                                         action: .start, createdAt: laterTime)
+        try check(laterReady.canRecord(at: laterTime) && laterStart.isValid(for: laterReady, now: laterTime),
+                  "A newly published heartbeat permits the same Never lease at a later time")
+        let neverResult = KeyboardSessionStatus(sessionID: neverSession, expiresAt: .distantFuture,
+                                               deliveryExpiresAt: now.addingTimeInterval(30),
+                                               heartbeatAt: now.addingTimeInterval(-20), phase: .ready,
+                                               utteranceID: neverUtterance, transcript: "Owned Never-session result")
+        try check(neverResult.hasDeliverableResult(at: now.addingTimeInterval(29))
+                  && !neverResult.canRecord(at: now),
+                  "Suspended Never session still delivers its bounded result without granting recording")
+        try check(!neverResult.hasDeliverableResult(at: now.addingTimeInterval(30)),
+                  "Never microphone expiry cannot extend a completed result beyond its delivery deadline")
         try check(start.id != stop.id, "Commands use independent IDs")
         try check(!start.isValid(for: expired, now: now), "Expired session rejects command")
         let delivery = KeyboardSessionStatus(sessionID: session, expiresAt: now, deliveryExpiresAt: now.addingTimeInterval(30), heartbeatAt: now, phase: .ready, utteranceID: utterance, transcript: "Final words")

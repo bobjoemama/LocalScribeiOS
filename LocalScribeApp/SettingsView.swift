@@ -8,25 +8,31 @@ struct SettingsView: View {
     let openModels: () -> Void
     @State private var requestedRetention: Int?
     @State private var retentionError: String?
-    @State private var updatingKeyboardSession = false
-    @State private var keyboardSessionError: String?
     @AppStorage("appearance") private var appearance = "system"
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
+                    Toggle("Background dictation", isOn: $controller.backgroundDictationEnabled).tint(.green)
+                    BackgroundDictationControl(controller: controller, showsTitle: false, showsPauseControl: false)
+                    Picker("Auto-stop when idle", selection: $controller.keyboardIdleMinutes) {
+                        Text("Never").tag(0)
+                        ForEach([1, 5, 15, 30], id: \.self) { value in
+                            Text(value == 1 ? "1 minute" : "\(value) minutes").tag(value)
+                        }
+                    }.disabled(controller.phase != .idle || controller.backgroundDictationStarting)
                     Button("Choose model", action: openModels)
                     Toggle("Keep model loaded", isOn: $controller.keepModelLoaded).tint(.green)
-                        .disabled(controller.phase != .idle || controller.recordingModel != nil || controller.keyboardSessionActive)
+                        .disabled(controller.phase != .idle || controller.recordingModel != nil)
                     Toggle("Use built-in microphone", isOn: $controller.preferBuiltInMicrophone).tint(.green)
                         .disabled(controller.phase != .idle || controller.keyboardSessionActive)
                     Toggle("Haptic feedback", isOn: $controller.hapticFeedback).tint(.green)
-                        .disabled(controller.phase != .idle || controller.keyboardSessionActive)
+                        .disabled(controller.phase != .idle)
                 } header: {
                     Text("Dictation").foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("Prepares your selected model for CPU-only Dictate and Action Button use and retains it when you switch apps. Wait for Ready before using the shortcut. This does not keep the microphone on or keep the app running. Turning it off releases an idle model; iOS may reclaim memory. CPU recognition speed depends on the model.").foregroundStyle(AppTheme.inkSecondary)
+                    Text("Keep model loaded retains the selected model separately from background dictation. Turning it off releases the model when no microphone session needs it. iOS may interrupt microphone access or reclaim memory; return to Dictate to check readiness.").foregroundStyle(AppTheme.inkSecondary)
                 }
                 .listRowBackground(AppTheme.surface)
 
@@ -52,41 +58,11 @@ struct SettingsView: View {
                 .listRowBackground(AppTheme.surface)
 
                 Section {
-                    if let expiry = controller.keyboardSessionExpiresAt {
-                        LabeledContent("Microphone session") {
-                            if controller.phase == .idle {
-                                HStack(spacing: 4) {
-                                    Text("Ends in").foregroundStyle(AppTheme.inkSecondary)
-                                    Text(expiry, style: .timer).monospacedDigit().foregroundStyle(AppTheme.inkSecondary)
-                                }
-                            } else { Text("Recording").foregroundStyle(AppTheme.inkSecondary) }
-                        }
-                    }
-                    Picker("Idle timeout", selection: $controller.keyboardIdleMinutes) {
-                        ForEach([1, 5, 15, 30], id: \.self) { value in
-                            Text(value == 1 ? "1 minute" : "\(value) minutes").tag(value)
-                        }
-                    }.disabled(controller.keyboardSessionActive)
-                    Button(updatingKeyboardSession ? "Updating session…" : controller.keyboardSessionActive ? "End session" : "Enable microphone") {
-                        guard !updatingKeyboardSession else { return }
-                        let endingSession = controller.keyboardSessionActive
-                        updatingKeyboardSession = true
-                        keyboardSessionError = nil
-                        Task {
-                            defer { updatingKeyboardSession = false }
-                            if endingSession { await controller.finishKeyboardSession() }
-                            else { await controller.enableKeyboardSession() }
-                            keyboardSessionError = controller.errorMessage
-                        }
-                    }.disabled(updatingKeyboardSession || controller.isBusy || controller.downloadingModel != nil || (controller.phase == .recording && !controller.keyboardSessionActive))
-                    if let error = keyboardSessionError {
-                        Text(error).font(.footnote).foregroundStyle(AppTheme.error)
-                    }
                     NavigationLink("Setup instructions") { KeyboardSetupView() }
                 } header: {
                     Text("Keyboard").foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("The microphone stays on until you end the session or reach the idle timeout. Audio between dictations is discarded. Keyboard recordings use the model selected on Dictate. Accelerated keyboard models wait until LocalScribe is open.").foregroundStyle(AppTheme.inkSecondary)
+                    Text("Keyboard uses the same background dictation and selected model as Dictate. Check that Dictate shows Ready · Mic on before switching apps.").foregroundStyle(AppTheme.inkSecondary)
                 }
                 .listRowBackground(AppTheme.surface)
 
@@ -97,7 +73,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Action Button").foregroundStyle(AppTheme.inkSecondary)
                 } footer: {
-                    Text("Dictate and Action Button use the same selected model. Ready describes model preparation only. In Setup, you can enable a microphone session before switching apps. Live Activities are required. Without a session, iOS may decline background microphone activation.").foregroundStyle(AppTheme.inkSecondary)
+                    Text("Action Button uses the background dictation shown on Dictate and the same selected model. Live Activities are required. Shortcut import and assignment are a one-time setup.").foregroundStyle(AppTheme.inkSecondary)
                 }
                 .listRowBackground(AppTheme.surface)
 
@@ -150,78 +126,17 @@ private struct ActionButtonSetupView: View {
     @ObservedObject var controller: AppController
     @StateObject private var shortcutInstaller = ActionButtonShortcutInstaller()
     @ObservedObject private var actionBridge = AppContext.shared.actionBridge
-    @State private var updatingMicrophoneSession = false
-    @State private var cancellingPreparation = false
-    @State private var microphoneSessionError: String?
     var body: some View {
         Form {
             Section {
                 LabeledContent("Model", value: controller.selectedModel.name)
                 LabeledContent("Model state", value: SpeechModelPresentation.actionButtonState(controller))
             } footer: {
-                Text("Open LocalScribe, turn on Keep model loaded in Settings, and wait for Ready before using the shortcut. Action Button uses the same model files on CPU. Change the model on Dictate or in Settings → Choose model.").foregroundStyle(AppTheme.inkSecondary)
+                Text("Check that Dictate shows Ready · Mic on before switching apps. Action Button uses the same selected model on CPU. Change the model on Dictate or in Settings → Choose model.").foregroundStyle(AppTheme.inkSecondary)
             }
             .listRowBackground(AppTheme.surface)
             Section {
-                LabeledContent("Status") {
-                    if controller.phase == .preparing {
-                        Text("Preparing…").foregroundStyle(AppTheme.inkSecondary)
-                    } else if let expiry = controller.keyboardSessionExpiresAt, controller.keyboardSessionActive {
-                        if controller.phase == .idle {
-                            HStack(spacing: 4) {
-                                Text("Mic on · Ends in")
-                                Text(expiry, style: .timer).monospacedDigit()
-                            }
-                            .foregroundStyle(AppTheme.inkSecondary)
-                            .accessibilityElement(children: .combine)
-                        } else {
-                            Text(controller.phase == .recording ? "Mic on · Recording" : "Mic on · Transcribing")
-                                .foregroundStyle(AppTheme.inkSecondary)
-                        }
-                    } else {
-                        Text("Not enabled").foregroundStyle(AppTheme.inkSecondary)
-                    }
-                }
-                Picker("Idle timeout", selection: $controller.keyboardIdleMinutes) {
-                    ForEach([1, 5, 15, 30], id: \.self) { value in
-                        Text(value == 1 ? "1 minute" : "\(value) minutes").tag(value)
-                    }
-                }
-                .disabled(controller.keyboardSessionActive || controller.phase != .idle || updatingMicrophoneSession)
-                if controller.phase == .preparing {
-                    Button("Cancel preparation", role: .cancel) {
-                        guard !cancellingPreparation else { return }
-                        cancellingPreparation = true
-                        microphoneSessionError = nil
-                        Task {
-                            defer { cancellingPreparation = false }
-                            await controller.cancelPreparation()
-                        }
-                    }
-                    .disabled(cancellingPreparation)
-                } else {
-                    Button(updatingMicrophoneSession ? "Updating session…" : controller.keyboardSessionActive ? "End session" : "Enable microphone") {
-                        guard !updatingMicrophoneSession else { return }
-                        let endingSession = controller.keyboardSessionActive
-                        updatingMicrophoneSession = true
-                        microphoneSessionError = nil
-                        Task {
-                            defer { updatingMicrophoneSession = false }
-                            if endingSession { await controller.finishKeyboardSession() }
-                            else { await controller.enableKeyboardSession() }
-                            microphoneSessionError = controller.errorMessage
-                        }
-                    }
-                    .disabled(updatingMicrophoneSession || controller.downloadingModel != nil ||
-                              (controller.phase != .idle && !(controller.phase == .recording && controller.keyboardSessionActive)))
-                }
-                if let error = microphoneSessionError {
-                    Text(error).font(.footnote).foregroundStyle(AppTheme.error)
-                }
-            } header: {
-                Text("Microphone session").foregroundStyle(AppTheme.inkSecondary)
-            } footer: {
-                Text("Enable here, then wait for Ready and Mic on before switching apps. The microphone stays on until End session or the idle timeout; idle audio is discarded. Keyboard and Action Button share this session. Without it, iOS may decline background microphone activation.").foregroundStyle(AppTheme.inkSecondary)
+                BackgroundDictationControl(controller: controller)
             }
             .listRowBackground(AppTheme.surface)
             Section {
@@ -234,6 +149,8 @@ private struct ActionButtonSetupView: View {
                 Text("If the menu offers Save to Files, save the shortcut and open that file in Files to add it.")
                 Text("2. In iPhone Settings → Action Button → Shortcut, choose LocalScribe Action Button.")
                 Text("If you already created a shortcut manually, choose this new shortcut instead.")
+            } header: {
+                Text("One-time setup").foregroundStyle(AppTheme.inkSecondary)
             } footer: {
                 Text("Hold and release to record, then hold and release again to finish and copy. Releasing the button does not stop recording. Allow microphone access in LocalScribe first. Starting leaves your clipboard unchanged. Finishing returns your transcript to Shortcuts, which copies it.").foregroundStyle(AppTheme.inkSecondary)
             }
@@ -290,12 +207,12 @@ private struct KeyboardSetupView: View {
             Section {
                 Text("1. Open iPhone Settings → General → Keyboard → Keyboards → Add New Keyboard, then choose LocalScribe.")
                 Text("2. Allow Full Access for communication with the LocalScribe app. The keyboard does not use a network transcription service.")
-                Text("3. Open LocalScribe and enable the keyboard microphone in Settings. The session ends after the idle timeout you choose in Settings.")
+                Text("3. Open LocalScribe and check that Dictate shows Ready · Mic on. Background dictation is on by default.")
                 Text("4. Switch to another app and select the LocalScribe keyboard to record and insert text.")
             } header: { Text("Setup").foregroundStyle(AppTheme.inkSecondary) }
             .listRowBackground(AppTheme.surface)
             Section {
-                Text("iOS keyboards cannot access the microphone directly. LocalScribe must remain running with an explicitly enabled session. The orange microphone indicator stays on until the session ends.")
+                Text("iOS keyboards cannot access the microphone directly. LocalScribe shares its background microphone with the keyboard and Action Button. Pause or resume it on Dictate; idle audio is discarded.")
             } header: { Text("Microphone access").foregroundStyle(AppTheme.inkSecondary) }
             .listRowBackground(AppTheme.surface)
         }

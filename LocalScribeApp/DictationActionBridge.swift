@@ -98,7 +98,8 @@ final class DictationActionBridge: ObservableObject {
       if needsRecordingCancellation {
         await controller.cancelActionButtonRecording(requestID: sessionID)
       }
-      if controller.phase == .idle, controller.keyboardSessionActive, !liveActivity.hasActiveActivity {
+      if controller.phase == .idle, controller.keyboardSessionActive,
+         !controller.backgroundDictationEnabled, !liveActivity.hasActiveActivity {
         controller.disableKeyboardSession()
       }
       return nil
@@ -130,7 +131,8 @@ final class DictationActionBridge: ObservableObject {
     } catch {
       // An idle, pre-armed microphone cannot outlive a failed recording intent
       // without an Activity. Never revoke a newer recording's ownership here.
-      if controller.phase == .idle, controller.keyboardSessionActive, !liveActivity.hasActiveActivity {
+      if controller.phase == .idle, controller.keyboardSessionActive,
+         !controller.backgroundDictationEnabled, !liveActivity.hasActiveActivity {
         controller.disableKeyboardSession()
       }
       let cancelled = error is CancellationError || Task.isCancelled || diagnostic?.outcome == .cancelled
@@ -207,7 +209,11 @@ final class DictationActionBridge: ObservableObject {
   private func start(_ controller: AppController, sessionID: UUID = UUID()) async throws {
     guard activeSessionID == nil, controller.phase == .idle else { throw DictationActionError.busy }
     guard liveActivity.canStartRecordingActivity else {
-      if controller.keyboardSessionActive { controller.disableKeyboardSession() }
+      // Background dictation owns its authorized idle microphone independently
+      // of this rejected utterance. Recording still requires its own Activity.
+      if controller.keyboardSessionActive, !controller.backgroundDictationEnabled {
+        controller.disableKeyboardSession()
+      }
       throw DictationActionError.failed(
         "Enable Live Activities for LocalScribe in iPhone Settings to record through shortcuts. You can still record directly in LocalScribe."
       )
@@ -262,7 +268,8 @@ final class DictationActionBridge: ObservableObject {
     guard recordingActivityStarted else {
       activeSessionID = nil
       await controller.cancelActionButtonRecording(requestID: sessionID)
-      if controller.keyboardSessionActive, !liveActivity.hasActiveActivity {
+      if controller.keyboardSessionActive, !controller.backgroundDictationEnabled,
+         !liveActivity.hasActiveActivity {
         controller.disableKeyboardSession()
       }
       throw DictationActionError.failed(

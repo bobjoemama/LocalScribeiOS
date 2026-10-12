@@ -42,16 +42,32 @@ final class AppController: ObservableObject {
     @Published private(set) var actionButtonRecording = false
     @Published var selectedModel: SpeechModel {
         didSet {
-            defaults.set(selectedModel.rawValue, forKey: "selectedModel")
             guard oldValue != selectedModel else { return }
+            defaults.set(selectedModel.rawValue, forKey: "selectedModel")
+            guard actionRecordingRequestID == nil, recordingID == nil,
+                  phase == .idle || backgroundDictationStarting else { return }
+            if keyboardSessionActive || backgroundDictationStarting { disableKeyboardSession() }
+            backgroundDictationSuspended = false
             cancelSelectedModelPreparation()
             backgroundModelPreparationStatus = nil
             prewarmRevision += 1
             guard phase == .idle, !keyboardSessionActive, actionRecordingRequestID == nil, recordingModel == nil else { return }
             releaseRuntime()
-            prewarmSelectedModel()
+            resumeForegroundModel()
         }
     }
+    @Published var backgroundDictationEnabled: Bool {
+        didSet {
+            defaults.set(backgroundDictationEnabled, forKey: "backgroundDictationEnabled")
+            guard oldValue != backgroundDictationEnabled else { return }
+            if backgroundDictationEnabled {
+                backgroundDictationSuspended = false
+                requestBackgroundDictation()
+            } else { disableKeyboardSession() }
+        }
+    }
+    @Published private(set) var backgroundDictationStarting = false
+    @Published private(set) var backgroundDictationError: String?
     @Published var keepModelLoaded: Bool {
         didSet {
             defaults.set(keepModelLoaded, forKey: "keepModelLoaded")
@@ -81,7 +97,11 @@ final class AppController: ObservableObject {
     var canEditSnippets: Bool { dictionaryWritable && snippetsWritable }
     var canEditHistory: Bool { historyWritable && phase == .idle }
     @Published var keyboardIdleMinutes: Int {
-        didSet { defaults.set(keyboardIdleMinutes, forKey: "keyboardIdleMinutes") }
+        didSet {
+            guard [0, 1, 5, 15, 30].contains(keyboardIdleMinutes) else { keyboardIdleMinutes = oldValue; return }
+            defaults.set(keyboardIdleMinutes, forKey: "keyboardIdleMinutes")
+            if keyboardSessionActive { renewKeyboardSession() }
+        }
     }
     @Published var preferBuiltInMicrophone: Bool {
         didSet { defaults.set(preferBuiltInMicrophone, forKey: "preferBuiltInMicrophone"); recorder.preferBuiltInMicrophone = preferBuiltInMicrophone }
@@ -137,6 +157,9 @@ final class AppController: ObservableObject {
     private var memoryObserver: NSObjectProtocol?
     private var foreground = true
     private var microphoneRevision = 0
+    private var backgroundDictationTask: Task<Void, Never>?
+    private var backgroundDictationStartupID: UUID?
+    private var backgroundDictationSuspended = false
     private var historyWritable = true
     private var dictionaryWritable = true
     private var snippetsWritable = true
@@ -233,9 +256,10 @@ final class AppController: ObservableObject {
         #endif
         selectedModel = SpeechModel(rawValue: defaults.string(forKey: "selectedModel") ?? "") ?? .parakeetRealtimeEOU
         keepModelLoaded = defaults.object(forKey: "keepModelLoaded") as? Bool ?? true
+        backgroundDictationEnabled = defaults.object(forKey: "backgroundDictationEnabled") as? Bool ?? true
         saveHistory = defaults.object(forKey: "saveHistory") as? Bool ?? true
         let idle = defaults.integer(forKey: "keyboardIdleMinutes")
-        keyboardIdleMinutes = [1, 5, 15, 30].contains(idle) ? idle : 5
+        keyboardIdleMinutes = [0, 1, 5, 15, 30].contains(idle) ? idle : 0
         preferBuiltInMicrophone = defaults.bool(forKey: "preferBuiltInMicrophone")
         hapticFeedback = defaults.bool(forKey: "hapticFeedback")
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("LocalScribe", isDirectory: true)
@@ -267,10 +291,12 @@ final class AppController: ObservableObject {
         recorder.onCaptureFailure = { [weak self] failure in
             guard let self, self.phase == .recording else { return }
             self.captureWarning = failure.localizedDescription
+            self.backgroundDictationError = failure.localizedDescription
             self.queueRecordingStop(endKeyboardSession: true)
         }
         recorder.onInterruption = { [weak self] in
             guard let self else { return }
+            self.backgroundDictationError = "The microphone was interrupted. Reopen LocalScribe or retry background dictation."
             if self.phase == .recording {
                 self.captureWarning = "The microphone was interrupted. Recording stopped and captured speech is being finished."
                 self.queueRecordingStop(endKeyboardSession: true)
@@ -279,9 +305,13 @@ final class AppController: ObservableObject {
         memoryObserver = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                self.backgroundDictationError = "iPhone requested more memory. Reopen LocalScribe or retry background dictation."
                 if self.phase == .recording {
                     self.captureWarning = "iPhone requested more memory. Recording stopped; captured text is preserved."
                     await self.stopRecording(endKeyboardSession: true)
+                }
+                if self.phase == .preparing, self.backgroundDictationStarting || self.keyboardSessionActive {
+                    self.disableKeyboardSession()
                 }
                 if self.phase == .idle {
                     self.disableKeyboardSession()
@@ -315,7 +345,7 @@ final class AppController: ObservableObject {
         var installed: Set<SpeechModel> = []
         for model in SpeechModel.allCases { if await engine.isInstalled(model) { installed.insert(model) } }
         installedModels = installed
-        if prewarm, phase == .idle { prewarmSelectedModel() }
+        if prewarm, phase == .idle { resumeForegroundModel() }
     }
 
     func download(_ model: SpeechModel) async {
@@ -333,7 +363,10 @@ final class AppController: ObservableObject {
     }
 
     private func downloadModels(_ models: [SpeechModel]) async {
-        guard !models.isEmpty, downloadingModel == nil, phase == .idle, !keyboardSessionActive else { return }
+        guard !models.isEmpty, downloadingModel == nil, actionRecordingRequestID == nil, recordingID == nil,
+              phase == .idle || backgroundDictationStarting else { return }
+        if keyboardSessionActive || backgroundDictationStarting { disableKeyboardSession(); releaseRuntime() }
+        backgroundDictationSuspended = false
         errorMessage = nil; failedDownloadModel = nil; downloadCancelled = false
         downloadCompletedCount = 0; downloadTotalCount = models.count
         downloadRevision += 1
@@ -384,7 +417,14 @@ final class AppController: ObservableObject {
         if let actionRequestID, actionRecordingRequestID != actionRequestID { return }
         await recordingCleanupTask?.value
         if let actionRequestID, actionRecordingRequestID != actionRequestID { return }
-        guard !verificationMode, phase == .idle, downloadingModel == nil else { return }
+        guard !verificationMode, phase == .idle, downloadingModel == nil else {
+            if actionRequestID != nil {
+                errorMessage = downloadingModel != nil
+                    ? "LocalScribe is downloading a model. Wait for the download to finish or cancel it before using the Action Button."
+                    : "LocalScribe is busy. Finish the current operation before using the Action Button."
+            }
+            return
+        }
         // A foreground recording takes ownership from an idle Action startup.
         if actionRequestID == nil { actionRecordingRequestID = nil; actionButtonRecording = false }
         guard foreground || keyboardSessionActive || actionButtonRecording else { errorMessage = "Open LocalScribe to start a microphone session."; return }
@@ -501,6 +541,7 @@ final class AppController: ObservableObject {
     func reserveActionButtonRecording(requestID: UUID, model: SpeechModel) -> Bool {
         guard phase == .idle, !verificationMode, actionRecordingRequestID == nil else { return false }
         actionRecordingRequestID = requestID
+        errorMessage = nil
         prewarmRevision += 1
         recordingModel = model
         recordingExecutionContext = effectiveExecutionContext(for: model, requested: .backgroundCapable)
@@ -566,6 +607,7 @@ final class AppController: ObservableObject {
                 actionRecordingRequestID = nil
                 actionButtonRecording = false
                 recordingModel = nil; recordingExecutionContext = nil
+                scheduleModelRelease()
             }
         }
         guard runtimeReady(model, context: context) else {
@@ -808,6 +850,7 @@ final class AppController: ObservableObject {
 
     func cancelPreparation() async {
         guard phase == .preparing else { return }
+        if backgroundDictationStarting { disableKeyboardSession(); return }
         actionRecordingRequestID = nil
         actionButtonRecording = false
         microphoneRevision += 1
@@ -824,33 +867,88 @@ final class AppController: ObservableObject {
         let model = selectedModel
         let context = requestedInAppExecutionContext(for: model)
         guard installedModels.contains(model) else { errorMessage = "Download a model before enabling the keyboard microphone session."; return }
+        let startupID = backgroundDictationStartupID
         prewarmRevision += 1
         recordingModel = model
         recordingExecutionContext = effectiveExecutionContext(for: model, requested: context)
-        phase = .preparing; errorMessage = nil
+        phase = .preparing
+        if startupID == nil { errorMessage = nil }
+        backgroundDictationError = nil
         microphoneRevision += 1
         let revision = microphoneRevision
         defer { if revision == microphoneRevision { phase = .idle; recordingModel = nil; recordingExecutionContext = nil; if !keyboardSessionActive { scheduleModelRelease() } } }
         do {
+            try Task.checkCancellation()
             try await recorder.arm(mixWithOtherAudio: true)
-            guard foreground, revision == microphoneRevision else { throw AppError.sessionEnded }
+            try Task.checkCancellation()
+            guard foreground, revision == microphoneRevision, startupID == nil || selectedModel == model,
+                  actionRecordingRequestID == nil else { throw AppError.sessionEnded }
+            // The actual foreground audio activation owns the shared idle lease
+            // while its selected CPU runtime prepares. Ready still means loaded.
+            if startupID != nil { renewKeyboardSession() }
             try await prepareRuntime(model, context: context)
-            await refreshPerformanceReports()
-            guard foreground, revision == microphoneRevision else { throw AppError.sessionEnded }
-            renewKeyboardSession()
+            try Task.checkCancellation()
+            guard revision == microphoneRevision, startupID == nil || selectedModel == model,
+                  actionRecordingRequestID == nil, foreground || (startupID != nil && keyboardSessionActive && preparedAllowsBackground) else { throw AppError.sessionEnded }
+            if startupID == nil { renewKeyboardSession() }
         } catch {
             guard revision == microphoneRevision else {
-                if recordingID == nil, !keyboardSessionActive { recorder.shutdown() }
+                if recordingID == nil, !keyboardSessionActive,
+                   backgroundDictationStartupID == startupID || !backgroundDictationStarting { recorder.shutdown() }
                 return
             }
-            await refreshPerformanceReports(); recorder.shutdown(); errorMessage = error.localizedDescription
+            sessionTimer?.invalidate(); sessionTimer = nil; keyboardSessionExpiresAt = nil
+            recorder.shutdown(); backgroundDictationSuspended = true
+            if !(error is CancellationError) {
+                if startupID == nil { errorMessage = error.localizedDescription }
+                backgroundDictationError = error.localizedDescription
+            }
         }
     }
 
+    private func resumeForegroundModel() {
+        requestBackgroundDictation()
+        if !backgroundDictationStarting, !backgroundDictationEnabled || !backgroundDictationSuspended { prewarmSelectedModel() }
+    }
+
+    private func requestBackgroundDictation() {
+        guard !verificationMode, backgroundDictationEnabled, !backgroundDictationSuspended,
+              foreground, phase == .idle, !keyboardSessionActive, !backgroundDictationStarting,
+              actionRecordingRequestID == nil, recordingModel == nil, recordingCleanupTask == nil,
+              downloadingModel == nil, installedModels.contains(selectedModel) else { return }
+        let id = UUID()
+        let model = selectedModel
+        backgroundDictationStartupID = id
+        backgroundDictationStarting = true
+        backgroundDictationTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if self.backgroundDictationStartupID == id {
+                    self.backgroundDictationStartupID = nil
+                    self.backgroundDictationTask = nil
+                    self.backgroundDictationStarting = false
+                }
+            }
+            guard !Task.isCancelled, self.backgroundDictationStartupID == id,
+                  self.backgroundDictationEnabled, self.selectedModel == model, self.foreground else { return }
+            await self.enableKeyboardSession()
+        }
+    }
+
+    func retryBackgroundDictation() async {
+        backgroundDictationEnabled = true
+        backgroundDictationSuspended = false
+        backgroundDictationError = nil
+        requestBackgroundDictation()
+        await backgroundDictationTask?.value
+    }
+
     private func renewKeyboardSession() {
-        let deadline = Date().addingTimeInterval(TimeInterval(keyboardIdleMinutes * 60))
-        keyboardSessionExpiresAt = deadline
         sessionTimer?.invalidate()
+        sessionTimer = nil
+        let deadline = keyboardIdleMinutes == 0 ? Date.distantFuture : Date().addingTimeInterval(TimeInterval(keyboardIdleMinutes * 60))
+        keyboardSessionExpiresAt = deadline
+        guard keyboardIdleMinutes > 0 else { return }
         sessionTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(keyboardIdleMinutes * 60), repeats: false) { [weak self] _ in
             Task { @MainActor in
                 await self?.handleKeyboardIdleDeadline(expected: deadline)
@@ -861,12 +959,16 @@ final class AppController: ObservableObject {
     /// Consume the deadline event for this exact lease. Renew active work;
     /// only an idle lease expires. A queued old event cannot undo renewal/End.
     func handleKeyboardIdleDeadline(expected deadline: Date) async {
-        guard keyboardSessionExpiresAt == deadline else { return }
+        guard keyboardIdleMinutes > 0, keyboardSessionExpiresAt == deadline else { return }
         if phase != .idle { renewKeyboardSession() }
         else { await finishKeyboardSession() }
     }
 
     func disableKeyboardSession() {
+        backgroundDictationSuspended = true
+        backgroundDictationStartupID = nil
+        backgroundDictationTask?.cancel(); backgroundDictationTask = nil
+        backgroundDictationStarting = false
         microphoneRevision += 1
         sessionTimer?.invalidate(); sessionTimer = nil
         keyboardSessionExpiresAt = nil
@@ -874,7 +976,10 @@ final class AppController: ObservableObject {
             queueRecordingStop(endKeyboardSession: true)
         } else {
             recorder.shutdown()
-            if phase == .preparing { preparationTask?.cancel(); phase = .idle; recordingModel = nil; recordingExecutionContext = nil }
+            if phase == .preparing {
+                preparationTask?.cancel(); phase = .idle; recordingModel = nil; recordingExecutionContext = nil
+                if preparationTask != nil { releaseRuntime() }
+            }
             if phase == .idle { scheduleModelRelease() }
         }
     }
@@ -886,7 +991,12 @@ final class AppController: ObservableObject {
     }
 
     func setForeground(_ active: Bool) {
+        let wasForeground = foreground
         foreground = active
+        if active, keyboardSessionActive, !recorder.microphonePermissionGranted {
+            disableKeyboardSession()
+            backgroundDictationError = "Microphone access is off. Allow access in Settings, then retry background dictation."
+        }
         if !active && !keyboardSessionActive && (!actionButtonRecording || !captureBackgroundInferenceAllowed) {
             if phase == .recording { queueRecordingStop(endKeyboardSession: false) }
             else if phase == .preparing { queuePreparationCancellation() }
@@ -901,7 +1011,8 @@ final class AppController: ObservableObject {
                 }
             }
         }
-        if active, phase == .idle { pruneRetainedHistory(); prewarmSelectedModel() }
+        if active, !wasForeground { backgroundDictationSuspended = false }
+        if active, phase == .idle { pruneRetainedHistory(); resumeForegroundModel() }
     }
 
     func upsertDictionaryRule(id: UUID?, heard: String, replacement: String, isEnabled: Bool) throws {
@@ -1204,7 +1315,7 @@ final class AppController: ObservableObject {
     }
 
     private func requestedInAppExecutionContext(for model: SpeechModel) -> ModelExecutionContext {
-        if keepModelLoaded { return .backgroundCapable }
+        if keepModelLoaded || backgroundDictationEnabled { return .backgroundCapable }
         return retainedExecutionContext(for: model) ?? .foreground
     }
 
@@ -1365,7 +1476,8 @@ final class AppController: ObservableObject {
     private func scheduleModelRelease() {
         // Retention owns only runtime references. It never arms a microphone or
         // extends background execution. Real memory warnings still force release.
-        guard phase == .idle, !keyboardSessionActive else { return }
+        // A reserved Action owns its runtime while awaiting Activity startup.
+        guard phase == .idle, !keyboardSessionActive, actionRecordingRequestID == nil else { return }
         if !keepModelLoaded { releaseRuntime() }
     }
 

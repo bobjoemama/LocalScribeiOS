@@ -10,7 +10,7 @@ Both apps use warm paper/ink neutrals, a restrained monochrome accent and a sepa
 
 App identities, App Group, Keychain/encrypted stores, permissions, model files and runtime adapters are preserved. The redesign adds no dependency, model, cloud service, account, analytics or subscription. It does not reset personal data or activate the microphone for visual previews.
 
-Mac window close/⌘W hides the window; Quit/⌘Q ends app-owned capture, workers and models. Control–Space and saved shortcuts remain registered by the existing main-process path. The installed Mac app was not restarted during implementation. iPhone backgrounding is distinct from force quit: Keep model loaded retains the last-used runtime when enabled, while microphone lifetime follows explicit recording/keyboard-session ownership. iOS can still reclaim memory or terminate an app.
+Mac window close/⌘W hides the window; Quit/⌘Q ends app-owned capture, workers and models. Control–Space and saved shortcuts remain registered by the existing main-process path. The installed Mac app was not restarted during implementation. iPhone backgrounding is distinct from force quit: Keep model loaded retains the last-used runtime when enabled. Build 22 adds default-On background dictation, automatic foreground microphone activation and Never auto-stop. One shared status/control on Dictate exposes Pause/Resume/Retry; Settings keeps optional timed choices. iOS can still interrupt audio, reclaim memory or terminate the app. [Current delivery status](../tasklist.md#current-ios-beta-status).
 
 ## iPhone coverage
 

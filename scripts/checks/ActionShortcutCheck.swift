@@ -22,6 +22,7 @@ struct DictationActivityAttributes {
   static var lastModelName = ""
   static var holdNextStart = false
   static var heldStart: CheckedContinuation<Void, Never>?
+  static var onStartHeld: (@MainActor () -> Void)?
   private var startingSessionID: UUID?
   private var microphoneLeaseRetained = false
   private var hasSession = false
@@ -46,7 +47,10 @@ struct DictationActivityAttributes {
     defer { if startingSessionID == sessionID { startingSessionID = nil } }
     if Self.holdNextStart {
       Self.holdNextStart = false
-      await withCheckedContinuation { Self.heldStart = $0 }
+      await withCheckedContinuation {
+        Self.heldStart = $0
+        Self.onStartHeld?()
+      }
     }
     guard startingSessionID == sessionID, !Task.isCancelled else { return false }
     if !Self.authorized || !Self.requestSucceeds {
@@ -119,6 +123,8 @@ struct DictationActivityAttributes {
     await engine.releasePreparation()
     let defaults = UserDefaults(suiteName: "ShortcutCheck-\(UUID())")!
     defaults.set(false, forKey: "saveHistory")
+    defaults.set(false, forKey: "backgroundDictationEnabled")
+    defaults.set(5, forKey: "keyboardIdleMinutes")
     defaults.set(SpeechModel.parakeetRealtimeEOU.rawValue, forKey: "selectedModel")
     let path = FileManager.default.temporaryDirectory.appendingPathComponent(
       "ShortcutCheck-\(UUID())/history.json")

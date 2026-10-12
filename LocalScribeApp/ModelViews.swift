@@ -8,7 +8,10 @@ struct ModelsView: View {
     @State private var startingDownload = false
     @Environment(\.dismiss) private var dismiss
     private var missingModels: [SpeechModel] { SpeechModel.allCases.filter { !controller.installedModels.contains($0) } }
-    private var canChangeModels: Bool { controller.phase == .idle && controller.recordingModel == nil && !controller.keyboardSessionActive }
+    private var canChangeModels: Bool {
+        (controller.phase == .idle && controller.recordingModel == nil)
+            || (controller.backgroundDictationStarting && controller.phase == .preparing)
+    }
     private var canStartDownload: Bool { canChangeModels && controller.downloadingModel == nil && !startingDownload }
 
     var body: some View {

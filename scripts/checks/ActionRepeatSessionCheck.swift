@@ -122,11 +122,228 @@ actor RepeatActionEngine: StreamingLocalTranscriptionEngine, BackgroundInference
             throw error
         }
     }
+    @MainActor static func checkCancelledAutomaticStart(
+        controller: AppController, bridge: DictationActionBridge, recorder: AudioRecorder
+    ) async throws {
+        enum Boundary { case held, returned }
+        let (boundaries, signal) = AsyncStream<Boundary>.makeStream()
+        let previousStartHeld = DictationLiveActivity.onStartHeld
+        DictationLiveActivity.onStartHeld = { signal.yield(.held) }
+        DictationLiveActivity.holdNextStart = true
+        defer {
+            DictationLiveActivity.releaseStart()
+            DictationLiveActivity.holdNextStart = false
+            DictationLiveActivity.onStartHeld = previousStartHeld
+            signal.finish()
+        }
+        let activations = recorder.activations
+        let start = Task {
+            defer { signal.yield(.returned) }
+            return try await ToggleDictationShortcut().perform()
+        }
+        do {
+            var events = boundaries.makeAsyncIterator()
+            guard await events.next() == .held else {
+                _ = try await start.value
+                throw Failure.check("Automatic cancellation must reach the held required Activity")
+            }
+            await DictationActionRuntime.cancel(sessionID: bridge.sessionIdentifier!)
+            DictationLiveActivity.releaseStart()
+            do {
+                _ = try await start.value
+                throw Failure.check("Cancelled automatic-session Start must fail")
+            } catch is CancellationError { checks += 1 }
+            try check(!bridge.hasActiveSession && controller.phase == .idle && !recorder.recording
+                      && recorder.armed && controller.keyboardSessionActive && controller.actionButtonModelReady
+                      && recorder.activations == activations,
+                      "Cancelling an unstarted Activity retains the independent automatic microphone without capture")
+        } catch {
+            DictationLiveActivity.releaseStart()
+            start.cancel()
+            _ = await start.result
+            if let id = bridge.sessionIdentifier { await DictationActionRuntime.cancel(sessionID: id) }
+            throw error
+        }
+    }
+    @MainActor static func checkContextualPhononCycles(retainMicrophone: Bool, automatic: Bool = false) async throws {
+        let engine = ContextualLifecycleEngine()
+        await engine.engine.releasePreparation()
+        let suite = "ActionPhononCheck-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.set(false, forKey: "saveHistory")
+        if !automatic {
+            defaults.set(false, forKey: "backgroundDictationEnabled")
+            defaults.set(5, forKey: "keyboardIdleMinutes")
+        }
+        defaults.set(retainMicrophone, forKey: "keepModelLoaded")
+        defaults.set(SpeechModel.parakeetPhonon.rawValue, forKey: "selectedModel")
+        let history = FileManager.default.temporaryDirectory.appendingPathComponent("\(suite)/history.json")
+        let previousHandler = DictationActionRuntime.handler
+        let previousSessionIdentifier = DictationActionRuntime.sessionIdentifier
+        let previousRecorder = AudioRecorder.latest
+        let previousStartHeld = DictationLiveActivity.onStartHeld
+        let previousAuthorized = DictationLiveActivity.authorized
+        let previousRequestSucceeds = DictationLiveActivity.requestSucceeds
+        let controller = AppController(engine: engine, defaults: defaults, historyURL: history)
+        let bridge = DictationActionBridge(controller: controller)
+        let recorder = AudioRecorder.latest!
+        let (startupCompletions, startupSignal) = AsyncStream<Void>.makeStream()
+        let startupCompletion = controller.$backgroundDictationStarting.dropFirst().sink { starting in
+            if !starting { startupSignal.yield(()) }
+        }
+        defer {
+            startupCompletion.cancel()
+            startupSignal.finish()
+            DictationLiveActivity.onStartHeld = previousStartHeld
+            DictationLiveActivity.authorized = previousAuthorized
+            DictationLiveActivity.requestSucceeds = previousRequestSucceeds
+            DictationLiveActivity.holdNextStart = false
+            DictationLiveActivity.releaseStart()
+            recorder.rejectNewBackgroundActivation = false
+            controller.disableKeyboardSession()
+            controller.keepModelLoaded = false
+            DictationActionRuntime.handler = previousHandler
+            DictationActionRuntime.sessionIdentifier = previousSessionIdentifier
+            AudioRecorder.latest = previousRecorder
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: history.deletingLastPathComponent())
+        }
+        await controller.refreshInstalledModels(prewarm: automatic)
+        if retainMicrophone {
+            if automatic {
+                try check(controller.backgroundDictationEnabled && controller.keyboardIdleMinutes == 0,
+                          "Fresh settings enable persistent background dictation with Never timeout")
+                if controller.backgroundDictationStarting {
+                    var completions = startupCompletions.makeAsyncIterator()
+                    _ = await completions.next()
+                }
+            } else {
+                await controller.enableKeyboardSession()
+            }
+            try check(controller.keyboardSessionActive && recorder.armed
+                      && controller.phase == .idle
+                      && controller.preparedModel == .parakeetPhonon
+                      && controller.preparedExecutionContext == .backgroundCapable
+                      && controller.actionButtonModelReady,
+                      "Foreground Phonon microphone session prepares the actual background-capable configuration (automatic \(automatic))")
+            if automatic {
+                try check(controller.keyboardSessionExpiresAt == .distantFuture && recorder.activations == 1,
+                          "Automatic foreground arming establishes one persistent authorized microphone lease")
+            }
+            controller.setForeground(false)
+            recorder.rejectNewBackgroundActivation = true
+            if automatic {
+                try await checkCancelledAutomaticStart(controller: controller, bridge: bridge, recorder: recorder)
+            }
+        }
+        let leaseActivations = recorder.activations
+        if automatic {
+            // Reject both requests before any Activity is accepted. A retained
+            // Activity from an earlier successful utterance must not mask loss
+            // of this independently foreground-armed microphone lease.
+            for rejectedActivity in ["authorization", "request"] {
+                DictationLiveActivity.authorized = rejectedActivity != "authorization"
+                DictationLiveActivity.requestSucceeds = rejectedActivity != "request"
+                do {
+                    _ = try await ToggleDictationShortcut().perform()
+                    if let id = bridge.sessionIdentifier { await DictationActionRuntime.cancel(sessionID: id) }
+                    throw Failure.check("Unavailable required Activity must reject automatic-session capture")
+                } catch DictationActionError.failed { checks += 1 }
+                try check(!bridge.hasActiveSession && controller.phase == .idle && !recorder.recording
+                          && recorder.armed && controller.keyboardSessionActive && controller.actionButtonModelReady
+                          && recorder.activations == leaseActivations,
+                          "Rejected \(rejectedActivity) preserves the independent automatic idle microphone without capture")
+                DictationLiveActivity.authorized = true
+                DictationLiveActivity.requestSucceeds = true
+            }
+        }
+        var retiredSession: UUID?
+        for cycle in 1...2 {
+            if !retainMicrophone { controller.setForeground(true) }
+            let expectedText = "Phonon cycle \(cycle)."
+            await engine.engine.setFinalText(expectedText)
+            enum StartBoundary { case activityHeld, returned }
+            let (boundaries, signal) = AsyncStream<StartBoundary>.makeStream()
+            DictationLiveActivity.onStartHeld = { signal.yield(.activityHeld) }
+            DictationLiveActivity.holdNextStart = true
+            let start = Task {
+                defer { signal.yield(.returned) }
+                return try await ToggleDictationShortcut().perform()
+            }
+            do {
+                var events = boundaries.makeAsyncIterator()
+                let first = await events.next()
+                if first != .activityHeld {
+                    _ = try await start.value
+                    throw Failure.check("Contextual Start must reach its held required Activity before returning")
+                }
+                try check(controller.phase == .idle && !recorder.recording
+                          && controller.preparedModel == .parakeetPhonon
+                          && controller.preparedExecutionContext == .backgroundCapable
+                          && controller.actionButtonModelReady,
+                          "Phonon cycle \(cycle) is Ready in its exact background configuration before Activity/capture")
+                let id = bridge.sessionIdentifier!
+                controller.setForeground(false)
+                try check(controller.actionButtonModelReady
+                          && controller.preparedExecutionContext == .backgroundCapable
+                          && bridge.sessionIdentifier == id && !recorder.recording,
+                          "Reserved Phonon cycle \(cycle) remains Ready when backgrounding during held Activity (retention \(retainMicrophone))")
+                DictationLiveActivity.releaseStart()
+                let result = try await start.value
+                signal.finish()
+                DictationLiveActivity.onStartHeld = previousStartHeld
+                try check(result.value == "" && controller.phase == .recording && recorder.recording
+                          && controller.recordingModel == .parakeetPhonon
+                          && controller.recordingExecutionContext == .backgroundCapable,
+                          "Contextual Phonon Start reaches actual capture after the required Activity returns")
+                if let retiredSession {
+                    try check(id != retiredSession, "Repeated contextual Phonon capture gets a fresh session")
+                }
+                recorder.feed(32_000)
+                let stop = try await ToggleDictationShortcut().perform()
+                try check(stop.value == expectedText && controller.phase == .idle
+                          && !recorder.recording && !bridge.hasActiveSession,
+                          "Contextual Phonon second hold returns only cycle \(cycle)'s transcript and retires its utterance")
+                if retainMicrophone {
+                    try check(controller.actionButtonModelReady && recorder.armed
+                              && controller.keyboardSessionActive && recorder.activations == leaseActivations
+                              && DictationLiveActivity.lastMessage == "Ready · Mic on",
+                              "Contextual Phonon Stop preserves its explicit microphone, Ready runtime and Activity coverage")
+                } else {
+                    try check(!controller.actionButtonModelReady && controller.preparedModel == nil
+                              && controller.preparedExecutionContext == nil && !recorder.armed,
+                              "Keep-Off Phonon releases its runtime and microphone after the completed Action reservation")
+                }
+                retiredSession = id
+            } catch {
+                DictationLiveActivity.releaseStart()
+                start.cancel()
+                _ = await start.result
+                signal.finish()
+                DictationLiveActivity.onStartHeld = previousStartHeld
+                if let id = bridge.sessionIdentifier { await DictationActionRuntime.cancel(sessionID: id) }
+                throw error
+            }
+        }
+        let preparations = await engine.preparationRequests()
+        try check(preparations.count == (retainMicrophone ? 1 : 2)
+                  && preparations.allSatisfy { $0.0 == .parakeetPhonon && $0.1 == .backgroundCapable },
+                  "Two Phonon Action cycles prepare only the selected background-capable runtime under their retention policy")
+        controller.disableKeyboardSession()
+        try check(!recorder.armed && !controller.keyboardSessionActive
+                  && UIPasteboard.general.writes.isEmpty && controller.history.isEmpty,
+                  "Contextual cycle cleanup ends microphone ownership without app clipboard or history writes")
+    }
     @MainActor static func main() async throws {
+        try await checkContextualPhononCycles(retainMicrophone: true, automatic: true)
+        try await checkContextualPhononCycles(retainMicrophone: false)
+        try await checkContextualPhononCycles(retainMicrophone: true)
         let engine = RepeatActionEngine()
         await engine.engine.releasePreparation()
         let defaults = UserDefaults(suiteName: "ActionRepeatCheck-\(UUID())")!
         defaults.set(false, forKey: "saveHistory")
+        defaults.set(false, forKey: "backgroundDictationEnabled")
+        defaults.set(5, forKey: "keyboardIdleMinutes")
         defaults.set(SpeechModel.parakeetRealtimeEOU.rawValue, forKey: "selectedModel")
         let history = FileManager.default.temporaryDirectory.appendingPathComponent("ActionRepeatCheck-\(UUID())/history.json")
         let controller = AppController(engine: engine, defaults: defaults, historyURL: history)

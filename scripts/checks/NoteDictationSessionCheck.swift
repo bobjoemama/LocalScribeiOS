@@ -34,6 +34,8 @@
         let preferences = UserDefaults(suiteName: suite)!
         defer { preferences.removePersistentDomain(forName: suite) }
         preferences.set(false, forKey: "saveHistory")
+        preferences.set(false, forKey: "backgroundDictationEnabled")
+        preferences.set(5, forKey: "keyboardIdleMinutes")
         preferences.set(false, forKey: "keepModelLoaded")
         preferences.set(SpeechModel.parakeetRealtimeEOU.rawValue, forKey: "selectedModel")
         let engine = LifecycleEngine()
