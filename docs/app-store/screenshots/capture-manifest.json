@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "captured_date_utc": "2026-10-16",
+  "source_commit": "affee2fdeb2ca7a900da54b8b871b97fb0c884d3",
+  "app_version": "0.7.7",
+  "app_build": "24",
+  "capture_method": "Actual native SwiftUI views rendered in fresh, agent-owned headless CoreSimulator devices; xcrun simctl io <owned-device-udid> screenshot <path>. No image generation, compositing, cropping, resizing or UI redesign.",
+  "toolchain": {
+    "xcode": "27.0 (27A266a)",
+    "sdk": "iPhoneSimulator27.0 (24A430)",
+    "runtime": "iOS 27.0",
+    "runtime_identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+    "runtime_build": "24A434",
+    "runtime_build_evidence": "Active iPad SIMULATOR_ROOT and RuntimeRoot/System/Library/CoreServices/SystemVersion.plist; both devices created with the same runtime identifier."
+  },
+  "devices": {
+    "iphone": {
+      "name": "iPhone 17 Pro Max",
+      "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max",
+      "dimensions": [
+        1320,
+        2868
+      ],
+      "appearance": "light"
+    },
+    "ipad": {
+      "name": "iPad Pro 13-inch (M4)",
+      "device_type": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4-8GB",
+      "dimensions": [
+        2064,
+        2752
+      ],
+      "appearance": "dark"
+    }
+  },
+  "apple_specification": {
+    "url": "https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications/",
+    "checked_date": "2026-10-16",
+    "accepted_slots": [
+      "iPhone with Dynamic Island (large display): 1320 x 2868",
+      "iPad 13-inch: 2064 x 2752"
+    ],
+    "requirement": "PNG without alpha; 13-inch screenshots required for apps that run on iPad."
+  },
+  "fixtures": {
+    "source": "LocalScribeApp/DesignPreview.swift at source_commit",
+    "isolation": "New UUID-scoped synthetic stores and UserDefaults suite per launch; DesignPreviewEngine rejects download, preparation and recognition; AppController verificationMode=true; fixture controls have hit testing disabled.",
+    "content": "Synthetic example transcripts, history dates/durations, dictionary rules, installed/prepared model states. Completed transcript demonstrates editable text, including manually edited punctuation; it is not recognition output or an accuracy claim.",
+    "privacy": "No physical phone, user data, microphone capture, clipboard, recognition or model download was used."
+  },
+  "temporary_source_instrumentation": {
+    "file": "LocalScribeApp/DesignPreview.swift",
+    "change": "Removed only the three-line DEBUG simulator preview-banner Text view below during the single capture build; restored original source immediately after successful build.",
+    "removed_exact_text": "            Text(context.fixtureError ?? \"Design preview \u00b7 synthetic text and model states\")\n                .font(.system(size: 11)).foregroundStyle(AppTheme.inkSecondary)\n                .frame(maxWidth: .infinity).padding(.vertical, 3).background(AppTheme.canvas)\n",
+    "restored_source_sha256": "5253036f02878fe126df915f479e52d5da8aeeb92f074863fe36458c2078bfbf",
+    "capture_source_sha256": "0b06cdb0a4be0256c629372af083400ea52e35c010f7d19c059c5deab59e826c",
+    "permanent_source_changes": false
+  },
+  "build": {
+    "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project LocalScribe.xcodeproj -scheme LocalScribe -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedDataStoreScreenshots -clonedSourcePackagesDirPath DerivedDataStoreScreenshots/SourcePackages -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates -jobs 2 CODE_SIGNING_ALLOWED=NO build",
+    "result": "BUILD SUCCEEDED; one build; existing pinned SourcePackages/cache cloned to owned ignored DerivedData; no dependency or SDK installation.",
+    "debug_dylib_sha256": "de29d50805448c0b681d945dd7b87d343eb378dd2da93c6dd071dde1cf67fb8e"
+  },
+  "postprocessing": {
+    "iphone": "CoreGraphics/ImageIO removed unused alpha channel; asserted original alpha=255 throughout and verified decoded RGB equality.",
+    "ipad": "Python standard-library PNG unfilter/re-encode removed unused alpha channel; asserted original alpha=255 throughout and exact decoded RGB equality. Existing sips independently confirmed dimensions and hasAlpha=no.",
+    "preserved": "Original pixel dimensions, RGB pixels and color-profile metadata; no visual content changed."
+  },
+  "verification": {
+    "visual": "All eight final PNG files opened with view_image: legible native text and controls, expected navigation, no preview banner, unintended dialog, spinner or unintended text clipping. History excerpt ellipsis and Models scrolling are native.",
+    "file_format": "All eight independently checked with sips: accepted dimensions and hasAlpha=no; PNG IHDR color type 2 (RGB), bit depth 8.",
+    "cleanup": "Both owned simulator devices shut down; tracked source restored; asset-only commit.",
+    "limits": "Screenshot evidence establishes rendered UI only. No speech-runtime, microphone, keyboard-insertion, background-dictation, accessibility-conformance, hardware speed, energy or accuracy verification was performed. Dictate CPU/memory/headroom values are actual simulator-process sampler values (including simulator-reported 0.0 MiB headroom), not model benchmarks. Models load-time/RAM values remain Not measured; installed/loaded labels are synthetic fixture state."
+  },
+  "files": [
+    {
+      "path": "iphone/01-dictate.png",
+      "sha256": "e1b27fdc9695d522ec384ea470a4f8cce9bf8d2a187178e9a48304953dfb6d44",
+      "width": 1320,
+      "height": 2868,
+      "format": "PNG RGB 8-bit, no alpha",
+      "appearance": "light",
+      "launch_arguments": [
+        "--design-preview",
+        "--preview-state",
+        "done",
+        "--preview-appearance",
+        "light",
+        "--preview-tab",
+        "dictate"
+      ],
+      "selected_for_store_listing": false,
+      "store_listing_order": null
+    },
+    {
+      "path": "iphone/02-history.png",
+      "sha256": "3666a2775a8d3275158128b36d641b5da351ab676fab2eaa3695c8b61df720f4",
+      "width": 1320,
+      "height": 2868,
+      "format": "PNG RGB 8-bit, no alpha",
+      "appearance": "light",
+      "launch_arguments": [
+        "--design-preview",
+        "--preview-state",
+        "done",
+        "--preview-appearance",
+        "light",
+        "--preview-tab",
+        "history"
+      ],
+      "selected_for_store_listing": true,
+      "store_listing_order": 1
+    },
+    {
+      "path": "iphone/03-dictionary.png",
+      "sha256": "5b880f638b6fe0560561768c3b98675a04f932e4954a6641a3855b419ddc495a",
+      "width": 1320,
+      "height": 2868,
+      "format": "PNG RGB 8-bit, no alpha",
+      "appearance": "light",
+      "launch_arguments": [
+        "--design-preview",
+        "--preview-state",
+        "done",
+        "--preview-appearance",
+        "light",
+        "--preview-library",
+        "dictionary"
+      ],
+      "selected_for_store_listing": true,
+      "store_listing_order": 2
+    },
+    {
+      "path": "iphone/04-models.png",
+      "sha256": "18b648c576664466fe6d1227e6d9fd9ad738a4ae16f10005462b8036270c4cac",
+      "width": 1320,
+      "height": 2868,
+      "format": "PNG RGB 8-bit, no alpha",
+      "appearance": "light",
+      "launch_arguments": [
+        "--design-preview",
+        "--preview-state",
+        "idle",
+        "--preview-appearance",
+        "light",
+        "--preview-tab",
+        "models"
+      ],
+      "selected_for_store_listing": true,
+      "store_listing_order": 3
+    },
+    {
+      "path": "ipad/01-dictate.png",
+      "sha256": "bf2d58fa4f9a51951d54e703f3939dcf37ffee6ef59476df4ee4b22337d71670",
+      "width": 2064,
+      "height": 2752,
+      "format": "PNG RGB 8-bit, no alpha",
+      "appearance": "dark",
+      "launch_arguments": [
+        "--design-preview",
+        "--preview-state",
+        "done",
+        "--preview-appearance",
+        "dark",
+        "--preview-tab",
+        "dictate"
+      ],
+      "selected_for_store_listing": false,
+      "store_listing_order": null
+    },
+    {
+      "path": "ipad/02-history.png",
+      "sha256": "d574ac26eb124c3ce1a1e6bbeebb8b145589c0a654fd0aec11efe8bec05be71b",
+      "width": 2064,
+      "height": 2752,
+      "format": "PNG RGB 8-bit, no alpha",
+      "appearance": "dark",
+      "launch_arguments": [
+        "--design-preview",
+        "--preview-state",
+        "done",
+        "--preview-appearance",
+        "dark",
+        "--preview-tab",
+        "history"
+      ],
+      "selected_for_store_listing": true,
+      "store_listing_order": 1
+    },
+    {
+      "path": "ipad/03-dictionary.png",
+      "sha256": "8367cd54d09d06766e2390b8fe2a3ef257220e5a0288c928aceae3805b0bcec0",
+      "width": 2064,
+      "height": 2752,
+      "format": "PNG RGB 8-bit, no alpha",
+      "appearance": "dark",
+      "launch_arguments": [
+        "--design-preview",
+        "--preview-state",
+        "done",
+        "--preview-appearance",
+        "dark",
+        "--preview-library",
+        "dictionary"
+      ],
+      "selected_for_store_listing": true,
+      "store_listing_order": 2
+    },
+    {
+      "path": "ipad/04-models.png",
+      "sha256": "f3801a5ebdd4b434a44a27cf4d09bf7dee716e7073d67663c63159696e95207a",
+      "width": 2064,
+      "height": 2752,
+      "format": "PNG RGB 8-bit, no alpha",
+      "appearance": "dark",
+      "launch_arguments": [
+        "--design-preview",
+        "--preview-state",
+        "idle",
+        "--preview-appearance",
+        "dark",
+        "--preview-tab",
+        "models"
+      ],
+      "selected_for_store_listing": true,
+      "store_listing_order": 3
+    }
+  ],
+  "store_selection": {
+    "selected_surfaces_in_upload_order": [
+      "History",
+      "Dictionary",
+      "Models"
+    ],
+    "selected_count_per_device": 3,
+    "root_review": "Root visually inspected all eight final PNGs. Dictate retained as QA evidence, excluded from the Store listing because the native verification fixture shows Not ready / Mic off, Retry and simulator-only headroom. No screenshot content was altered to hide these native states."
+  }
+}
