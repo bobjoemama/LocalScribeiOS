@@ -107,6 +107,14 @@ scripts/check_personalization_controller.sh
 
 On this Mac, prefix Xcode commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; the global command-line-tools selection is left unchanged. Use the same Xcode toolchain for Swift package tests: the separately selected command-line tools cannot import this project's Swift Testing module. The local Swift package isolates platform-independent correction, storage, capture and WER tests. `--without-fluidaudio` generates a UI-only project whose runtime visibly reports unavailable; it is not a working recognition build.
 
+## Microphone startup and recovery
+
+Build 23 retains the original AVFAudio or OSStatus domain/code, failing setup operation and requested/effective audio-session configuration. Cancellation and existing typed errors keep their identity. After a real media-service reset, the next explicit microphone activation recreates invalid audio objects; a reset never silently starts recording. Queued callbacks from older activations cannot end replacement captures, and buffered speech remains available for finalization.
+
+Model residency and microphone ownership are separate states: **Model loaded** describes the prepared background runtime; **Ready · Mic on** describes the standing microphone session. Explicit microphone errors have one global alert owner. Automatic standby failures appear beside the existing Retry control. Pause remains a saved user choice.
+
+`scripts/check_audio_recorder.sh` executes the production recorder with controlled platform and callback-scheduling boundaries, then typechecks unchanged source against the installed iOS SDK. Its regressions cover native error domains, cleanup/retry, real PCM conversion, owned/unowned reset recovery and stale-event ordering. These fixtures do not reproduce the physical phone's audio driver or establish the cause of a generic `2003329396` failure. [Apple's reset contract](https://developer.apple.com/documentation/avfaudio/avaudiosession/mediaserviceswereresetnotification).
+
 ## Before TestFlight upload
 
 Check the actual exported app, including its Activity widget:
