@@ -169,6 +169,14 @@ A concise, source-checked [privacy policy](docs/PRIVACY.md) now documents saved 
 
 ## Current iOS beta status
 
+**October 16 publication — in progress:** Devesh confirmed that installed build 23 works, then authorized latest-source publication, TestFlight and preparation for a later App Store release. Main `8ab86cb` is clean and matches GitHub. Production submission review identified missing in-app privacy/support access; build 24 will add two native links in About while preserving the working dictation code, model selection and supplied shortcut. App Store submission/release remains a later user decision.
+
+- [x] Refresh local/remote source and record Devesh's successful physical replay of build 23. The brief confirmation does not establish every device, interruption or accessibility scenario.
+- [ ] Add the required privacy/support links, verify the rendered About surface and independently review the source delta.
+- [ ] Build and independently verify the complete Store-signed candidate; upload through the existing Xcode account session, verify processing, and assign the current build to the public TestFlight group.
+- [ ] Prepare current App Store screenshots, listing/review information and a precise list of any user-only declarations or missing access. Preserve the later production-submit decision.
+- [ ] Verify the latest phone/source/beta state, update concise installation/release instructions, and commit/push the final records.
+
 **October 15 build 23 — installed wirelessly:** Devesh's screenshot after opening LocalScribe and holding Action Button shows `com.apple.coreaudio.avfaudio` error `2003329396`, a generic unspecified audio error. Source review confirms that “Action Button Ready” checked only the loaded background model, while “Paused” meant the automatic microphone preference was Off. The screenshot does not establish who changed that preference. Explicit Action startup can still try to activate audio while paused.
 
 Two bounded subagent investigations and root verification confirmed a diagnostic gap in build 22: `AudioRecorder.arm()` preserved setup-step context only for `NSOSStatusErrorDomain`; the reported AVFAudio domain escaped raw. The same controller error fed both Dictate's banner and the global alert. The unchanged recorder fixture passed 54 checks; a temporary fixture injecting this exact domain/code at engine start failed the missing-context assertion while confirming engine/tap/session cleanup. This reproduced diagnostic loss, not the phone's underlying audio failure. Devesh approved “fix everything”: label model readiness separately, preserve native error domain/code and startup step, use one recoverable-error presentation, repair documented audio-object recovery after media-service reset, and add focused regressions. Build 23 delivers that correction. [Apple's unspecified-error definition](https://developer.apple.com/documentation/coreaudiotypes/avaudiosession/errorcode/unspecified).
