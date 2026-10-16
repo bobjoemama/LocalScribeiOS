@@ -4,6 +4,8 @@ struct AboutView: View {
     var body: some View {
         Form {
             Section {
+                sourceLink("Privacy policy", "https://github.com/bobjoemama/LocalScribeiOS/blob/main/docs/PRIVACY.md")
+                sourceLink("Support", "https://github.com/bobjoemama/LocalScribeiOS/issues")
                 Text("Apache License 2.0").foregroundStyle(AppTheme.inkSecondary)
                 documentLink("App license", resource: "LocalScribe-LICENSE")
                 documentLink("App notices", resource: "LocalScribe-NOTICE")
