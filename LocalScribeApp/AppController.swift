@@ -299,7 +299,7 @@ final class AppController: ObservableObject {
                 self.captureWarning = "The microphone was interrupted. Recording stopped and captured speech is being finished."
                 self.queueRecordingStop(endKeyboardSession: true)
             } else if self.phase == .transcribing {
-                self.captureWarning = "The microphone was interrupted. Captured speech is being finished."
+                self.presentFinalizingCaptureWarning("The microphone was interrupted. Captured speech is being finished.")
                 self.disableKeyboardSession()
             } else {
                 self.backgroundDictationError = "The microphone was interrupted. Reopen LocalScribe or retry background dictation."
@@ -313,7 +313,7 @@ final class AppController: ObservableObject {
                     self.captureWarning = "iPhone requested more memory. Recording stopped; captured text is preserved."
                     await self.stopRecording(endKeyboardSession: true)
                 } else if self.phase == .transcribing {
-                    self.captureWarning = "iPhone requested more memory. Captured text is preserved."
+                    self.presentFinalizingCaptureWarning("iPhone requested more memory. Captured text is preserved.")
                     self.disableKeyboardSession()
                 } else {
                     self.backgroundDictationError = "iPhone requested more memory. Reopen LocalScribe or retry background dictation."
@@ -329,6 +329,15 @@ final class AppController: ObservableObject {
         }
         Task { await restoreModelPreparationReports() }
         Task { await refreshInstalledModels() }
+    }
+
+    private func presentFinalizingCaptureWarning(_ warning: String) {
+        // savingResult has no suspension before the warning transfer. Events at
+        // its later report await must publish now, without replaying on completion.
+        guard completionStage == .savingResult else { captureWarning = warning; return }
+        if let existing = errorMessage {
+            if existing != warning { errorMessage = existing + "\n\n" + warning }
+        } else { errorMessage = warning }
     }
 
     /// An event can enqueue a stop before its recording ends. Validate ownership

@@ -126,7 +126,27 @@ struct FixtureCaptureSnapshot {
     }
 }
 
-actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine {
+actor LifecycleEngine: StreamingLocalTranscriptionEngine, BackgroundInferenceReportingEngine, PerformanceReportingEngine {
+    private var holdReports = false
+    private var reportsContinuation: CheckedContinuation<Void, Never>?
+    private var reportsWaiter: CheckedContinuation<Void, Never>?
+    func holdNextReports() { holdReports = true }
+    func waitUntilReportsHeld() async {
+        if reportsContinuation != nil { return }
+        await withCheckedContinuation { reportsWaiter = $0 }
+    }
+    func releaseReports() { holdReports = false; reportsContinuation?.resume(); reportsContinuation = nil }
+    func performanceReports() async -> [EnginePerformanceReport] {
+        if holdReports {
+            await withCheckedContinuation {
+                reportsContinuation = $0
+                reportsWaiter?.resume(); reportsWaiter = nil
+            }
+        }
+        return []
+    }
+
+
     var cpuBackgroundEnabled = true
     private var capabilityCalls = 0
     private var heldCapabilityCall: Int?
@@ -940,9 +960,67 @@ extension SharedKeyboardStore {
                       "Finalizing \(name) has one global owner, finalizes speech and revokes its microphone")
         }
     }
+    @MainActor static func checkLateMicrophoneWarnings() async throws {
+        enum Event: CaseIterable { case interruption, memory }
+        enum Presentation: CaseIterable { case retained, dismissed, existingDataError, cancelled }
+        let existingError = "Saved data could not be written. Your data is preserved."
+        for event in Event.allCases {
+            for presentation in Presentation.allCases {
+                let engine = LifecycleEngine()
+                await engine.releasePreparation()
+                let defaults = UserDefaults(suiteName: "LocalScribeLateWarningCheck-\(UUID())")!
+                defaults.set(false, forKey: "keepModelLoaded")
+                let controller = await fixture(engine, preferences: defaults)
+                let recorder = AudioRecorder.latest!
+                await controller.enableKeyboardSession()
+                await controller.startRecording()
+                recorder.feed(16_000)
+                await engine.holdFinalization()
+                let finish = Task { await controller.stopRecording() }
+                await engine.waitUntilFinalizationStarts()
+                await engine.holdNextReports()
+                await engine.releaseFinalization()
+                await engine.waitUntilReportsHeld()
+                try check(controller.phase == .transcribing && controller.errorMessage == nil
+                          && controller.keyboardSessionActive,
+                          "Late \(event) / \(presentation) reaches the post-warning report await with its microphone lease")
+                if presentation == .existingDataError { controller.errorMessage = existingError }
+                switch event {
+                case .interruption: recorder.onInterruption?()
+                case .memory: NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+                }
+                await waitForMicrophoneEnd(controller)
+                let warningFragment = event == .interruption ? "microphone was interrupted" : "iPhone requested more memory"
+                try check(controller.errorMessage?.contains(warningFragment) == true
+                          && controller.backgroundDictationError == nil && !recorder.armed,
+                          "Late \(event) immediately publishes one global warning and retires the microphone")
+                if presentation == .existingDataError {
+                    try check(controller.errorMessage?.hasPrefix(existingError) == true,
+                              "Late \(event) preserves an existing saved-data failure")
+                }
+                if presentation == .dismissed { controller.errorMessage = nil }
+                if presentation == .cancelled { await controller.cancelRecording() }
+                await engine.releaseReports()
+                await finish.value
+                let shouldRemainVisible = presentation == .retained || presentation == .existingDataError
+                try check((controller.errorMessage != nil) == shouldRemainVisible
+                          && controller.backgroundDictationError == nil && controller.phase == .idle,
+                          "Late \(event) / \(presentation) finishes without losing or replaying its warning")
+                if presentation != .cancelled {
+                    try check(controller.transcript == "Captured words.", "Late \(event) preserves finalized speech")
+                }
+                controller.disableKeyboardSession()
+            }
+        }
+    }
     @MainActor static func main() async throws {
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("--microphone-error-presentation") {
+        if arguments.contains("--late-microphone-warning") {
+            do { try await checkLateMicrophoneWarnings() }
+            catch { print("FAIL: \(error)"); exit(1) }
+            print("PASS: \(checks) late microphone warning checks")
+            return
+        } else if arguments.contains("--microphone-error-presentation") {
             do { try await checkMicrophoneErrorPresentation() }
             catch { print("FAIL: \(error)"); exit(1) }
             print("PASS: \(checks) microphone error presentation checks")
@@ -968,6 +1046,7 @@ extension SharedKeyboardStore {
             print("PASS: \(checks) focused Action startup lifecycle checks")
             return
         }
+        try await checkLateMicrophoneWarnings()
         try await checkMicrophoneErrorPresentation()
         try await checkDefaultBackgroundDictation()
         try await checkPendingBackgroundDictation()
