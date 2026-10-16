@@ -3,7 +3,22 @@ import Foundation
 import LocalScribeCore
 
 // Exercise the production AudioRecorder with deterministic permission/session/engine
-// boundaries. Real AVAudioFormat and AVAudioConverter are retained; no mic is opened.
+// boundaries and controlled actor-hop delivery. Real AVAudioFormat and
+// AVAudioConverter are retained; no mic is opened.
+final class FixtureAudioCallbacks: @unchecked Sendable {
+    private static let shared = FixtureAudioCallbacks()
+    private let lock = NSLock()
+    private var callbacks: [@MainActor @Sendable () -> Void] = []
+    nonisolated static func enqueue(_ callback: @escaping @MainActor @Sendable () -> Void) {
+        shared.lock.withLock { shared.callbacks.append(callback) }
+    }
+    @MainActor static func drain() {
+        while let callback = shared.lock.withLock({ shared.callbacks.isEmpty ? nil : shared.callbacks.removeFirst() }) {
+            callback()
+        }
+    }
+}
+
 struct FixtureAudioApplication {
     enum Permission { case granted, denied }
     var recordPermission = Permission.granted
@@ -98,9 +113,13 @@ let AVAudioSessionRouteChangeReasonKey = "reason"
     let inputNode = FixtureInputNode()
     var isRunning = false
     var failStart = false
+    var startError: (any Error)?
+    var invalidated = false
     init() { Self.engines.append(self) }
     func prepare() {}
     func start() throws {
+        if let startError { throw startError }
+        if invalidated { throw FixtureFailure.failed("Reused an audio engine orphaned by media reset") }
         if failStart { throw NSError(domain: NSOSStatusErrorDomain, code: 561015905) }
         isRunning = true
     }
@@ -108,14 +127,23 @@ let AVAudioSessionRouteChangeReasonKey = "reason"
 }
 @MainActor final class FixtureInputNode {
     var taps = 0
+    private var tap: (@Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void)?
+    func emitSamples() {
+        let format = outputFormat(forBus: 0)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_800)!
+        buffer.frameLength = 4_800
+        for frame in 0..<Int(buffer.frameLength) { buffer.floatChannelData![0][frame] = 0.25 }
+        tap?(buffer, AVAudioTime(sampleTime: 0, atRate: format.sampleRate))
+    }
     func outputFormat(forBus bus: Int) -> AVAudioFormat {
         AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false)!
     }
     func installTap(onBus bus: Int, bufferSize: AVAudioFrameCount, format: AVAudioFormat?, block: @escaping @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void) {
         precondition(taps == 0, "A second arm cannot install a duplicate tap")
         taps += 1
+        tap = block
     }
-    func removeTap(onBus bus: Int) { taps -= 1 }
+    func removeTap(onBus bus: Int) { taps -= 1; tap = nil }
 }
 enum FixtureFailure: Error { case expected, failed(String) }
 @main struct AudioRecorderLifecycleCheck {
@@ -124,10 +152,17 @@ enum FixtureFailure: Error { case expected, failed(String) }
         guard condition() else { throw FixtureFailure.failed(message) }
         checks += 1
     }
-    @MainActor static func main() async throws {
+    nonisolated static func post(_ name: Notification.Name, info: [String: UInt]?) {
+        NotificationCenter.default.post(name: name, object: nil, userInfo: info)
+    }
+    @MainActor static func main() async {
+        do { try await run() }
+        catch { print("FAIL: \(error)"); exit(1) }
+    }
+    @MainActor static func run() async throws {
         let session = AVAudioSession.sharedInstance()
         let recorder = AudioRecorder()
-        let engine = AVAudioEngine.engines.last!
+        var engine = AVAudioEngine.engines.last!
         AVAudioApplication.shared.recordPermission = .denied
         AVAudioApplication.holdPermission = true
         do { try await recorder.arm(requireExistingPermission: true); throw FixtureFailure.failed("Background arm should reject missing grant") }
@@ -225,7 +260,9 @@ enum FixtureFailure: Error { case expected, failed(String) }
                 try await recorder.arm(requireExistingPermission: true, mixWithOtherAudio: true)
                 throw FixtureFailure.failed("Expected \(failureStep) failure")
             } catch let error as RecordingError {
-                guard case .audioSessionFailed(let code, _) = error else { throw error }
+                guard case .audioSessionFailed(let code, let context) = error else { throw error }
+                try check(context?.errorDomain == NSOSStatusErrorDomain,
+                          "OSStatus startup retains the original error domain")
                 try check(code == 561015905 && error.localizedDescription.hasPrefix("Microphone setup failed at \(expectedStep)."),
                           "Same platform error at \(failureStep) reports the actual failing step")
             }
@@ -259,6 +296,49 @@ enum FixtureFailure: Error { case expected, failed(String) }
         session.activationErrorCode = nil
         session.omitMixOption = false
         session.resetConfigurationOnDeactivate = false
+        engine.startError = NSError(domain: "com.apple.coreaudio.avfaudio", code: 2003329396)
+        session.omitMixOption = true
+        session.resetConfigurationOnDeactivate = true
+        do {
+            try await recorder.arm(requireExistingPermission: true, mixWithOtherAudio: true)
+            throw FixtureFailure.failed("Expected native AVFAudio engine failure")
+        } catch RecordingError.audioSessionFailed(let code, let context) {
+            try check(code == 2003329396 && context?.errorDomain == "com.apple.coreaudio.avfaudio"
+                      && context?.step == .engine,
+                      "AVFAudio startup retains original domain, code and actual failing operation")
+            try check(context?.requested.options == 5 && context?.effective.options == 4
+                      && context?.effective.category == "AVAudioSessionCategoryPlayAndRecord"
+                      && context?.effective.mode == "AVAudioSessionModeMeasurement"
+                      && session.categoryOptions.isEmpty,
+                      "AVFAudio snapshots requested/effective session configuration before cleanup")
+            try check(RecordingError.audioSessionFailed(code: code, context: context).localizedDescription.contains("com.apple.coreaudio.avfaudio"),
+                      "Native error domain remains visible in the contextual failure")
+        }
+        try check(!session.active && !engine.isRunning && engine.inputNode.taps == 0,
+                  "AVFAudio start failure cleans up session, engine and tap")
+        engine.startError = nil
+        session.omitMixOption = false
+        session.resetConfigurationOnDeactivate = false
+        try await recorder.arm(requireExistingPermission: true, mixWithOtherAudio: true)
+        try check(session.active && engine.isRunning && engine.inputNode.taps == 1,
+                  "Explicit retry succeeds after native AVFAudio failure")
+        recorder.shutdown()
+        let unchangedErrors: [any Error] = [CancellationError(), RecordingError.unavailableInput, NSError(domain: "UnrelatedFixtureError", code: 2003329396)]
+        for originalError in unchangedErrors {
+            engine.startError = originalError
+            do {
+                try await recorder.arm(requireExistingPermission: true)
+                throw FixtureFailure.failed("Expected unchanged non-platform startup failure")
+            } catch {
+                let original = originalError as NSError
+                let returned = error as NSError
+                try check(original.domain == returned.domain && original.code == returned.code,
+                          "Cancellation, typed recording errors and unrelated domains retain their identity")
+            }
+            try check(!session.active && !engine.isRunning && engine.inputNode.taps == 0,
+                      "Unnormalized startup failure still cleans up microphone resources")
+        }
+        engine.startError = nil
         var deliveredEvents = 0
         recorder.onInterruption = {
             deliveredEvents += 1
@@ -271,59 +351,123 @@ enum FixtureFailure: Error { case expected, failed(String) }
         ]
         for (name, info) in events {
             // The notification queues its actor delivery while A owns capture.
-            // End A and begin B synchronously under the same keyboard activation.
+            // End A and arm B before delivering A's queued event. A reset
+            // requires new OS objects; ordinary interruptions reuse the lease.
             try await recorder.arm(requireExistingPermission: true)
+            engine = AVAudioEngine.engines.last!
             recorder.beginCapture()
             let before = deliveredEvents
-            NotificationCenter.default.post(name: name, object: nil, userInfo: info)
+            post(name, info: info)
             _ = recorder.endCapture(keepEngineRunning: true)
+            try await recorder.arm(requireExistingPermission: true)
+            engine = AVAudioEngine.engines.last!
             recorder.beginCapture()
             let replacementGeneration = recorder.captureSnapshot.generation
-            for _ in 0..<10 { await Task.yield() }
+            FixtureAudioCallbacks.drain()
             try check(deliveredEvents == before && recorder.captureSnapshot.generation == replacementGeneration && engine.isRunning,
-                      "Late \(name.rawValue) from capture A cannot stop B on the same activation")
+                      "Late \(name.rawValue) from capture A cannot stop replacement B")
 
-            NotificationCenter.default.post(name: name, object: nil, userInfo: info)
-            for _ in 0..<10 { await Task.yield() }
+            post(name, info: info)
+            FixtureAudioCallbacks.drain()
             try check(deliveredEvents == before + 1 && !engine.isRunning && recorder.captureSnapshot.generation == nil,
                       "Current \(name.rawValue) still stops B capture")
 
             try await recorder.arm(requireExistingPermission: true)
-            NotificationCenter.default.post(name: name, object: nil, userInfo: info)
+            engine = AVAudioEngine.engines.last!
+            post(name, info: info)
+            try await recorder.arm(requireExistingPermission: true)
+            engine = AVAudioEngine.engines.last!
             recorder.beginCapture()
-            for _ in 0..<10 { await Task.yield() }
+            FixtureAudioCallbacks.drain()
             try check(deliveredEvents == before + 1 && engine.isRunning && recorder.captureSnapshot.generation != nil,
                       "Queued idle-keyboard \(name.rawValue) cannot stop a newly begun capture")
             _ = recorder.endCapture(keepEngineRunning: true)
 
-            NotificationCenter.default.post(name: name, object: nil, userInfo: info)
-            for _ in 0..<10 { await Task.yield() }
+            post(name, info: info)
+            FixtureAudioCallbacks.drain()
             try check(deliveredEvents == before + 2 && !engine.isRunning,
                       "Current idle-keyboard \(name.rawValue) still retires its microphone lease")
 
             try await recorder.arm(requireExistingPermission: true)
+            engine = AVAudioEngine.engines.last!
             recorder.beginCapture()
             // The platform can post from an audio worker. Observe on that thread
             // before the MainActor hop, rather than first queueing observer delivery.
             DispatchQueue.global().sync {
-                NotificationCenter.default.post(name: name, object: nil, userInfo: info)
+                post(name, info: info)
             }
             recorder.shutdown()
             try await recorder.arm(requireExistingPermission: true)
+            engine = AVAudioEngine.engines.last!
             recorder.beginCapture()
-            for _ in 0..<10 { await Task.yield() }
+            FixtureAudioCallbacks.drain()
             try check(deliveredEvents == before + 2 && engine.isRunning && recorder.captureSnapshot.generation != nil,
                       "Shutdown invalidates queued \(name.rawValue) before replacement activation")
             recorder.shutdown()
 
-            NotificationCenter.default.post(name: name, object: nil, userInfo: info)
+            post(name, info: info)
             try await recorder.arm(requireExistingPermission: true)
+            engine = AVAudioEngine.engines.last!
             recorder.beginCapture()
-            for _ in 0..<10 { await Task.yield() }
+            FixtureAudioCallbacks.drain()
             try check(deliveredEvents == before + 2 && engine.isRunning,
                       "Unarmed \(name.rawValue) cannot become a future capture's event")
             recorder.shutdown()
         }
+        let stoppedEngine = engine
+        stoppedEngine.invalidated = true
+        post(AVAudioSession.mediaServicesWereResetNotification, info: nil)
+        FixtureAudioCallbacks.drain()
+        let enginesBeforeRetry = AVAudioEngine.engines.count
+        try check(!session.active && AVAudioEngine.engines.last === stoppedEngine,
+                  "Unowned reset never activates or silently recreates recording")
+        try await recorder.arm(requireExistingPermission: true, mixWithOtherAudio: true)
+        engine = AVAudioEngine.engines.last!
+        try check(engine !== stoppedEngine && AVAudioEngine.engines.count == enginesBeforeRetry + 1
+                  && engine.isRunning && engine.inputNode.taps == 1,
+                  "Explicit arm after an unowned reset constructs a fresh functioning engine")
+        let warmActivationCount = session.activations
+        try await recorder.arm(requireExistingPermission: true)
+        try check(AVAudioEngine.engines.last === engine && session.activations == warmActivationCount,
+                  "A valid running engine still takes the warm fast path")
+        recorder.beginCapture()
+        engine.inputNode.emitSamples()
+        FixtureAudioCallbacks.drain()
+        let buffered = recorder.captureSnapshot.bufferedSamples
+        try check(buffered > 0, "Real converter deposits fixture PCM before media reset")
+        let staleResetEngine = engine
+        staleResetEngine.invalidated = true
+        post(AVAudioSession.mediaServicesWereResetNotification, info: nil)
+        try await recorder.arm(requireExistingPermission: true)
+        engine = AVAudioEngine.engines.last!
+        try check(engine !== staleResetEngine && engine.isRunning
+                  && recorder.captureSnapshot.bufferedSamples == buffered,
+                  "Pending reset invalidates even a running fast path without discarding captured PCM")
+        let retainedSamples = recorder.endCapture(keepEngineRunning: true)
+        recorder.beginCapture()
+        let replacementGeneration = recorder.captureSnapshot.generation
+        FixtureAudioCallbacks.drain()
+        try check(retainedSamples.count == buffered && engine.isRunning
+                  && recorder.captureSnapshot.generation == replacementGeneration,
+                  "Queued pre-rebuild reset cannot interrupt its replacement capture")
+        engine.inputNode.emitSamples()
+        FixtureAudioCallbacks.drain()
+        let replacementBuffered = recorder.captureSnapshot.bufferedSamples
+        var finishedSamples: [Float] = []
+        recorder.onInterruption = { finishedSamples = recorder.endCapture(keepEngineRunning: false) }
+        let orphanedEngine = engine
+        orphanedEngine.invalidated = true
+        post(AVAudioSession.mediaServicesWereResetNotification, info: nil)
+        FixtureAudioCallbacks.drain()
+        try check(finishedSamples.count == replacementBuffered && replacementBuffered > 0 && !orphanedEngine.isRunning && orphanedEngine.inputNode.taps == 0,
+                  "Reset interruption preserves every buffered sample for consumer finalization")
+        try check(AVAudioEngine.engines.last === orphanedEngine && !session.active,
+                  "Reset handling does not automatically restart capture")
+        try await recorder.arm(requireExistingPermission: true)
+        engine = AVAudioEngine.engines.last!
+        try check(engine !== orphanedEngine && engine.isRunning && engine.inputNode.taps == 1,
+                  "User retry after owned reset replaces orphaned audio objects")
+        recorder.shutdown()
         print("PASS: \(checks) production AudioRecorder lifecycle checks")
     }
 }

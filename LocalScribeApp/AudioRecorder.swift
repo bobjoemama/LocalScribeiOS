@@ -34,9 +34,17 @@ enum RecordingError: LocalizedError {
         let step: ActivationStep
         let requested: SessionConfiguration
         let effective: SessionConfiguration
+        let errorDomain: String?
+        init(step: ActivationStep, requested: SessionConfiguration, effective: SessionConfiguration, errorDomain: String? = nil) {
+            self.step = step
+            self.requested = requested
+            self.effective = effective
+            self.errorDomain = errorDomain
+        }
         var description: String {
             let requestedDetail = requested == effective ? "" : " Requested: \(requested.description)."
-            return " Audio session: \(effective.description).\(requestedDetail)"
+            let domainDetail = errorDomain.map { " Audio error domain: \($0)." } ?? ""
+            return " Audio session: \(effective.description).\(requestedDetail)\(domainDetail)"
         }
     }
     case microphoneDenied, unavailableInput, converterUnavailable, conversionFailed, noAudio
@@ -71,7 +79,8 @@ enum RecordingError: LocalizedError {
 
 @MainActor
 final class AudioRecorder {
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
+    private var engineResetRevision: UInt = 0
     private let capture = CaptureBuffer()
     private var tapInstalled = false
     private var activationRevision: UInt = 0
@@ -110,7 +119,9 @@ final class AudioRecorder {
             }
         })
         observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: nil) { [weak self, eventOwnership] _ in
-            guard let owner = eventOwnership.snapshot else { return }
+            // Reset invalidates audio objects even while no lease owns the mic.
+            // Record it before hopping actors so the next arm cannot reuse them.
+            guard let owner = eventOwnership.mediaServicesReset() else { return }
             Task { @MainActor [weak self] in
                 guard let self, eventOwnership.snapshot == owner else { return }
                 self.onInterruption?()
@@ -121,6 +132,7 @@ final class AudioRecorder {
     var microphonePermissionGranted: Bool { AVAudioApplication.shared.recordPermission == .granted }
 
     func arm(requireExistingPermission: Bool = false, mixWithOtherAudio: Bool = false) async throws {
+        rebuildEngineAfterResetIfNeeded()
         if engine.isRunning { return }
         let revision = activationRevision
         let allowed: Bool
@@ -131,6 +143,7 @@ final class AudioRecorder {
         guard revision == activationRevision else { throw CancellationError() }
         try Task.checkCancellation()
         guard allowed else { throw RecordingError.microphoneDenied }
+        rebuildEngineAfterResetIfNeeded()
         if engine.isRunning { return }
         activationRevision &+= 1
         eventOwnership.set(.init(activationRevision: activationRevision, captureGeneration: nil))
@@ -190,12 +203,12 @@ final class AudioRecorder {
         } catch {
             // Read the effective public session values before shutdown changes
             // its activation. Requested options alone cannot describe OS policy.
+            let systemError = error as NSError
             let context = RecordingError.ActivationContext(
                 step: activationStep, requested: requestedConfiguration,
-                effective: .init(session: session))
+                effective: .init(session: session), errorDomain: systemError.domain)
             shutdown()
-            let systemError = error as NSError
-            if systemError.domain == NSOSStatusErrorDomain {
+            if systemError.domain == NSOSStatusErrorDomain || systemError.domain == "com.apple.coreaudio.avfaudio" {
                 throw RecordingError.audioSessionFailed(code: systemError.code, context: context)
             }
             throw error
@@ -220,10 +233,26 @@ final class AudioRecorder {
         activationRevision &+= 1
         eventOwnership.set(nil)
         capture.discard()
-        engine.stop()
-        if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
+        stopEngine()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         onLevel?(0)
+    }
+
+    private func stopEngine() {
+        engine.stop()
+        if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
+    }
+
+    private func rebuildEngineAfterResetIfNeeded() {
+        let resetRevision = eventOwnership.resetRevision
+        guard engineResetRevision != resetRevision else { return }
+        // Apple's media-reset contract requires new audio objects. Keep captured
+        // PCM for the controller's existing finalization; only retire OS objects.
+        stopEngine()
+        engine = AVAudioEngine()
+        engineResetRevision = resetRevision
+        activationRevision &+= 1
+        eventOwnership.set(nil)
     }
 }
 
@@ -236,7 +265,15 @@ private final class AudioEventOwnership: @unchecked Sendable {
     }
     private let lock = NSLock()
     private var owner: Owner?
+    private var mediaResetRevision: UInt = 0
     nonisolated var snapshot: Owner? { lock.withLock { owner } }
+    nonisolated var resetRevision: UInt { lock.withLock { mediaResetRevision } }
+    nonisolated func mediaServicesReset() -> Owner? {
+        lock.withLock {
+            mediaResetRevision &+= 1
+            return owner
+        }
+    }
     nonisolated func set(_ owner: Owner?) { lock.withLock { self.owner = owner } }
 }
 
