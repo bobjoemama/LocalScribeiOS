@@ -113,7 +113,7 @@ struct ModelsView: View {
                     Text("App peak RAM during load · " + ModelMeasurementPresentation.peakMemory(measurement))
                         .font(.footnote).foregroundStyle(AppTheme.inkSecondary)
                     if selected && installed {
-                        Text("Action Button · " + SpeechModelPresentation.actionButtonState(controller))
+                        Text(SpeechModelPresentation.backgroundModelState(controller))
                             .font(.footnote).foregroundStyle(controller.actionButtonModelReady ? AppTheme.success : AppTheme.inkSecondary)
                     }
                     else if loaded { Text("Loaded").font(.footnote).foregroundStyle(AppTheme.success) }
@@ -210,7 +210,7 @@ private struct ModelDetailsView: View {
                         LabeledContent("Configured processors", value: SpeechModelPresentation.loadedProcessing(model, controller: controller))
                     }
                     if controller.selectedModel == model {
-                        LabeledContent("Action Button state", value: SpeechModelPresentation.actionButtonState(controller))
+                        LabeledContent("Background model", value: SpeechModelPresentation.backgroundModelState(controller))
                     }
                     LabeledContent("Languages", value: model.languages)
                     LabeledContent("Recognition", value: SpeechModelPresentation.isStreaming(model) ? "Streaming" : "Overlapping windows")
@@ -326,10 +326,8 @@ enum ModelMeasurementPresentation {
 enum SpeechModelPresentation {
     static func isStreaming(_ model: SpeechModel) -> Bool { model == .parakeetRealtimeEOU || model == .moonshineSmall }
     static func mode(_ model: SpeechModel) -> String { isStreaming(model) ? "Streaming · live text" : "Periodic text · first 5 s, then every 3 s" }
-    @MainActor static func actionButtonState(_ controller: AppController) -> String {
-        if controller.actionButtonModelReady { return "Ready" }
-        if controller.actionButtonModelLoading { return "Loading…" }
-        return "Not loaded"
+    @MainActor static func backgroundModelState(_ controller: AppController) -> String {
+        BackgroundDictationPresentation.modelState(loaded: controller.actionButtonModelReady, loading: controller.actionButtonModelLoading)
     }
     static func inAppProcessing(_ model: SpeechModel) -> String {
         if isStreaming(model) { return "CPU only" }

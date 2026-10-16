@@ -291,24 +291,32 @@ final class AppController: ObservableObject {
         recorder.onCaptureFailure = { [weak self] failure in
             guard let self, self.phase == .recording else { return }
             self.captureWarning = failure.localizedDescription
-            self.backgroundDictationError = failure.localizedDescription
             self.queueRecordingStop(endKeyboardSession: true)
         }
         recorder.onInterruption = { [weak self] in
             guard let self else { return }
-            self.backgroundDictationError = "The microphone was interrupted. Reopen LocalScribe or retry background dictation."
             if self.phase == .recording {
                 self.captureWarning = "The microphone was interrupted. Recording stopped and captured speech is being finished."
                 self.queueRecordingStop(endKeyboardSession: true)
-            } else { self.disableKeyboardSession() }
+            } else if self.phase == .transcribing {
+                self.captureWarning = "The microphone was interrupted. Captured speech is being finished."
+                self.disableKeyboardSession()
+            } else {
+                self.backgroundDictationError = "The microphone was interrupted. Reopen LocalScribe or retry background dictation."
+                self.disableKeyboardSession()
+            }
         }
         memoryObserver = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                self.backgroundDictationError = "iPhone requested more memory. Reopen LocalScribe or retry background dictation."
                 if self.phase == .recording {
                     self.captureWarning = "iPhone requested more memory. Recording stopped; captured text is preserved."
                     await self.stopRecording(endKeyboardSession: true)
+                } else if self.phase == .transcribing {
+                    self.captureWarning = "iPhone requested more memory. Captured text is preserved."
+                    self.disableKeyboardSession()
+                } else {
+                    self.backgroundDictationError = "iPhone requested more memory. Reopen LocalScribe or retry background dictation."
                 }
                 if self.phase == .preparing, self.backgroundDictationStarting || self.keyboardSessionActive {
                     self.disableKeyboardSession()
@@ -430,6 +438,7 @@ final class AppController: ObservableObject {
         guard foreground || keyboardSessionActive || actionButtonRecording else { errorMessage = "Open LocalScribe to start a microphone session."; return }
         guard installedModels.contains(model) else { errorMessage = "Download your selected model in Models before dictating."; return }
         errorMessage = nil
+        backgroundDictationError = nil
         prewarmRevision += 1
         cancelMismatchedPrewarm(model, context: context)
         recordingModel = model
@@ -900,8 +909,10 @@ final class AppController: ObservableObject {
             sessionTimer?.invalidate(); sessionTimer = nil; keyboardSessionExpiresAt = nil
             recorder.shutdown(); backgroundDictationSuspended = true
             if !(error is CancellationError) {
+                // Explicit setup failures use the global alert; automatic standby
+                // failures stay beside their Retry control. Publish to one owner.
                 if startupID == nil { errorMessage = error.localizedDescription }
-                backgroundDictationError = error.localizedDescription
+                else { backgroundDictationError = error.localizedDescription }
             }
         }
     }

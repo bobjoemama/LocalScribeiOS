@@ -68,7 +68,7 @@ struct SettingsView: View {
 
                 Section {
                     LabeledContent("Model", value: controller.selectedModel.name)
-                    LabeledContent("Model state", value: SpeechModelPresentation.actionButtonState(controller))
+                    LabeledContent("Model state", value: SpeechModelPresentation.backgroundModelState(controller))
                     NavigationLink("Setup") { ActionButtonSetupView(controller: controller) }
                 } header: {
                     Text("Action Button").foregroundStyle(AppTheme.inkSecondary)
@@ -130,7 +130,7 @@ private struct ActionButtonSetupView: View {
         Form {
             Section {
                 LabeledContent("Model", value: controller.selectedModel.name)
-                LabeledContent("Model state", value: SpeechModelPresentation.actionButtonState(controller))
+                LabeledContent("Model state", value: SpeechModelPresentation.backgroundModelState(controller))
             } footer: {
                 Text("Check that Dictate shows Ready · Mic on before switching apps. Action Button uses the same selected model on CPU. Change the model on Dictate or in Settings → Choose model.").foregroundStyle(AppTheme.inkSecondary)
             }

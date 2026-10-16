@@ -11,7 +11,6 @@ struct DictateView: View {
     @State private var copyFeedbackTask: Task<Void, Never>?
     @State private var showingPerformance = false
     @State private var microphoneDenied = false
-    @State private var recoverableError: String?
     @State private var levels: [Float] = []
     @FocusState private var editing: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -32,9 +31,6 @@ struct DictateView: View {
                 modelMenu.padding(.horizontal, 20).padding(.vertical, 12)
                 BackgroundDictationControl(controller: controller)
                     .padding(.horizontal, 20).padding(.bottom, 8)
-                if !microphoneDenied, let recoverableError, recoverableError != controller.backgroundDictationError {
-                    errorBanner(recoverableError)
-                }
                 transcriptWorkspace
                 LivePerformanceStrip(open: { showingPerformance = true })
                     .padding(.horizontal, 20).padding(.vertical, 8)
@@ -69,14 +65,8 @@ struct DictateView: View {
             .onChange(of: controller.phase) { _, phase in
                 refreshMicrophonePermission()
                 if phase != .idle { editing = false }
-                if phase == .recording { levels = []; recoverableError = nil }
+                if phase == .recording { levels = [] }
                 else if phase == .idle { levels = [] }
-            }
-            .onChange(of: controller.errorMessage) { _, error in
-                if let error { recoverableError = error; refreshMicrophonePermission() }
-            }
-            .onChange(of: controller.backgroundDictationError) { _, error in
-                if let error, recoverableError == error { recoverableError = nil }
             }
             .onChange(of: controller.level) { _, level in
                 guard recording else { return }
@@ -126,7 +116,7 @@ struct DictateView: View {
     private var modelModeState: String {
         let mode = SpeechModelPresentation.mode(displayedModel)
         if displayedModel == controller.selectedModel {
-            return mode + " · Action Button " + SpeechModelPresentation.actionButtonState(controller)
+            return mode + " · " + SpeechModelPresentation.backgroundModelState(controller)
         }
         return mode + (controller.preparedModel == displayedModel ? " · loaded" : "")
     }
@@ -148,21 +138,6 @@ struct DictateView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(20)
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-    }
-
-    private func errorBanner(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 12) {
-                Label(message, systemImage: "exclamationmark.triangle").font(.subheadline)
-                Spacer(minLength: 0)
-                Button { recoverableError = nil } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
-                    .accessibilityLabel("Dismiss error")
-            }
-            if !textToCopy.isEmpty { Text("Captured text remains available.").font(.footnote) }
-        }
-        .padding(12).foregroundStyle(AppTheme.error)
-        .background(AppTheme.errorSoft, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 20).padding(.bottom, 8)
     }
 
     private var recordingControls: some View {
@@ -229,7 +204,6 @@ struct DictateView: View {
             Button {
                 editing = false
                 if controller.phase == .idle { controller.saveTranscriptEdits() }
-                recoverableError = nil
                 if controller.phase == .preparing { Task { await controller.cancelPreparation() } }
                 else if recording { Task { await controller.stopRecording() } }
                 else if !ready { openModels() }
@@ -279,22 +253,13 @@ struct BackgroundDictationControl: View {
     }
 
     private var status: String {
-        if !controller.backgroundDictationEnabled { return "Paused" }
-        if microphoneDenied { return "Microphone access is off" }
-        if controller.backgroundDictationStarting { return "Starting…" }
-        if !controller.installedModels.contains(controller.selectedModel) { return "Choose a downloaded model" }
-        if controller.keyboardSessionActive {
-            if !controller.actionButtonModelReady { return "Loading model…" }
-            switch controller.phase {
-            case .recording: return "Recording · Mic on"
-            case .transcribing: return "Finishing · Mic on"
-            case .preparing: return "Starting…"
-            case .idle: return "Ready · Mic on"
-            }
-        }
-        if controller.backgroundDictationError != nil { return "Interrupted" }
-        if controller.downloadingModel != nil { return "Waiting for download" }
-        return "Not ready"
+        BackgroundDictationPresentation.status(
+            enabled: controller.backgroundDictationEnabled, microphoneDenied: microphoneDenied,
+            starting: controller.backgroundDictationStarting,
+            downloaded: controller.installedModels.contains(controller.selectedModel),
+            sessionActive: controller.keyboardSessionActive, modelLoaded: controller.actionButtonModelReady,
+            phase: controller.phase, hasError: controller.backgroundDictationError != nil,
+            downloading: controller.downloadingModel != nil)
     }
 
     var body: some View {
@@ -359,6 +324,32 @@ struct BackgroundDictationControl: View {
     }
 
     private func refreshPermission() { microphoneDenied = AVAudioApplication.shared.recordPermission == .denied }
+}
+
+/// Model residency and microphone ownership are separate facts.
+enum BackgroundDictationPresentation {
+    static func modelState(loaded: Bool, loading: Bool) -> String {
+        if loaded { return "Model loaded" }
+        return loading ? "Loading model…" : "Not loaded for background"
+    }
+
+    static func status(enabled: Bool, microphoneDenied: Bool, starting: Bool, downloaded: Bool,
+                       sessionActive: Bool, modelLoaded: Bool, phase: DictationPhase,
+                       hasError: Bool, downloading: Bool) -> String {
+        if phase == .recording { return "Recording · Mic on" }
+        if phase == .transcribing { return sessionActive ? "Finishing · Mic on" : "Finishing · Mic off" }
+        if microphoneDenied { return "Microphone access is off" }
+        if starting { return "Starting…" }
+        if sessionActive {
+            if !modelLoaded { return "Loading model · Mic on" }
+            return phase == .preparing ? "Starting…" : "Ready · Mic on"
+        }
+        if !enabled { return "Paused · Mic off" }
+        if !downloaded { return "Choose a downloaded model" }
+        if hasError { return "Interrupted · Mic off" }
+        if downloading { return "Waiting for download" }
+        return "Not ready · Mic off"
+    }
 }
 
 /// Keep a single replacing transcript. Following stops on a real user scroll;

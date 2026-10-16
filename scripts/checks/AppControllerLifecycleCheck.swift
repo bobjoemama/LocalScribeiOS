@@ -840,9 +840,114 @@ extension SharedKeyboardStore {
                   "Completing the selected model download automatically opens the foreground session without settings navigation")
         missing.backgroundDictationEnabled = false
     }
+    @MainActor static func checkMicrophoneErrorPresentation() async throws {
+        let engine = LifecycleEngine()
+        await engine.releasePreparation()
+        let defaults = UserDefaults(suiteName: "LocalScribeErrorPresentationCheck-\(UUID())")!
+        defaults.set(false, forKey: "keepModelLoaded")
+        let controller = await fixture(engine, preferences: defaults)
+        defer { controller.backgroundDictationEnabled = false }
+        let recorder = AudioRecorder.latest!
+        recorder.microphonePermissionGranted = false
+        await controller.enableKeyboardSession()
+        try check(controller.errorMessage != nil && controller.backgroundDictationError == nil,
+                  "Explicit microphone denial has only the global error owner")
+        try check(controller.phase == .idle && !controller.keyboardSessionActive && !recorder.armed,
+                  "Explicit denial leaves no active microphone lease")
+        controller.errorMessage = nil
+        try check(controller.backgroundDictationError == nil,
+                  "Dismissing the global error cannot reveal a duplicate background error")
+        await controller.retryBackgroundDictation()
+        try check(controller.errorMessage == nil && controller.backgroundDictationError != nil,
+                  "Automatic microphone denial has only the inline background error owner")
+        try check(controller.backgroundDictationEnabled && !controller.keyboardSessionActive && !recorder.armed,
+                  "Automatic denial remains enabled and interrupted so Retry is available")
+        await controller.startRecording()
+        try check(controller.errorMessage != nil && controller.backgroundDictationError == nil
+                  && controller.phase == .idle && !recorder.armed,
+                  "An explicit retry retires the old automatic failure and publishes its new failure only globally")
+        controller.errorMessage = nil
+        await controller.retryBackgroundDictation()
+        try check(controller.backgroundDictationError != nil && controller.errorMessage == nil,
+                  "A new automatic failure still has its own inline recovery after an explicit failure")
+        recorder.microphonePermissionGranted = true
+        await controller.startRecording()
+        try check(controller.phase == .recording && recorder.armed
+                  && controller.errorMessage == nil && controller.backgroundDictationError == nil,
+                  "Successful explicit capture retires the old automatic error without retaining a duplicate")
+        await controller.cancelRecording()
+        controller.backgroundDictationEnabled = false
+        recorder.microphonePermissionGranted = true
+        AudioRecorder.holdNextArm = true
+        let cancelled = Task { await controller.enableKeyboardSession() }
+        await recorder.waitUntilArmHeld()
+        controller.disableKeyboardSession()
+        recorder.releaseArm()
+        await cancelled.value
+        try check(controller.errorMessage == nil && controller.backgroundDictationError == nil,
+                  "Cancelled explicit startup publishes no failure to either presentation owner")
+        try check(!controller.keyboardSessionActive && !recorder.armed && controller.phase == .idle,
+                  "Cancelled explicit startup cannot acquire the microphone")
+        for (name, trigger) in [
+            ("conversion failure", { recorder.onCaptureFailure?(.conversionFailed) }),
+            ("interruption", { recorder.onInterruption?() }),
+            ("memory warning", { NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil) })
+        ] {
+            await controller.startRecording()
+            try check(controller.phase == .recording, "\(name) fixture begins an actual controller utterance")
+            controller.backgroundDictationEnabled = true
+            recorder.feed(16_000)
+            var subscription: AnyCancellable?
+            await withCheckedContinuation { continuation in
+                subscription = controller.$errorMessage.compactMap { $0 }.first().sink { _ in continuation.resume() }
+                trigger()
+            }
+            subscription?.cancel()
+            try check(controller.errorMessage != nil && controller.backgroundDictationError == nil,
+                      "Active utterance \(name) uses only the global failure owner")
+            try check(!recorder.armed && !controller.keyboardSessionActive,
+                      "Active utterance \(name) still retires its microphone lease")
+            // Finalization can publish the warning before phase becomes idle.
+            if controller.phase != .idle {
+                var idleSubscription: AnyCancellable?
+                await withCheckedContinuation { continuation in
+                    idleSubscription = controller.$phase.filter { $0 == .idle }.first().sink { _ in continuation.resume() }
+                }
+                idleSubscription?.cancel()
+            }
+            try check(controller.transcript == "Captured words.",
+                      "Active utterance \(name) still finalizes captured speech")
+        }
+        controller.backgroundDictationEnabled = false
+        for (name, trigger) in [
+            ("interruption", { recorder.onInterruption?() }),
+            ("memory warning", { NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil) })
+        ] {
+            await controller.enableKeyboardSession()
+            await controller.startRecording()
+            recorder.feed(16_000)
+            await engine.holdFinalization()
+            let finish = Task { await controller.stopRecording() }
+            await engine.waitUntilFinalizationStarts()
+            try check(controller.phase == .transcribing && controller.keyboardSessionActive,
+                      "Finalizing \(name) fixture retains its independent microphone lease")
+            trigger()
+            await waitForMicrophoneEnd(controller)
+            await engine.releaseFinalization()
+            await finish.value
+            try check(controller.errorMessage != nil && controller.backgroundDictationError == nil
+                      && controller.transcript == "Captured words." && !recorder.armed,
+                      "Finalizing \(name) has one global owner, finalizes speech and revokes its microphone")
+        }
+    }
     @MainActor static func main() async throws {
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("--background-dictation") {
+        if arguments.contains("--microphone-error-presentation") {
+            do { try await checkMicrophoneErrorPresentation() }
+            catch { print("FAIL: \(error)"); exit(1) }
+            print("PASS: \(checks) microphone error presentation checks")
+            return
+        } else if arguments.contains("--background-dictation") {
             try await checkDefaultBackgroundDictation()
             try await checkPendingBackgroundDictation()
             try await checkBackgroundReconfiguration()
@@ -863,6 +968,7 @@ extension SharedKeyboardStore {
             print("PASS: \(checks) focused Action startup lifecycle checks")
             return
         }
+        try await checkMicrophoneErrorPresentation()
         try await checkDefaultBackgroundDictation()
         try await checkPendingBackgroundDictation()
         try await checkBackgroundReconfiguration()
